@@ -24,7 +24,7 @@ GIS *data model* and everything that follows from features already in hand:
 |---|---|
 | Reading CityGML, CityJSON, and related interchange formats | `pyramids_citymodels.drivers` |
 | Writing the formats that support a faithful round-trip | `pyramids_citymodels.drivers` |
-| Driver discovery via the `pyramids.citymodel_drivers` entry points | `pyramids-core` reads, this package registers |
+| Driver discovery via the `pyramids.vector_drivers` entry points | `pyramids-core` reads, this package registers |
 
 Anything that belongs on the left-hand side of the first table is a change to `pyramids-core`, not a
 feature of this package. Report it upstream rather than duplicating it here.
