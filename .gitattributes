@@ -1,0 +1,20 @@
+# SCM syntax highlighting & preventing 3-way merges
+# pixi.lock is machine-generated and ~15k lines. `merge=binary` stops git from
+# attempting a three-way merge on it: a conflict there is never worth resolving
+# by hand — take one side and re-run `pixi lock` against the merged manifest.
+# The linguist hints keep it out of the repo's language statistics and collapse
+# it in GitHub diffs.
+pixi.lock merge=binary linguist-language=YAML linguist-generated=true
+
+# Shell scripts must keep LF endings even in a Windows checkout: CI runs them
+# with bash on ubuntu-latest, where CRLF breaks `set -o pipefail` and shellcheck
+# flags the endings (SC1017). The `shell-lint` and `beautysh` pre-commit hooks
+# read the same files. Nothing here ships a script yet — the rule is in place so
+# the first one is correct on arrival.
+*.sh text eol=lf
+
+# Notebooks are LF-normalised JSON, which is what pre-commit's
+# pretty-format-json hook and the CI `notebooks` task produce. Without this pin
+# a Windows checkout rewrites every line, so every notebook under
+# `docs/examples/` shows up as a full-file diff.
+*.ipynb text eol=lf

@@ -1,0 +1,65 @@
+name: Tests - Suite
+
+permissions:
+  contents: read
+  id-token: write
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel a superseded run: a new push to the same ref (a PR branch, or main)
+# cancels the previous in-progress run instead of letting both compete for the
+# hosted-runner pool. Keyed on github.ref, so a PR never cancels a main run and
+# vice versa — only a newer commit on the same ref supersedes the older one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  main-package:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        environment: [py311, py312, py313, py314]
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        # serapeum-org/github-actions is a monorepo: one commit carries the release tag for
+        # every action in it, so 38c11108 is the dereferenced commit for mkdocs/v1.3.1,
+        # github-release/v1.5.0, pypi-release/v1.0.3 and pixi/v1.2.1 alike. Three different
+        # actions pinned to one SHA reads like a copy-paste error and is not; verify with
+        #   git ls-remote --tags https://github.com/serapeum-org/github-actions
+        uses: serapeum-org/github-actions/actions/python-setup/pixi@38c111084f99d5ff5f4a1e63bedce48fe33a10c0 # pixi/v1.2.1
+        with:
+          environments: ${{ matrix.environment }}
+          activate-environment: ${{ matrix.environment }}
+          cache: true
+          # pixi.lock is lock-file format v7, which pixi 0.65 (the version the
+          # action pinned before it exposed this input) refuses to read. Pin the
+          # same pixi that writes the lock so CI and local stay in lockstep —
+          # bump both together when the lock format moves again.
+          version: v0.73.0
+
+      - name: Run main tests
+        run: |
+          pixi run -e ${{ matrix.environment }} main
+
+      - name: Upload coverage reports to Codecov with GitHub Action
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+
+      - name: test Jupyter notebooks
+        shell: bash
+        run: |
+          set +e
+          pixi run -e ${{ matrix.environment }} notebooks
+          rc=$?
+          if [ $rc -eq 4 ] || [ $rc -eq 5 ]; then exit 0; fi
+          exit $rc
