@@ -1,0 +1,18 @@
+# Codecov configuration.
+#
+# Targets are set below 100% on purpose. This package reads city-model formats and is
+# tested only against real, committed sample files -- never fabricated ones. A few
+# defensive branches therefore cannot be exercised without inventing a malformed sample,
+# which the project forbids: non-matching format sniffs, never-raise ``can_open``
+# fallbacks, optional-dependency import paths, and corrupt-header guards. A 90% floor
+# keeps the suite honest while leaving room for these intentionally-uncovered guards.
+coverage:
+  status:
+    project:
+      default:
+        target: 90%
+        threshold: 1%
+    patch:
+      default:
+        target: 90%
+        threshold: 1%

@@ -1,0 +1,135 @@
+fail_fast: true
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+        name: "[py -  check] validate yaml"
+        # Committed sample files under tests/data are byte-faithful real data and
+        # would otherwise gain a trailing newline; never rewrite them.
+        exclude: ^tests/data/
+      - id: trailing-whitespace
+        name: "[file - format] trim trailing whitespace"
+        args: [ --markdown-linebreak-ext=md ]
+        exclude: ^tests/data/
+      - id: check-added-large-files
+        name: "[file -  check] large file"
+        args: [ --maxkb=5000 ]
+      - id: check-docstring-first
+        name: "[py   -  check] docstring first"
+        files: /examples
+        types : [file, python ]
+      - id: check-json
+        name: "[json -  check] validate json"
+      - id: check-merge-conflict
+        name: "[git  -  check] merge conflict"
+      - id: debug-statements
+        name: "[py   -  check] debug statements"
+      - id: detect-private-key
+        name: "[cred -  check] private keys"
+      - id: fix-encoding-pragma
+        name: "[file - format] coding pragma"
+        args: [ --remove ]
+      - id: mixed-line-ending
+        name: "[file - format] mixed line ending"
+        args: [ --fix=auto ]
+        exclude: ^tests/data/
+      - id: pretty-format-json
+        name: "[json - format] pretty json"
+        args: [ --autofix,
+                --indent=4,
+                --no-sort-keys ]
+        # CityJSON sample fixtures are byte-faithful real data; never reformat them.
+        exclude: ^tests/data/
+      - id: requirements-txt-fixer
+        name: "[reqs - format] fix requirements.txt"
+      - id: check-yaml
+        name: "[yaml -  check] validate yaml"
+        # --unsafe checks syntax only, without constructing the document.
+        # `mkdocs.yml` carries `!!python/name:` tags (the Material emoji index and
+        # the superfences mermaid formatter), which a safe load refuses to
+        # construct — without this the hook fails on every run, and `fail_fast`
+        # then stops the rest of them.
+        args: [ --unsafe ]
+
+  - repo: https://github.com/PyCQA/pydocstyle
+    rev: 6.3.0
+    hooks:
+      - id: pydocstyle
+        name: "[py   - check] pydocstyle"
+        # The src-layout path, not a bare package path: the package lives at
+        # `src/pyramids_citymodels/`, so a `^pyramids_citymodels/` pattern matches
+        # nothing and the hook silently passes on every file.
+        files: ^src/pyramids_citymodels/
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        additional_dependencies: [Flake8-pyproject]
+        name: "[py   - check] flake8"
+        exclude: ^(examples/|tests/)
+
+  - repo: https://github.com/ambv/black
+    # Keep in step with the `black==` pin in pyproject.toml's dev group; see the
+    # comment there for why it may not go below 26.3.1.
+    rev: 26.10.1
+    hooks:
+      - id: black
+        name: "[py   - format] black"
+
+  - repo: https://github.com/lovesegfault/beautysh
+    rev: v6.2.1
+    hooks:
+      - id: beautysh
+        name: "[bash - format] beautysh"
+
+  # pre-commit-shell: Checks shell scripts against shellcheck.
+  - repo: https://github.com/detailyang/pre-commit-shell
+    rev: 1.0.5
+    hooks:
+      - id: shell-lint
+        name: "[bash -   lint] shell-lint"
+
+  - repo: https://github.com/rlindsgaard/pre-commit-commit-msg-hooks
+    rev: 0.1.0
+    hooks:
+      - id: check-description-max-length
+        name: "[bash -   format] check-description-max-length"
+      - id: check-second-line-empty
+        name: "[bash -   format] check-second-line-empty"
+      - id: check-summary-capitalized
+        name: "[bash -   format] check-summary-capitalized"
+      - id: check-summary-imperative
+        name: "[bash -   format] check-summary-imperative"
+      - id: check-summary-max-length
+        name: "[bash -   format] check-summary-max-length"
+      - id: check-summary-punctuation
+        name: "[bash -   format] check-summary-punctuation"
+
+  - repo: local
+    hooks:
+      - id: pytest-check
+        name: pytest-check
+        entry: pytest -v --cov=src/pyramids_citymodels --cov-report=term-missing -m "not plot"
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  - repo: local
+    hooks:
+      - id: doctest
+        name: doctest
+        entry: python -c "import matplotlib; matplotlib.use('Agg'); import pytest; import sys; sys.exit(pytest.main(['--doctest-modules', 'src']))"
+        language: system
+        always_run: true
+        pass_filenames: true
+
+  - repo: local
+    hooks:
+      - id: notebook-check
+        name: nbval
+        entry: pytest --nbval --nbval-lax --verbose
+        language: system
+        files: .*\.ipynb$
+        always_run: true
