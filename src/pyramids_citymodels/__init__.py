@@ -37,15 +37,9 @@ Examples:
 # GDAL_DATA / PROJ_DATA, registers the Windows DLL directory). Any module here
 # that does `from osgeo import gdal` at load time needs this line to have run
 # first, or that import fails wherever no separate GDAL is installed.
-import pyramids  # noqa: F401
+import pyramids  # noqa: F401  # isort:skip  (keep first — see above; ruff must not reorder it)
 
-try:
-    from importlib.metadata import PackageNotFoundError  # type: ignore
-    from importlib.metadata import version
-except ImportError:  # pragma: no cover
-    from importlib_metadata import PackageNotFoundError  # type: ignore
-    from importlib_metadata import version
-
+from importlib.metadata import PackageNotFoundError, version
 
 # The distribution name, not `__name__`: the import name is `pyramids_citymodels`
 # and the distribution is `pyramids-citymodels`. importlib.metadata normalizes `_`

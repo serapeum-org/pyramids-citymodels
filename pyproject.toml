@@ -71,16 +71,11 @@ dev = [
     "mypy>=1.10.0",
     "types-PyYAML>=6.0.0",
     "pytest-mock>=3.12.0",
-    # Same versions the pre-commit hooks pin, so `pixi run -e dev python -m black`,
-    # `-m flake8` and `-m pydocstyle` match what CI and the hooks enforce.
-    #
-    # black must stay >= 26.3.1: 24.10.0 carries PYSEC-2026-2120 and
-    # PYSEC-2026-2121, so `pip-audit.yml` fails on the py311 resolution. Keep this
-    # pin and the `.pre-commit-config.yaml` rev in step.
-    "black==26.10.1",
-    "flake8==7.1.1",
-    "Flake8-pyproject>=1.2.3",
-    "pydocstyle==6.3.0"
+    # ruff replaces black + isort + flake8 + pydocstyle (lint + format in one tool),
+    # matching the parent pyramids. Keep this pin in step with the `ruff-pre-commit`
+    # rev in `.pre-commit-config.yaml`, so `pixi run -e dev ruff {check,format}`
+    # locally matches what the hook and CI enforce.
+    "ruff>=0.15.22"
 ]
 docs = [
     "mkdocs >=1.5.3",
@@ -151,22 +146,55 @@ exclude = ["tests*"]
 # no MANIFEST.in.
 
 
-[tool.flake8]
-ignore = ["E203", "E266", "E501", "W503", "E722", "C901", "E741", "E731"]
-max-line-length = 88
-max-complexity = 18
-select = "B,C,E,F,W,T4"
-
-[tool.black]
-# No `profile` key: black does not have one (that is an isort concept) and warns
-# "Invalid config keys detected: 'profile'" on every run when it is present.
+[tool.ruff]
 line-length = 88
-skip-string-normalization = true
+target-version = "py311"  # requires-python floors at 3.11
 
-[tool.isort]
-profile = "black"
-line_length = 88
-multi_line_output = 3
+[tool.ruff.format]
+# black had skip-string-normalization = true → preserve existing quotes.
+quote-style = "preserve"
+
+[tool.ruff.lint]
+# ruff replaces black + isort + flake8 + pydocstyle. The old flake8 `select` named B
+# and T4, but flake8-bugbear / flake8-print were never installed, so those were inert
+# (the effective set was E/F/W). Add I (isort) and UP (pyupgrade) to fold in what the
+# standalone isort config and a pyupgrade pass would do. Mirrors the parent pyramids.
+select = ["E", "F", "W", "I", "UP"]
+# Carried from the old [tool.flake8].ignore. E704/W503 are dropped: ruff does not
+# implement either (both are formatter-owned pycodestyle codes), so there is nothing
+# to ignore. E226/E701 match pyramids' set.
+ignore = ["E203", "E226", "E266", "E501", "E701", "E722", "C901", "E741", "E731"]
+
+[tool.ruff.lint.per-file-ignores]
+# flake8 excluded examples/ and tests/ from linting, and isort ran everywhere; keep the
+# migration's lint churn on shipped src/ by dropping E/F/W and UP there (import-sorting I
+# still applies). Notebooks legitimately import next to first use and run setup before
+# imports, both of which trip E402.
+"tests/**" = ["E", "F", "W", "UP"]
+"examples/**" = ["E", "F", "W", "UP"]
+"*.ipynb" = ["E402"]
+
+[tool.mypy]
+# Checker target is 3.12 even though `requires-python` floors at 3.11: numpy's stubs
+# ship PEP 695 `type` statements that mypy only parses when the target is >= 3.12 (at
+# 3.11 it aborts before checking any source). This widens only the *typing* target;
+# actual 3.11 runtime compatibility is covered by the py311 leg of the test matrix.
+python_version = "3.12"
+mypy_path = "src"
+packages = ["pyramids_citymodels"]
+explicit_package_bases = true
+warn_return_any = true
+warn_unused_configs = false
+disallow_untyped_defs = false
+check_untyped_defs = true
+# pyramids-core ships no py.typed, and GDAL's osgeo bindings are untyped; collapse those
+# to Any rather than failing on missing stubs. Gradual typing per ADR-0002.
+ignore_missing_imports = true
+exclude = [
+    "tests/",
+    "examples/",
+    "docs/",
+]
 
 
 [tool.commitizen]
@@ -243,6 +271,7 @@ pyramids-citymodels = { path = ".", editable = true }
 main = { cmd = "pytest -vvv --cov=src/pyramids_citymodels -sv -m 'not vendor_data' --cov-report=xml", description = "Run the main test suite" }
 test-all = { cmd = "pytest -vvv --cov=src/pyramids_citymodels -sv --cov-report=xml --cov-report=term-missing", description = "Run the whole test suite" }
 notebooks = { cmd = "pytest --nbval --nbval-lax --verbose docs/examples", description = "check notebooks" }
+mypy = { cmd = "mypy", description = "Run mypy type checking (config in [tool.mypy])" }
 build-dist = { cmd = "python -m build", description = "Build sdist and wheel for PyPI" }
 publish-pypi = { cmd = "twine upload --non-interactive --repository pypi dist/*", depends-on = ["build-dist"], description = "Build and upload package to PyPI" }
 cz-changelog = { cmd = "cz changelog", description = "Generate the changelog with commitizen" }
