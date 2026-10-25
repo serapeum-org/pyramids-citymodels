@@ -1051,10 +1051,11 @@
 <h1 id="reference"><a class="toclink" href="#reference">Reference</a><a class="headerlink" href="#reference" title="Permanent link">#</a></h1>
 <p>The API surface of <code>pyramids_citymodels</code>, generated from the docstrings by
 <a href="https://mkdocstrings.github.io/">mkdocstrings</a>.</p>
-<p>What this package publishes is <strong>drivers</strong>, not an API you call directly. A driver is registered
-with <code>pyramids-core</code> through the <code>pyramids.citymodel_drivers</code> entry-point group, so installing this
-package is the whole integration: <code>pyramids</code> then dispatches a read of a city-model format it does
-not handle itself to the driver that claims it.</p>
+<p>What this package publishes is <strong>drivers</strong>, not an API you call directly. A driver is a
+<code>VectorDriver</code> class registered with <code>pyramids-core</code> through the <code>pyramids.vector_drivers</code>
+entry-point group (the group <code>FeatureCollection.read_file</code> consults — city models are vector
+features), so installing this package is the whole integration: <code>pyramids</code> then dispatches a read
+of a city-model format it does not handle itself to the driver that claims it.</p>
 <p>The scaffold registers no drivers yet. As each one lands it is listed here with its own page — its
 suffixes, capabilities and documented limitations — and the table below fills in:</p>
 <table>
@@ -1103,10 +1104,12 @@ CityGML, CityJSON and the related interchange formats — as <code>pyramids</cod
 follows once features are in hand — reprojection, overlays, spatial joins, conversion
 and spatial indexing. What it does not do is open the city-model exchange formats;
 that is this package's job, and its only job.</p>
-<p>Drivers are discovered by <code>pyramids-core</code> through the <code>pyramids.citymodel_drivers</code>
-entry-point group, so a read of a city-model file resolves to a driver here once this
-package is installed. Dependency-backed drivers sit behind extras and are skipped at
-discovery when their extra is absent. See ADR-0003 for the scope decision.</p>
+<p>Drivers are discovered by <code>pyramids-core</code> through the <code>pyramids.vector_drivers</code>
+entry-point group (the group <code>FeatureCollection.read_file</code> consults — city models are
+vector features), so a read of a city-model file resolves to a driver here once this
+package is installed. A dependency-backed driver names its optional dependency via a
+<code>VectorDriver.extra</code> attribute and is skipped silently at discovery when that package
+is not importable. See ADR-0003 for the scope decision.</p>
 <p>The package root deliberately re-exports nothing: it carries <code>__version__</code> and the
 import contract that activates the vendored osgeo bindings, and that is all. Installing
 the package is the whole integration, so nothing here needs importing. A driver class is
