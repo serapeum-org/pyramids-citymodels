@@ -9,12 +9,15 @@ entry-point group (the group `FeatureCollection.read_file` consults — city mod
 features), so installing this package is the whole integration: `pyramids` then dispatches a read
 of a city-model format it does not handle itself to the driver that claims it.
 
-The scaffold registers no drivers yet. As each one lands it is listed here with its own page — its
-suffixes, capabilities and documented limitations — and the table below fills in:
+Each driver has its own page listing its suffixes, options and documented limitations:
 
 | Driver | Format | Page |
 |---|---|---|
-| _(none yet)_ | | |
+| `CityJsonDriver` | CityJSON | [Drivers](drivers.md) |
+| `CityGmlDriver` | CityGML LOD2 | [Drivers](drivers.md) |
+
+See the [Drivers](drivers.md) page for the `driver=` / `read_file` usage and the read options, and
+the [example notebook](../examples/city-models.ipynb) for a runnable walkthrough.
 
 The package root deliberately re-exports nothing (`__all__` is empty): it carries `__version__` and
 the import contract that activates the vendored osgeo bindings. Driver classes are reached by their
