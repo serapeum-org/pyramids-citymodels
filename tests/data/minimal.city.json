@@ -1,0 +1,53 @@
+{
+  "type": "CityJSON",
+  "version": "2.0",
+  "transform": {
+    "scale": [0.001, 0.001, 0.001],
+    "translate": [0.0, 0.0, 0.0]
+  },
+  "metadata": {
+    "referenceSystem": "https://www.opengis.net/def/crs/EPSG/0/7415"
+  },
+  "CityObjects": {
+    "bldg1": {
+      "type": "Building",
+      "attributes": {"measuredHeight": 10.0, "function": "residential"},
+      "children": ["bldg1_part"],
+      "geometry": [
+        {
+          "type": "MultiSurface",
+          "lod": "2",
+          "boundaries": [[[0, 1, 2, 3]], [[4, 5, 6, 7]], [[8, 9, 10, 11]]],
+          "semantics": {
+            "surfaces": [
+              {"type": "GroundSurface"},
+              {"type": "WallSurface"},
+              {"type": "RoofSurface"}
+            ],
+            "values": [0, 1, 2]
+          }
+        }
+      ]
+    },
+    "bldg1_part": {
+      "type": "BuildingPart",
+      "parents": ["bldg1"],
+      "geometry": [
+        {
+          "type": "MultiSurface",
+          "lod": "2",
+          "boundaries": [[[8, 9, 10, 11]]],
+          "semantics": {
+            "surfaces": [{"type": "RoofSurface"}],
+            "values": [0]
+          }
+        }
+      ]
+    }
+  },
+  "vertices": [
+    [0, 0, 0], [1000, 0, 0], [1000, 1000, 0], [0, 1000, 0],
+    [0, 0, 0], [1000, 0, 0], [1000, 0, 1000], [0, 0, 1000],
+    [0, 0, 1000], [1000, 0, 1000], [1000, 1000, 1000], [0, 1000, 1000]
+  ]
+}

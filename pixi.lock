@@ -4614,6 +4614,8 @@ packages:
   requires_dist:
   - pyramids-core>=0.70.0
   - numpy>=2.0.0
+  - shapely>=2.0.0
+  - geopandas>=1.0.0
   requires_python: '>=3.11,<4'
 - pypi: https://files.pythonhosted.org/packages/00/93/8421d1b1914bc16694651b2d3ee4ae9b5e8fed785edddde0ad9f5c63d229/pyramids_core-0.71.0-cp312-cp312-macosx_11_0_arm64.whl
   name: pyramids-core

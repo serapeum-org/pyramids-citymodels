@@ -37,13 +37,14 @@ dependencies = [
     # The floor is 0.70.0 (the first release under that name).
     "pyramids-core >=0.70.0",
     "numpy >=2.0.0",
+    # Declared because `flatten.py` imports them directly to build the feature
+    # table (shapely geometries, a GeoDataFrame the `FeatureCollection` wraps).
+    # They also arrive transitively with `pyramids-core`, but a module here that
+    # imports them directly must name them — inheriting a peer's transitive
+    # dependency is what breaks when that peer reshuffles its own requirements.
+    "shapely >=2.0.0",
+    "geopandas >=1.0.0",
 ]
-# shapely and geopandas are deliberately NOT declared yet. The vector subsystem a
-# city-model driver hands its features to requires them, so they arrive with
-# `pyramids-core` — but that is its requirement, not a promise to this package.
-# Declare each one here the moment a module under `src/pyramids_citymodels/`
-# imports it directly; inheriting a peer's transitive dependency is what breaks
-# when that peer reshuffles its own requirements.
 
 [project.optional-dependencies]
 # One extra per dependency-backed driver family, added when the driver that needs
@@ -112,12 +113,12 @@ notebook = [
 # that package is not importable the registry skips the driver SILENTLY at discovery
 # (no warning), so a bare install stays useful.
 #
-# The scaffold registers no drivers yet. The group is `pyramids.vector_drivers` — the
-# group `FeatureCollection.read_file` consults; city models are vector features, so
-# that is the group, not a city-model-specific one (pyramids has no such consumer).
-# The first driver adds the table, e.g.
-#   [project.entry-points."pyramids.vector_drivers"]
-#   cityjson = "pyramids_citymodels.drivers.cityjson:CityJsonDriver"
+# The group is `pyramids.vector_drivers` — the group `FeatureCollection.read_file`
+# consults; city models are vector features, so that is the group, not a
+# city-model-specific one (pyramids has no such consumer).
+[project.entry-points."pyramids.vector_drivers"]
+cityjson = "pyramids_citymodels.drivers.cityjson:CityJsonDriver"
+citygml = "pyramids_citymodels.drivers.citygml:CityGmlDriver"
 
 
 [project.urls]
