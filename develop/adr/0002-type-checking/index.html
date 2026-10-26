@@ -64,7 +64,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -1165,16 +1165,21 @@ so full strictness is not reachable from day one.</p>
 <h2 id="decision"><a class="toclink" href="#decision">Decision</a><a class="headerlink" href="#decision" title="Permanent link">#</a></h2>
 <ul>
 <li>Adopt gradual typing with standard Python type hints; annotate public APIs first.</li>
-<li>mypy is installed in the <code>dev</code> group and may be run by contributors; it is not enforced in CI yet.</li>
+<li>mypy is configured in <code>[tool.mypy]</code> (checker target 3.12, <code>ignore_missing_imports</code> for the untyped
+  osgeo/pyramids-core surface, and lenient gradual-typing flags — <code>disallow_untyped_defs = false</code>,
+  <code>check_untyped_defs = true</code>) and is <strong>enforced</strong> by the <code>mypy</code> pre-commit hook, which runs in CI
+  (<code>lint.yml</code>). Contributors run it locally with <code>pixi run -e dev mypy</code>.</li>
 <li>Prefer Google-style docstrings with type annotations to improve mkdocstrings output.</li>
 <li>Geometry and feature arrays are annotated to match how pyramids annotates the same types, so
   signatures line up across the boundary.</li>
 </ul>
 <h2 id="consequences"><a class="toclink" href="#consequences">Consequences</a><a class="headerlink" href="#consequences" title="Permanent link">#</a></h2>
 <ul>
-<li>Type hints are added progressively rather than in one sweep.</li>
-<li>Strictness can be enabled per-module later, and a type-coverage report added to CI, without
-  reworking existing annotations.</li>
+<li>Type hints are added progressively rather than in one sweep; the lenient flags keep the gate green
+  while coverage grows, and strictness can be tightened per-module later without reworking existing
+  annotations.</li>
+<li>The checker target (3.12) is deliberately above the <code>requires-python</code> floor (3.11) so mypy can
+  parse numpy's PEP 695 stubs; runtime 3.11 support is covered by the py311 test-matrix leg.</li>
 </ul>
 
 
