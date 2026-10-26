@@ -43,7 +43,10 @@ def test_parse_reads_poslist_coordinates_as_3d() -> None:
 def test_parse_lifts_building_attributes() -> None:
     model = parse_citygml(CITYGML)
     attributes = model.objects["B1"].attributes
-    assert attributes["measuredHeight"] == "10.0"
+    # measuredHeight is coerced to a number so it matches the CityJSON reader's JSON types (SF5).
+    assert attributes["measuredHeight"] == 10.0
+    assert isinstance(attributes["measuredHeight"], float)
+    # Codelist values (function) and generic string attributes stay as strings.
     assert attributes["function"] == "1000"
     assert attributes["owner"] == "City"
 

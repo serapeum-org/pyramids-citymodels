@@ -219,3 +219,26 @@ class TestParseCityGml:
         assert len(geometries) == 1, "the href-referenced wall surface must be resolved"
         assert geometries[0].semantics[0].type == "WallSurface"
         assert len(geometries[0].boundaries) == 1
+
+    def test_numeric_attributes_are_coerced(self) -> None:
+        """Known-numeric building and generic attributes become numbers, not strings (SF5).
+
+        Test scenario:
+            ``yearOfConstruction`` and a ``gen:intAttribute`` become ``int``; a
+            ``gen:doubleAttribute`` becomes ``float``.
+        """
+        gen = 'xmlns:gen="http://www.opengis.net/citygml/generics/2.0"'
+        xml = f"""<core:CityModel {_NS} {gen}>
+          <core:cityObjectMember><bldg:Building gml:id="B">
+            <bldg:yearOfConstruction>1985</bldg:yearOfConstruction>
+            <gen:intAttribute name="floors"><gen:value>3</gen:value></gen:intAttribute>
+            <gen:doubleAttribute name="area"><gen:value>12.5</gen:value></gen:doubleAttribute>
+          </bldg:Building></core:cityObjectMember>
+        </core:CityModel>"""
+        attributes = parse_citygml(xml).objects["B"].attributes
+        assert attributes["yearOfConstruction"] == 1985
+        assert isinstance(attributes["yearOfConstruction"], int)
+        assert attributes["floors"] == 3
+        assert isinstance(attributes["floors"], int)
+        assert attributes["area"] == 12.5
+        assert isinstance(attributes["area"], float)

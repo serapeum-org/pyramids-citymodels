@@ -61,6 +61,21 @@ _BUILDING_ATTRIBUTE_NAMES = frozenset(
     }
 )
 
+#: Building attributes coerced from text to a number so the IR carries the same types the
+#: CityJSON reader does (which keeps JSON ``float``/``int``), rather than raw strings (SF5).
+_FLOAT_BUILDING_ATTRIBUTES = frozenset({"measuredHeight"})
+_INT_BUILDING_ATTRIBUTES = frozenset(
+    {"yearOfConstruction", "storeysAboveGround", "storeysBelowGround"}
+)
+
+
+def _coerce_number(text: str, to: type) -> Any:
+    """Parse ``text`` with ``to`` (``int``/``float``); return the raw string if it does not parse."""
+    try:
+        return to(text)
+    except (TypeError, ValueError):
+        return text
+
 
 def _local(tag: Any) -> str:
     """The local name of an element tag, dropping any ``{namespace}`` prefix."""
@@ -210,7 +225,13 @@ def _collect_building_attributes(element: ElementTree.Element) -> dict[str, Any]
     for child in element:
         local = _local(child.tag)
         if local in _BUILDING_ATTRIBUTE_NAMES and child.text and child.text.strip():
-            attributes[local] = child.text.strip()
+            text = child.text.strip()
+            if local in _FLOAT_BUILDING_ATTRIBUTES:
+                attributes[local] = _coerce_number(text, float)
+            elif local in _INT_BUILDING_ATTRIBUTES:
+                attributes[local] = _coerce_number(text, int)
+            else:
+                attributes[local] = text
         elif local in (
             "stringAttribute",
             "intAttribute",
@@ -227,7 +248,13 @@ def _collect_building_attributes(element: ElementTree.Element) -> dict[str, Any]
                 None,
             )
             if name and value_element is not None and value_element.text:
-                attributes[name] = value_element.text.strip()
+                raw = value_element.text.strip()
+                if local == "intAttribute":
+                    attributes[name] = _coerce_number(raw, int)
+                elif local == "doubleAttribute":
+                    attributes[name] = _coerce_number(raw, float)
+                else:
+                    attributes[name] = raw
     return attributes
 
 
