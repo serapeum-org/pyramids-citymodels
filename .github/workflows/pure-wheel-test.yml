@@ -102,6 +102,10 @@ jobs:
         run: "pip install pytest pytest-env pytest-mock pytest-timeout --only-binary=:all:"
 
       - name: Run core tests (not vendor_data)
+        # shell: bash on every OS — windows-latest defaults to PowerShell, which
+        # parses the `|| [ $? -eq 5 ]` bash idiom below as a type literal and fails
+        # with "Missing type name after '['" before pytest ever runs.
+        shell: bash
         # -o pythonpath= clears the `pythonpath = ["src"]` setting so the tests
         # import the INSTALLED wheel, not the source tree. vendor_data tests need
         # fetched sample files that are not present here, so they are deselected.
