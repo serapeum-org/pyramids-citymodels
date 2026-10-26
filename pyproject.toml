@@ -203,6 +203,7 @@ name = "cz_conventional_commits"
 version_provider = "pep621"
 tag_format = "$version"
 changelog_file = "docs/change-log.md"
+changelog_incremental = false
 update_changelog_on_bump = false
 major_version_zero = true       # while < 1.0
 style = [
