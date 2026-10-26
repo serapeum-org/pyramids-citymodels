@@ -77,7 +77,9 @@ def test_child_inherits_parent_attributes() -> None:
 def test_surface_geometry_is_2_5d_with_non_areal_vertical_walls() -> None:
     """Pin the documented 2.5D contract (MF1): horizontal surfaces are 2D-valid with positive
     area; a vertical wall is deliberately non-areal in the XY plane but keeps its Z."""
-    fc = to_feature_collection(MODEL, strategy="semantic_surfaces", geometry_dimension="xyz")
+    fc = to_feature_collection(
+        MODEL, strategy="semantic_surfaces", geometry_dimension="xyz"
+    )
     bldg1 = fc[fc["city_object_id"] == "bldg1"]
     by_type = dict(zip(bldg1["surface_type"], bldg1.geometry))
 
