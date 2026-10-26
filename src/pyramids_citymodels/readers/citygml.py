@@ -288,6 +288,12 @@ def parse_citygml(source: Any) -> CityModel:
         ``BuildingPart``; each carries a single ``"MultiSurface"`` geometry whose surfaces are its
         boundary polygons, tagged with their boundary-surface semantic type.
 
+    Note:
+        Shared geometry (``xlink:href``) is resolved against a document-wide ``gml:id`` index, so a
+        polygon referenced by href is attributed to **every** referencing feature (legitimate CityGML
+        shared geometry). Within one feature a polygon reachable from two boundary surfaces is taken
+        **once**, keeping the first (document-order) surface's semantic type.
+
     Examples:
         - Parse an in-memory CityGML building and read its reconstructed semantic surface:
             ```python
@@ -366,6 +372,12 @@ def parse_citygml(source: Any) -> CityModel:
     surfaces_by_feature: dict[
         str, tuple[list[Any], list[SemanticSurface], list[int]]
     ] = {identifier: ([], [], []) for identifier in feature_ids.values()}
+    # One polygon reachable from two boundary surfaces of a feature (inline in one, referenced by
+    # xlink:href from another) must be collected ONCE, keeping the first (document-order) surface's
+    # semantic type — so the seen-set is scoped to the feature, not reset per boundary surface (SF1).
+    seen_by_feature: dict[str, set[int]] = {
+        identifier: set() for identifier in feature_ids.values()
+    }
     for element in root.iter():
         local = _local(element.tag)
         if local not in _BOUNDARY_SURFACE_NAMES:
@@ -374,7 +386,7 @@ def parse_citygml(source: Any) -> CityModel:
         if feature_id is None:
             continue
         boundaries, semantics, values = surfaces_by_feature[feature_id]
-        seen: set[int] = set()
+        seen = seen_by_feature[feature_id]
         for node in element.iter():
             polygon: ElementTree.Element | None = None
             if _local(node.tag) == "Polygon":

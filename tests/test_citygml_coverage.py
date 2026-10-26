@@ -228,6 +228,35 @@ class TestParseCityGml:
         assert geometries[0].semantics[0].type == "WallSurface"
         assert len(geometries[0].boundaries) == 1
 
+    def test_polygon_shared_by_two_surfaces_is_collected_once(self) -> None:
+        """A polygon reachable from two boundary surfaces of one feature is collected once (SF1 r2).
+
+        Test scenario:
+            A WallSurface owns an inline polygon; a RoofSurface of the same building references it
+            by xlink:href. The polygon must appear once, keeping the first (document-order) surface's
+            semantic type, not be duplicated with an arbitrary type.
+        """
+        xlink = 'xmlns:xlink="http://www.w3.org/1999/xlink"'
+        xml = f"""<core:CityModel {_NS} {xlink}>
+          <core:cityObjectMember><bldg:Building gml:id="B">
+            <bldg:boundedBy><bldg:WallSurface>
+              <bldg:lod2MultiSurface><gml:MultiSurface><gml:surfaceMember>
+                <gml:Polygon gml:id="p"><gml:exterior><gml:LinearRing>
+                  <gml:posList srsDimension="3">0 0 0 1 0 0 1 0 1</gml:posList>
+                </gml:LinearRing></gml:exterior></gml:Polygon>
+              </gml:surfaceMember></gml:MultiSurface></bldg:lod2MultiSurface>
+            </bldg:WallSurface></bldg:boundedBy>
+            <bldg:boundedBy><bldg:RoofSurface>
+              <bldg:lod2MultiSurface><gml:MultiSurface>
+                <gml:surfaceMember xlink:href="#p"/>
+              </gml:MultiSurface></bldg:lod2MultiSurface>
+            </bldg:RoofSurface></bldg:boundedBy>
+          </bldg:Building></core:cityObjectMember>
+        </core:CityModel>"""
+        geometry = parse_citygml(xml).objects["B"].geometries[0]
+        assert len(geometry.boundaries) == 1, "a shared polygon must be collected once"
+        assert [surface.type for surface in geometry.semantics] == ["WallSurface"]
+
     def test_numeric_attributes_are_coerced(self) -> None:
         """Known-numeric building and generic attributes become numbers, not strings (SF5).
 
