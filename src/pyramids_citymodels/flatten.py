@@ -36,6 +36,7 @@ from pyramids.feature import FeatureCollection
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import unary_union
 
+from pyramids_citymodels.errors import UnsupportedGeometryError
 from pyramids_citymodels.ir import (
     CityModel,
     CityObject,
@@ -45,7 +46,14 @@ from pyramids_citymodels.ir import (
 )
 from pyramids_citymodels.options import GeometryDimension, LoadStrategy, ReadOptions
 
-__all__ = ["to_feature_collection"]
+__all__ = ["AREAL_GEOMETRY_TYPES", "to_feature_collection"]
+
+#: Geometry types the flattener can turn into polygons. A selected geometry of any other type
+#: (``MultiPoint``, ``MultiLineString``, ``GeometryInstance``) is rejected with a clear error
+#: rather than silently contributing no rows.
+AREAL_GEOMETRY_TYPES = frozenset(
+    {"MultiSurface", "CompositeSurface", "Solid", "MultiSolid", "CompositeSolid"}
+)
 
 
 def _ring_coordinates(ring: list[Any], keep_z: bool) -> list[tuple[float, ...]]:
@@ -276,6 +284,13 @@ def to_feature_collection(
         geometries = _select_geometries(city_object.geometries, options.lod)
         if not geometries:
             continue
+        for geometry in geometries:
+            if geometry.type not in AREAL_GEOMETRY_TYPES:
+                raise UnsupportedGeometryError(
+                    f"city object {city_object.id!r} has geometry type {geometry.type!r}, "
+                    f"which is not areal; supported types are "
+                    f"{', '.join(sorted(AREAL_GEOMETRY_TYPES))}"
+                )
         if options.strategy is LoadStrategy.SEMANTIC_SURFACES:
             rows.extend(_semantic_surface_rows(city_object, geometries, model, options))
         else:

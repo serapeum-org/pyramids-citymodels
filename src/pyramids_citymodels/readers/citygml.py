@@ -47,21 +47,6 @@ _BOUNDARY_SURFACE_NAMES = frozenset(
     }
 )
 
-#: Local names of building attributes worth lifting onto the city object's attributes.
-_BUILDING_ATTRIBUTE_NAMES = frozenset(
-    {
-        "measuredHeight",
-        "class",
-        "function",
-        "usage",
-        "roofType",
-        "yearOfConstruction",
-        "storeysAboveGround",
-        "storeysBelowGround",
-        "name",
-    }
-)
-
 #: Building attributes coerced from text to a number so the IR carries the same types the
 #: CityJSON reader does (which keeps JSON ``float``/``int``), rather than raw strings (SF5).
 _FLOAT_BUILDING_ATTRIBUTES = frozenset({"measuredHeight"})
@@ -83,6 +68,24 @@ def _local(tag: Any) -> str:
     if not isinstance(tag, str):
         return ""
     return tag.rsplit("}", 1)[-1]
+
+
+def _detect_version(root: ElementTree.Element) -> str | None:
+    """Detect the CityGML version (``"1.0"`` / ``"2.0"`` / ``"3.0"``) from the namespace.
+
+    Reads the trailing segment of the first ``citygml`` namespace seen (e.g.
+    ``http://www.opengis.net/citygml/2.0`` or ``.../citygml/building/2.0`` → ``"2.0"``), so the
+    version is carried through the IR without hardcoding a release's assumptions (#13).
+    """
+    for element in root.iter():
+        tag = element.tag
+        if isinstance(tag, str) and tag.startswith("{"):
+            namespace = tag[1:].split("}", 1)[0]
+            if "citygml" in namespace.lower():
+                tail = namespace.rstrip("/").rsplit("/", 1)[-1]
+                if tail[:1].isdigit():
+                    return tail
+    return None
 
 
 def _gml_id(element: ElementTree.Element) -> str | None:
@@ -225,11 +228,19 @@ def _surfaces_from_polygon(
 
 
 def _collect_building_attributes(element: ElementTree.Element) -> dict[str, Any]:
-    """Lift known ``bldg`` attributes and generic ``gen`` attributes off a building element."""
+    """Lift a building's attributes off its direct children.
+
+    Every leaf (childless) element with text is captured under its local name, so unknown and
+    third-party **ADE** attributes survive rather than being dropped by a fixed whitelist (#13);
+    the known-numeric names are coerced to numbers to match the CityJSON reader's types. Elements
+    with child elements are structural (``boundedBy``, ``lod2Solid``, …) and skipped, except the
+    generic ``gen:*Attribute`` wrappers, which are read as name/value pairs below.
+    """
     attributes: dict[str, Any] = {}
     for child in element:
         local = _local(child.tag)
-        if local in _BUILDING_ATTRIBUTE_NAMES and child.text and child.text.strip():
+        is_leaf = len(child) == 0
+        if is_leaf and child.text and child.text.strip():
             text = child.text.strip()
             if local in _FLOAT_BUILDING_ATTRIBUTES:
                 attributes[local] = _coerce_number(text, float)
@@ -344,7 +355,7 @@ def parse_citygml(source: Any) -> CityModel:
                 anonymous += 1
             feature_ids[element] = identifier
 
-    model = CityModel(crs=crs, source_format="CityGML")
+    model = CityModel(crs=crs, source_format="CityGML", version=_detect_version(root))
 
     # Create a city object per feature, with parent/child links between a part and its building.
     for element, identifier in feature_ids.items():
