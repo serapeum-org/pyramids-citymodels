@@ -96,6 +96,32 @@ class TestCityGmlPassThroughAndVersion:
         )
         assert parse_citygml(xml).version == version
 
+    @pytest.mark.parametrize(
+        "xml",
+        [
+            "<root><child/></root>",  # no namespace at all
+            '<x:Thing xmlns:x="http://www.opengis.net/x"><x:a/></x:Thing>',  # non-citygml ns
+            '<x:Thing xmlns:x="http://www.opengis.net/citygml"/>',  # citygml ns, no version tail
+        ],
+    )
+    def test_version_is_none_without_a_versioned_citygml_namespace(
+        self, xml: str
+    ) -> None:
+        assert parse_citygml(xml).version is None
+
+    def test_empty_and_whitespace_leaf_attributes_are_skipped(self) -> None:
+        xml = f"""<core:CityModel {_NS}>
+          <core:cityObjectMember><bldg:Building gml:id="B">
+            <bldg:roofType>1000</bldg:roofType>
+            <bldg:empty/>
+            <bldg:blank>   </bldg:blank>
+          </bldg:Building></core:cityObjectMember>
+        </core:CityModel>"""
+        attributes = parse_citygml(xml).objects["B"].attributes
+        assert attributes["roofType"] == "1000"
+        assert "empty" not in attributes
+        assert "blank" not in attributes
+
 
 class TestUnsupportedGeometry:
     """A non-areal geometry type is rejected with a clear, catchable error."""
