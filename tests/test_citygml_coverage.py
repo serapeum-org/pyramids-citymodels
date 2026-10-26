@@ -279,3 +279,40 @@ class TestParseCityGml:
         assert isinstance(attributes["floors"], int)
         assert attributes["area"] == 12.5
         assert isinstance(attributes["area"], float)
+
+    def test_unparseable_numeric_attribute_falls_back_to_string(self) -> None:
+        """A numeric attribute whose text is not a number is kept as the raw string.
+
+        Test scenario:
+            A ``measuredHeight`` of ``"tall"`` cannot parse as float, so ``_coerce_number``
+            returns the original string rather than raising.
+        """
+        xml = f"""<core:CityModel {_NS}>
+          <core:cityObjectMember><bldg:Building gml:id="B">
+            <bldg:measuredHeight>tall</bldg:measuredHeight>
+          </bldg:Building></core:cityObjectMember>
+        </core:CityModel>"""
+        assert parse_citygml(xml).objects["B"].attributes["measuredHeight"] == "tall"
+
+    def test_linear_ring_from_gml_pos_elements(self) -> None:
+        """A ring expressed as repeated ``gml:pos`` (not ``posList``) is parsed to coordinates.
+
+        Test scenario:
+            A WallSurface polygon whose exterior ring uses three ``gml:pos`` elements yields a
+            three-point ring with 3D coordinates.
+        """
+        xml = f"""<core:CityModel {_NS}>
+          <core:cityObjectMember><bldg:Building gml:id="B">
+            <bldg:boundedBy><bldg:WallSurface>
+              <bldg:lod2MultiSurface><gml:MultiSurface><gml:surfaceMember>
+                <gml:Polygon><gml:exterior><gml:LinearRing>
+                  <gml:pos srsDimension="3">0 0 0</gml:pos>
+                  <gml:pos srsDimension="3">1 0 0</gml:pos>
+                  <gml:pos srsDimension="3">1 0 1</gml:pos>
+                </gml:LinearRing></gml:exterior></gml:Polygon>
+              </gml:surfaceMember></gml:MultiSurface></bldg:lod2MultiSurface>
+            </bldg:WallSurface></bldg:boundedBy>
+          </bldg:Building></core:cityObjectMember>
+        </core:CityModel>"""
+        ring = parse_citygml(xml).objects["B"].geometries[0].boundaries[0][0]
+        assert ring == [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 0.0, 1.0)]
