@@ -94,10 +94,20 @@ def _select_geometries(geometries: list[Geometry], lod: str | None) -> list[Geom
     return [g for g in geometries if lod_value(g) == highest]
 
 
+def _ring_key(coords: Any) -> tuple:
+    """A hashable, rounded key for a single ring's coordinates (closing point dropped)."""
+    return tuple(round(component, 6) for point in coords[:-1] for component in point)
+
+
 def _polygon_key(polygon: Polygon) -> tuple:
-    """A hashable key for de-duplicating identical polygons (rounded WKT of the exterior)."""
-    return tuple(
-        round(value, 6) for value in polygon.exterior.coords[:-1] for value in value
+    """A hashable key for de-duplicating identical polygons.
+
+    Covers the exterior ring **and every interior ring (hole)**, so two surfaces that share an
+    exterior boundary but differ in their holes do not collide and get one wrongly dropped (SF4).
+    """
+    return (
+        _ring_key(polygon.exterior.coords),
+        tuple(_ring_key(interior.coords) for interior in polygon.interiors),
     )
 
 

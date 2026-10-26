@@ -197,3 +197,30 @@ class TestToFeatureCollectionEdgeCases:
         footprint = to_feature_collection(mixed, strategy="footprint")
         assert len(footprint) == 1
         assert footprint.geometry.iloc[0].area == 1.0
+
+    def test_dedup_key_distinguishes_holes(self) -> None:
+        """A surface and the same exterior with a hole are distinct and both kept (SF4).
+
+        Test scenario:
+            Two roof surfaces share an exterior ring; one has an interior hole. The dedup key
+            must treat them as different so neither is wrongly dropped.
+        """
+        exterior = [(0.0, 0.0, 0.0), (2.0, 0.0, 0.0), (2.0, 2.0, 0.0), (0.0, 2.0, 0.0)]
+        hole = [(0.5, 0.5, 0.0), (1.0, 0.5, 0.0), (1.0, 1.0, 0.0), (0.5, 1.0, 0.0)]
+        solid_surface = [exterior]
+        holed_surface = [exterior, hole]
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[solid_surface, holed_surface],
+            semantics=[
+                SemanticSurface(type="RoofSurface"),
+                SemanticSurface(type="RoofSurface"),
+            ],
+            semantic_values=[0, 1],
+        )
+        model = _single_object_model(
+            CityObject(id="b", type="Building", geometries=[geometry])
+        )
+        result = to_feature_collection(model, strategy="semantic_surfaces")
+        assert len(result) == 2, "the holed surface must not collide with the solid one"
