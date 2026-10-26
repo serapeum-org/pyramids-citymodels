@@ -64,7 +64,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -1194,12 +1194,19 @@ the vector I/O here, which gives the stack two feature models that drift apart.<
 CityJSON and the related interchange formats — as <code>pyramids</code> objects. It owns file-format drivers;
 every GIS operation belongs upstream in <code>pyramids-core</code>.</strong></p>
 <ul>
-<li>Drivers are discovered by <code>pyramids-core</code> through the <code>pyramids.citymodel_drivers</code> <strong>entry-point
-  group</strong>. This package depends on <code>pyramids-core</code>; <code>pyramids-core</code> never imports this package.</li>
-<li>Each driver is a class declaring its <code>name</code>, <code>long_name</code>, <code>suffixes</code> and a <code>capabilities</code> set, and
-  implementing <code>can_open</code> plus the read/write methods the format supports. A driver whose optional
-  extra is absent raises at driver-module import, and the registry skips it with a warning, so a bare
-  install stays small and useful.</li>
+<li>Drivers are discovered by <code>pyramids-core</code> through the <code>pyramids.vector_drivers</code> <strong>entry-point
+  group</strong> — the group <code>pyramids.feature.FeatureCollection.read_file</code> consults (siblings are
+  <code>pyramids.raster_drivers</code> and <code>pyramids.mesh_drivers</code>). City models are vector features, so that is
+  the group; pyramids has no city-model-specific consumer, and a driver registered under any other
+  group would never be discovered. This package depends on <code>pyramids-core</code>; <code>pyramids-core</code> never
+  imports this package.</li>
+<li>Each driver is a <code>VectorDriver</code> class declaring <code>name</code>, <code>long_name</code>, <code>api_version</code>, <code>suffixes</code>,
+  <code>schemes</code>, a <code>capabilities</code> set (containing <code>read</code>) and an optional <code>extra</code>, and implementing the
+  <code>can_open</code> classmethod plus the read/write methods the format supports. pyramids reads those claims
+  without constructing the driver and builds it only on a dispatched read, so a driver's heavy backend
+  import belongs inside <code>read</code>, not at module top. When a driver's <code>extra</code> dependency is not
+  importable the registry skips it <strong>silently</strong> at discovery (no warning), so a bare install stays
+  small and useful.</li>
 <li>Dependency-backed driver families live behind extras (one per family), added when the driver that
   needs one lands. Formats GDAL already reads (CityGML travels through GDAL's GML driver) use the
   vendored osgeo in the <code>pyramids-core</code> wheel rather than taking a new dependency.</li>
