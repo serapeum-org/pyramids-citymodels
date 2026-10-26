@@ -77,6 +77,14 @@ def _gml_id(element: ElementTree.Element) -> str | None:
     return None
 
 
+def _href(element: ElementTree.Element) -> str | None:
+    """The ``xlink:href`` of an element, matched by local name, with any leading ``#`` stripped."""
+    for key, value in element.attrib.items():
+        if _local(key) == "href":
+            return value.lstrip("#")
+    return None
+
+
 def looks_like_citygml(source: Any) -> bool:
     """Return ``True`` when ``source`` is a CityGML document.
 
@@ -313,6 +321,15 @@ def parse_citygml(source: Any) -> CityModel:
         if parent_feature_id:
             model.objects[parent_feature_id].children.append(identifier)
 
+    # Index every polygon by its gml:id so a boundary surface that references its geometry by
+    # xlink:href (shared-geometry / XLink graph) can resolve it instead of silently dropping it.
+    polygons_by_id: dict[str, ElementTree.Element] = {}
+    for node in root.iter():
+        if _local(node.tag) == "Polygon":
+            polygon_id = _gml_id(node)
+            if polygon_id:
+                polygons_by_id[polygon_id] = node
+
     # Gather boundary surfaces, attributing each to its nearest feature and tagging its semantics.
     surfaces_by_feature: dict[
         str, tuple[list[Any], list[SemanticSurface], list[int]]
@@ -325,9 +342,18 @@ def parse_citygml(source: Any) -> CityModel:
         if feature_id is None:
             continue
         boundaries, semantics, values = surfaces_by_feature[feature_id]
-        for polygon in element.iter():
-            if _local(polygon.tag) != "Polygon":
+        seen: set[int] = set()
+        for node in element.iter():
+            polygon: ElementTree.Element | None = None
+            if _local(node.tag) == "Polygon":
+                polygon = node
+            else:
+                referenced = _href(node)
+                if referenced:
+                    polygon = polygons_by_id.get(referenced)
+            if polygon is None or id(polygon) in seen:
                 continue
+            seen.add(id(polygon))
             surface = _surfaces_from_polygon(polygon, default_dimension)
             if not surface or len(surface[0]) < 3:
                 continue

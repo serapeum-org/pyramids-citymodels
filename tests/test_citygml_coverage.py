@@ -188,3 +188,34 @@ class TestParseCityGml:
         </core:CityModel>"""
         model = parse_citygml(xml)
         assert model.objects == {}
+
+    def test_xlink_referenced_geometry_is_resolved(self) -> None:
+        """A boundary surface whose geometry is an ``xlink:href`` is resolved, not dropped (SF3).
+
+        Test scenario:
+            The WallSurface references a shared polygon by ``xlink:href`` (the polygon is defined
+            in the building's solid, not inline under the surface). The surface must still carry
+            the referenced geometry.
+        """
+        xlink = 'xmlns:xlink="http://www.w3.org/1999/xlink"'
+        xml = f"""<core:CityModel {_NS} {xlink}>
+          <core:cityObjectMember><bldg:Building gml:id="B">
+            <bldg:boundedBy><bldg:WallSurface>
+              <bldg:lod2MultiSurface><gml:MultiSurface>
+                <gml:surfaceMember xlink:href="#shared_poly"/>
+              </gml:MultiSurface></bldg:lod2MultiSurface>
+            </bldg:WallSurface></bldg:boundedBy>
+            <bldg:lod2Solid><gml:Solid><gml:exterior><gml:CompositeSurface>
+              <gml:surfaceMember><gml:Polygon gml:id="shared_poly"><gml:exterior>
+                <gml:LinearRing>
+                  <gml:posList srsDimension="3">0 0 0 1 0 0 1 0 1</gml:posList>
+                </gml:LinearRing>
+              </gml:exterior></gml:Polygon></gml:surfaceMember>
+            </gml:CompositeSurface></gml:exterior></gml:Solid></bldg:lod2Solid>
+          </bldg:Building></core:cityObjectMember>
+        </core:CityModel>"""
+        model = parse_citygml(xml)
+        geometries = model.objects["B"].geometries
+        assert len(geometries) == 1, "the href-referenced wall surface must be resolved"
+        assert geometries[0].semantics[0].type == "WallSurface"
+        assert len(geometries[0].boundaries) == 1
