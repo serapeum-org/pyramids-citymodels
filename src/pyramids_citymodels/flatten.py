@@ -227,9 +227,16 @@ def to_feature_collection(
         model: The parsed city model.
         strategy: ``"footprint"`` (one row per object) or ``"semantic_surfaces"`` (one row per
             boundary surface). Accepts a :class:`~pyramids_citymodels.options.LoadStrategy`.
-        lod: Level of detail to select; ``None`` takes the highest each object offers.
+        lod: Level of detail to select; ``None`` takes the highest each object offers. An explicit
+            ``lod`` that no object carries selects nothing and yields an **empty** FeatureCollection
+            (no error) — pass ``None`` to always get the best available.
         geometry_dimension: ``"xyz"`` keeps Z, ``"xy"`` drops it. Ignored for ``footprint``.
         child_inherits_parent_attributes: When ``True``, child rows also carry parent attributes.
+
+    Note:
+        The structural columns ``city_object_id``, ``city_object_type``, ``parent_id``, ``lod``,
+        ``surface_type`` and ``surface_index`` take precedence: a city-object attribute that happens
+        to share one of these names is overwritten by the structural value in the output table.
 
     Returns:
         A :class:`pyramids.feature.FeatureCollection` in the model's CRS, with a stable column
