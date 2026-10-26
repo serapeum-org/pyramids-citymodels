@@ -112,6 +112,14 @@ class TestLooksLikeCityGml:
         """A source of an unreadable type returns ``False`` (the TypeError is swallowed)."""
         assert looks_like_citygml(12345) is False
 
+    def test_bytes_source_is_accepted_like_read(self) -> None:
+        """``looks_like_citygml`` accepts ``bytes``, agreeing with what ``parse_citygml`` reads (INF5).
+
+        Test scenario:
+            The fixture read as raw bytes is still recognized as CityGML.
+        """
+        assert looks_like_citygml(CITYGML.read_bytes()) is True
+
     def test_plain_gml_with_a_building_is_not_claimed(self) -> None:
         """A non-CityGML GML document that merely contains a ``Building`` is declined (SF2).
 

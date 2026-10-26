@@ -17,6 +17,7 @@ object, linked to its parent building.
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
+import io
 import os
 from typing import Any
 from xml.etree import ElementTree
@@ -142,11 +143,15 @@ def _iterparse_start(source: Any, limit: int | None = None):
         iterator = ElementTree.iterparse(source, events=("start",))
     elif hasattr(source, "read"):
         iterator = ElementTree.iterparse(source, events=("start",))
+    elif isinstance(source, (bytes, bytearray)):
+        # Accept bytes too, so can_open agrees with read/_read_tree on what it can sniff (INF5).
+        iterator = ElementTree.iterparse(io.BytesIO(source), events=("start",))
     elif isinstance(source, str):
         root = ElementTree.fromstring(source)
-        yield ("start", root)
-        for element in root.iter():
+        for index, element in enumerate(root.iter()):
             yield ("start", element)
+            if limit is not None and index + 1 >= limit:
+                return
         return
     else:
         raise TypeError(f"cannot read CityGML from {type(source).__name__}")
