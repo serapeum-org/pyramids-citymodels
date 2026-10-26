@@ -97,7 +97,11 @@ def looks_like_citygml(source: Any) -> bool:
     try:
         for _event, element in _iterparse_start(source, limit=200):
             tag = _local(element.tag)
-            if tag in ("CityModel", "cityObjectMember", "Building"):
+            # ``CityModel`` / ``cityObjectMember`` are CityGML-specific element names; ``Building``
+            # is deliberately NOT a marker, because a plain (non-CityGML) GML feature collection can
+            # carry a ``Building`` and must not be hijacked from OGR (SF2). A ``bldg``-namespaced
+            # Building is still recognized below, since its namespace contains ``citygml``.
+            if tag in ("CityModel", "cityObjectMember"):
                 return True
             namespace = (
                 element.tag[1:].split("}", 1)[0] if element.tag.startswith("{") else ""

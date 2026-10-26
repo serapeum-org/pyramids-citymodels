@@ -112,6 +112,19 @@ class TestLooksLikeCityGml:
         """A source of an unreadable type returns ``False`` (the TypeError is swallowed)."""
         assert looks_like_citygml(12345) is False
 
+    def test_plain_gml_with_a_building_is_not_claimed(self) -> None:
+        """A non-CityGML GML document that merely contains a ``Building`` is declined (SF2).
+
+        Test scenario:
+            A ``gml``-namespaced ``Building`` (no CityGML namespace) must not be sniffed as
+            CityGML, or it would hijack plain GML once the registry dispatches.
+        """
+        xml = (
+            '<gml:FeatureCollection xmlns:gml="http://www.opengis.net/gml">'
+            "<gml:featureMember><gml:Building/></gml:featureMember></gml:FeatureCollection>"
+        )
+        assert looks_like_citygml(xml) is False
+
 
 class TestParseCityGml:
     """Tests for ``parse_citygml`` source handling and degenerate inputs."""
