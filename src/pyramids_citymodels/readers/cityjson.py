@@ -33,11 +33,18 @@ __all__ = ["looks_like_cityjson", "parse_cityjson"]
 
 
 def _load(source: Any) -> Any:
-    """Return the decoded JSON from a path, an open file, a string or an already-decoded dict."""
+    """Return the decoded JSON from a path, an open file, a JSON string or a decoded dict.
+
+    A ``str`` whose first non-space character is ``{`` is treated as JSON content; any other
+    ``str`` (and any :class:`os.PathLike`) is treated as a filesystem path. This mirrors the
+    content-or-path handling of the CityGML reader.
+    """
     if isinstance(source, dict):
         return source
     if hasattr(source, "read"):
         return json.load(source)
+    if isinstance(source, str) and source.lstrip().startswith("{"):
+        return json.loads(source)
     if isinstance(source, (str, os.PathLike)):
         with open(source, encoding="utf-8") as handle:
             return json.load(handle)
@@ -51,6 +58,23 @@ def looks_like_cityjson(source: Any) -> bool:
     bare ``.json`` file: a GeoJSON ``FeatureCollection`` has ``"type": "FeatureCollection"``, a
     CityJSON file has ``"type": "CityJSON"``. Reading is cheap and never raises — a file that is
     not JSON, or not a JSON object, simply returns ``False``.
+
+    Examples:
+        - A CityJSON document is recognized, a GeoJSON one sharing the suffix is not:
+            ```python
+            >>> doc = '{"type": "CityJSON", "version": "2.0", "CityObjects": {}, "vertices": []}'
+            >>> looks_like_cityjson(doc)
+            True
+            >>> looks_like_cityjson('{"type": "FeatureCollection", "features": []}')
+            False
+
+            ```
+        - Content that is not JSON at all is declined without raising:
+            ```python
+            >>> looks_like_cityjson("not json at all")
+            False
+
+            ```
     """
     try:
         document = _load(source)
@@ -120,6 +144,25 @@ def parse_cityjson(source: Any) -> CityModel:
 
     Raises:
         ValueError: If the document is not a CityJSON object.
+
+    Examples:
+        - Parse an in-memory CityJSON document, then read its object and a transformed coordinate
+          (the ``transform`` turns the quantized index ``1`` into the real point ``(1.0, 0.0, 0.0)``):
+            ```python
+            >>> doc = {
+            ...     "type": "CityJSON", "version": "2.0",
+            ...     "transform": {"scale": [0.001, 0.001, 0.001], "translate": [0.0, 0.0, 0.0]},
+            ...     "CityObjects": {"b": {"type": "Building", "geometry": [
+            ...         {"type": "MultiSurface", "lod": "2", "boundaries": [[[0, 1, 2]]],
+            ...          "semantics": {"surfaces": [{"type": "RoofSurface"}], "values": [0]}}]}},
+            ...     "vertices": [[0, 0, 0], [1000, 0, 0], [1000, 1000, 0]]}
+            >>> model = parse_cityjson(doc)
+            >>> model.objects["b"].geometries[0].semantics[0].type
+            'RoofSurface'
+            >>> model.objects["b"].geometries[0].boundaries[0][0][1]
+            (1.0, 0.0, 0.0)
+
+            ```
     """
     document = _load(source)
     if not (isinstance(document, dict) and document.get("type") == "CityJSON"):

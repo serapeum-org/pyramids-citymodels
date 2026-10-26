@@ -223,6 +223,24 @@ def iter_surfaces(
     Yields:
         ``(surface, semantic_value)`` where ``surface`` is a list of rings and ``semantic_value``
         is the matching leaf of ``semantic_values`` (an ``int`` index or ``None``).
+
+    Examples:
+        - Walk a ``MultiSurface`` and read each surface's semantic value:
+            ```python
+            >>> surface_a = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+            >>> surface_b = [[(0.0, 0.0, 1.0), (1.0, 0.0, 1.0), (1.0, 1.0, 1.0)]]
+            >>> [value for _surface, value in iter_surfaces([surface_a, surface_b], [0, 1])]
+            [0, 1]
+
+            ```
+        - Descend a ``Solid``'s shell to reach its surfaces, nesting the values in step:
+            ```python
+            >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+            >>> pairs = list(iter_surfaces([[surface, surface]], [[7, 9]]))
+            >>> [value for _surface, value in pairs]
+            [7, 9]
+
+            ```
     """
     if _is_surface(boundaries):
         yield boundaries, semantic_values

@@ -54,8 +54,16 @@ def test_parse_accepts_a_preloaded_dict() -> None:
     assert "bldg1" in model.objects
 
 
+def test_parse_accepts_a_json_content_string() -> None:
+    text = CITYJSON.read_text(encoding="utf-8")
+    model = parse_cityjson(text)
+    assert "bldg1" in model.objects
+
+
 def test_looks_like_cityjson_distinguishes_from_geojson() -> None:
     assert looks_like_cityjson(CITYJSON) is True
     geojson = '{"type": "FeatureCollection", "features": []}'
     assert looks_like_cityjson(geojson) is False
     assert looks_like_cityjson("not json at all") is False
+    # A CityJSON content string (not a path) is also recognized.
+    assert looks_like_cityjson(CITYJSON.read_text(encoding="utf-8")) is True

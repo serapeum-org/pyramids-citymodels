@@ -83,6 +83,16 @@ def looks_like_citygml(source: Any) -> bool:
     Sniffs the XML for a CityGML namespace or a ``CityModel`` / ``cityObjectMember`` element, so
     the driver's ``can_open`` claims real CityGML and declines a plain GML or arbitrary XML file.
     Never raises — a non-XML or unreadable file returns ``False``.
+
+    Examples:
+        - A CityGML-namespaced document is recognized; plain XML is declined:
+            ```python
+            >>> looks_like_citygml('<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0"/>')
+            True
+            >>> looks_like_citygml("<root><child/></root>")
+            False
+
+            ```
     """
     try:
         for _event, element in _iterparse_start(source, limit=200):
@@ -233,6 +243,29 @@ def parse_citygml(source: Any) -> CityModel:
         A city model with one :class:`~pyramids_citymodels.ir.CityObject` per ``Building`` and per
         ``BuildingPart``; each carries a single ``"MultiSurface"`` geometry whose surfaces are its
         boundary polygons, tagged with their boundary-surface semantic type.
+
+    Examples:
+        - Parse an in-memory CityGML building and read its reconstructed semantic surface:
+            ```python
+            >>> xml = '''<core:CityModel
+            ...   xmlns:core="http://www.opengis.net/citygml/2.0"
+            ...   xmlns:bldg="http://www.opengis.net/citygml/building/2.0"
+            ...   xmlns:gml="http://www.opengis.net/gml">
+            ...   <core:cityObjectMember><bldg:Building gml:id="B">
+            ...     <bldg:boundedBy><bldg:RoofSurface>
+            ...       <bldg:lod2MultiSurface><gml:MultiSurface><gml:surfaceMember>
+            ...         <gml:Polygon><gml:exterior><gml:LinearRing>
+            ...           <gml:posList srsDimension="3">0 0 1 1 0 1 1 1 1</gml:posList>
+            ...         </gml:LinearRing></gml:exterior></gml:Polygon>
+            ...       </gml:surfaceMember></gml:MultiSurface></bldg:lod2MultiSurface>
+            ...     </bldg:RoofSurface></bldg:boundedBy>
+            ...   </bldg:Building></core:cityObjectMember>
+            ... </core:CityModel>'''
+            >>> model = parse_citygml(xml)
+            >>> model.objects["B"].geometries[0].semantics[0].type
+            'RoofSurface'
+
+            ```
     """
     root = _read_tree(source)
     parent_of = {child: parent for parent in root.iter() for child in parent}

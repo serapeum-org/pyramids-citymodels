@@ -212,6 +212,24 @@ def to_feature_collection(
     Returns:
         A :class:`pyramids.feature.FeatureCollection` in the model's CRS, with a stable column
         order; empty (but still a valid FeatureCollection) when the model has no usable geometry.
+
+    Examples:
+        - Flatten a one-building model into one row per semantic surface and read it back:
+            ```python
+            >>> from pyramids_citymodels.readers.cityjson import parse_cityjson
+            >>> doc = {
+            ...     "type": "CityJSON", "version": "2.0",
+            ...     "CityObjects": {"b": {"type": "Building", "geometry": [
+            ...         {"type": "MultiSurface", "lod": "2", "boundaries": [[[0, 1, 2]]],
+            ...          "semantics": {"surfaces": [{"type": "RoofSurface"}], "values": [0]}}]}},
+            ...     "vertices": [[0, 0, 0], [1, 0, 0], [1, 1, 0]]}
+            >>> frame = to_feature_collection(parse_cityjson(doc), strategy="semantic_surfaces")
+            >>> len(frame)
+            1
+            >>> frame["surface_type"].iloc[0]
+            'RoofSurface'
+
+            ```
     """
     options = ReadOptions.coerce(
         strategy=strategy,

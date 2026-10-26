@@ -35,6 +35,16 @@ class CityJsonDriver:
 
         Content-sniffs ``"type": "CityJSON"`` rather than trusting the ``.json`` suffix, so a
         GeoJSON file sharing that suffix is declined. Never raises.
+
+        Examples:
+            - CityJSON is claimed; GeoJSON sharing the ``.json`` suffix is declined:
+                ```python
+                >>> CityJsonDriver.can_open('{"type": "CityJSON", "CityObjects": {}, "vertices": []}')
+                True
+                >>> CityJsonDriver.can_open('{"type": "FeatureCollection", "features": []}')
+                False
+
+                ```
         """
         from pyramids_citymodels.readers.cityjson import looks_like_cityjson
 
@@ -48,6 +58,20 @@ class CityJsonDriver:
             lod: Level of detail to select; ``None`` takes the highest present.
             geometry_dimension: ``"xyz"`` (default) keeps Z, ``"xy"`` drops it.
             child_inherits_parent_attributes: Whether child rows carry parent attributes.
+
+        Examples:
+            - Read an in-memory CityJSON document into a FeatureCollection:
+                ```python
+                >>> doc = {
+                ...     "type": "CityJSON", "version": "2.0",
+                ...     "CityObjects": {"b": {"type": "Building", "geometry": [
+                ...         {"type": "MultiSurface", "lod": "2", "boundaries": [[[0, 1, 2]]]}]}},
+                ...     "vertices": [[0, 0, 0], [1, 0, 0], [1, 1, 0]]}
+                >>> frame = CityJsonDriver().read(doc)
+                >>> len(frame)
+                1
+
+                ```
         """
         from pyramids_citymodels.flatten import to_feature_collection
         from pyramids_citymodels.readers.cityjson import parse_cityjson
