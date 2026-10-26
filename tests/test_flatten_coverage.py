@@ -156,3 +156,44 @@ class TestToFeatureCollectionEdgeCases:
         result = to_feature_collection(model, strategy="footprint")
         assert len(result) == 1
         assert result.geometry.iloc[0].geom_type == "MultiPolygon"
+
+    def test_footprint_excludes_non_areal_walls(self) -> None:
+        """A vertical wall (valid 3D, zero 2D area) does not pollute a plan-view footprint (SF1).
+
+        Test scenario:
+            A wall-only object yields no footprint row, and a ground+wall object yields a
+            footprint equal to the ground alone (area 1.0), not a degenerate union.
+        """
+        wall = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 0.0, 1.0), (0.0, 0.0, 1.0)]]
+        ground = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]]
+
+        wall_only = _single_object_model(
+            CityObject(
+                id="w",
+                type="Building",
+                geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[wall])],
+            )
+        )
+        assert len(to_feature_collection(wall_only, strategy="footprint")) == 0
+
+        mixed = _single_object_model(
+            CityObject(
+                id="m",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[ground, wall],
+                        semantics=[
+                            SemanticSurface(type="GroundSurface"),
+                            SemanticSurface(type="WallSurface"),
+                        ],
+                        semantic_values=[0, 1],
+                    )
+                ],
+            )
+        )
+        footprint = to_feature_collection(mixed, strategy="footprint")
+        assert len(footprint) == 1
+        assert footprint.geometry.iloc[0].area == 1.0

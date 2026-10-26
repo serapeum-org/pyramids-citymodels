@@ -169,7 +169,10 @@ def _footprint_row(
             geometry.boundaries, geometry.semantic_values
         ):
             polygon = _polygon(surface, keep_z=False)
-            if polygon is None:
+            if polygon is None or polygon.area == 0.0:
+                # A footprint is a plan projection; a non-areal surface (a vertical wall
+                # projects to a line, area 0) is not part of it and would only pollute the
+                # union with degenerate, invalid geometry (SF1).
                 continue
             everything.append(polygon)
             semantic = geometry.semantic_for(semantic_value)
