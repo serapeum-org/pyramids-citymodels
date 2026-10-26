@@ -54,8 +54,8 @@ repos:
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # ruff replaces black + isort + flake8 + pydocstyle; its config is [tool.ruff] in
-    # pyproject.toml. Keep this rev in step with the `ruff` pin in the dev group.
-    rev: v0.15.22
+    # pyproject.toml. Keep this rev == the exact `ruff` pin in the dev group.
+    rev: v0.17.2
     hooks:
       - id: ruff-check
         name: "[py   -   lint] ruff"

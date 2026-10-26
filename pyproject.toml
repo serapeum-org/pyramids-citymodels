@@ -72,10 +72,10 @@ dev = [
     "types-PyYAML>=6.0.0",
     "pytest-mock>=3.12.0",
     # ruff replaces black + isort + flake8 + pydocstyle (lint + format in one tool),
-    # matching the parent pyramids. Keep this pin in step with the `ruff-pre-commit`
-    # rev in `.pre-commit-config.yaml`, so `pixi run -e dev ruff {check,format}`
-    # locally matches what the hook and CI enforce.
-    "ruff>=0.15.22"
+    # matching the parent pyramids. Pinned exactly and kept in step with the
+    # `ruff-pre-commit` rev in `.pre-commit-config.yaml`, so `pixi run -e dev ruff
+    # {check,format}` locally matches byte-for-byte what the hook and CI enforce.
+    "ruff==0.17.2"
 ]
 docs = [
     "mkdocs >=1.5.3",
