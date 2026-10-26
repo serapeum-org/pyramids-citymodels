@@ -64,7 +64,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -1613,10 +1613,14 @@ pyramids_citymodels.__version__</div>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">cityjson</span> <span class="o">=</span> <span class="n">CityJsonDriver</span><span class="p">()</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">DATA</span> <span class="o">/</span> <span class="s2">"building.city.json"</span><span class="p">,</span> <span class="n">strategy</span><span class="o">=</span><span class="s2">"semantic_surfaces"</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">cityjson</span> <span class="o">=</span> <span class="n">CityJsonDriver</span><span class="p">()</span><span class="o">.</span><span class="n">read</span><span class="p">(</span>
+    <span class="n">DATA</span> <span class="o">/</span> <span class="s2">"building.city.json"</span><span class="p">,</span> <span class="n">strategy</span><span class="o">=</span><span class="s2">"semantic_surfaces"</span>
+<span class="p">)</span>
 <span class="n">cityjson</span><span class="p">[[</span><span class="s2">"city_object_id"</span><span class="p">,</span> <span class="s2">"surface_type"</span><span class="p">,</span> <span class="s2">"lod"</span><span class="p">]]</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-2">cityjson = CityJsonDriver().read(DATA / "building.city.json", strategy="semantic_surfaces")
+<div class="clipboard-copy-txt" id="cell-2">cityjson = CityJsonDriver().read(
+    DATA / "building.city.json", strategy="semantic_surfaces"
+)
 cityjson[["city_object_id", "surface_type", "lod"]]</div>
 </div>
 </div>
