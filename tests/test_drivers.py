@@ -2,6 +2,7 @@
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 
+import importlib
 import tomllib
 from pathlib import Path
 
@@ -23,8 +24,11 @@ def test_drivers_declare_the_class_attribute_contract() -> None:
         assert driver.api_version == 1
         assert isinstance(driver.suffixes, tuple) and driver.suffixes
         assert "read" in driver.capabilities
-        # Claims are readable without constructing the driver (discovery never builds it).
-        assert "read" in type(driver).__dict__.get("capabilities", driver.capabilities)
+        # Claims live on the driver class itself (discovery reads them without constructing it);
+        # check the class __dict__, not the metaclass, and that can_open is a classmethod.
+        assert "capabilities" in driver.__dict__
+        assert "can_open" in driver.__dict__
+        assert isinstance(driver.__dict__["can_open"], classmethod)
 
 
 def test_cityjson_can_open_sniffs_content_not_suffix() -> None:
@@ -70,3 +74,16 @@ def test_entry_points_registered_under_vector_drivers_group() -> None:
     assert (
         entry_points["citygml"] == "pyramids_citymodels.drivers.citygml:CityGmlDriver"
     )
+
+
+def test_declared_entry_point_targets_import_and_resolve() -> None:
+    """Each declared entry-point target string actually imports and resolves to a driver class
+    with the contract members (INF9a) — not just a string present in the TOML."""
+    config = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    entry_points = config["project"]["entry-points"]["pyramids.vector_drivers"]
+    for target in entry_points.values():
+        module_path, _, attribute = target.partition(":")
+        resolved = getattr(importlib.import_module(module_path), attribute)
+        assert isinstance(resolved, type), f"{target} should resolve to a class"
+        assert "read" in resolved.capabilities
+        assert callable(resolved.can_open)
