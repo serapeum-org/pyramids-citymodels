@@ -84,8 +84,19 @@ def looks_like_cityjson(source: Any) -> bool:
 
 
 def _dereference(element: Any, vertices: list[tuple[float, ...]]) -> Any:
-    """Replace every vertex index in a boundaries structure with its coordinate tuple."""
+    """Replace every vertex index in a boundaries structure with its coordinate tuple.
+
+    Raises:
+        ValueError: If a boundary references a vertex index outside ``vertices`` (negative or
+            past the end), rather than letting a bare ``IndexError`` or a silently-wrapped
+            negative index escape (INF3).
+    """
     if isinstance(element, int):
+        if not 0 <= element < len(vertices):
+            raise ValueError(
+                f"CityJSON boundary references vertex index {element} out of range "
+                f"(0..{len(vertices) - 1})"
+            )
         return vertices[element]
     return [_dereference(child, vertices) for child in element]
 

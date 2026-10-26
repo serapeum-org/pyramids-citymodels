@@ -5,6 +5,8 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 import json
 from pathlib import Path
 
+import pytest
+
 from pyramids_citymodels.readers.cityjson import looks_like_cityjson, parse_cityjson
 
 DATA = Path(__file__).parent / "data"
@@ -52,6 +54,24 @@ def test_parse_accepts_a_preloaded_dict() -> None:
     document = json.loads(CITYJSON.read_text(encoding="utf-8"))
     model = parse_cityjson(document)
     assert "bldg1" in model.objects
+
+
+def test_parse_rejects_out_of_range_vertex_index() -> None:
+    document = {
+        "type": "CityJSON",
+        "version": "2.0",
+        "CityObjects": {
+            "b": {
+                "type": "Building",
+                "geometry": [
+                    {"type": "MultiSurface", "lod": "2", "boundaries": [[[0, 1, 9]]]}
+                ],
+            }
+        },
+        "vertices": [[0, 0, 0], [1, 0, 0], [1, 1, 0]],
+    }
+    with pytest.raises(ValueError, match="out of range"):
+        parse_cityjson(document)
 
 
 def test_parse_accepts_a_json_content_string() -> None:
