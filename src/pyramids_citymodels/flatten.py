@@ -14,6 +14,15 @@ Z is kept or dropped per :class:`~pyramids_citymodels.options.GeometryDimension`
 always 2D). Identical polygons within one object are de-duplicated, which collapses the common
 XLink case where one polygon is referenced by both a semantic surface and a solid shell.
 
+**Surface geometries are planar polygons in 3D (2.5D).** A building's *vertical* surface — a wall —
+is a real polygon in 3D space whose projection onto the XY plane is a straight line. Shapely
+measures validity and area on that XY footprint only, so a wall row is deliberately **non-areal**:
+``is_valid`` is ``False`` and ``area`` is ``0`` for it, while roofs and ground (near-horizontal) are
+valid with positive area. This is the documented ``semantic_surfaces`` contract, not a defect —
+operate on the surfaces in 3D (the Z is preserved in ``xyz`` mode), and treat 2D-areal operations
+(overlay, area, ``to_file`` of a 2D driver) as meaningful only for the horizontal surfaces or for a
+``footprint`` load. The footprint load, being a plan projection, excludes these non-areal surfaces.
+
 The result is a :class:`pyramids.feature.FeatureCollection` — a GeoDataFrame subclass — so it
 flows straight into the rest of the pyramids stack; this module builds no GIS of its own.
 """
