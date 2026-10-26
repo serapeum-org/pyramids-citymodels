@@ -52,31 +52,16 @@ repos:
         # then stops the rest of them.
         args: [ --unsafe ]
 
-  - repo: https://github.com/PyCQA/pydocstyle
-    rev: 6.3.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # ruff replaces black + isort + flake8 + pydocstyle; its config is [tool.ruff] in
+    # pyproject.toml. Keep this rev == the exact `ruff` pin in the dev group.
+    rev: v0.17.2
     hooks:
-      - id: pydocstyle
-        name: "[py   - check] pydocstyle"
-        # The src-layout path, not a bare package path: the package lives at
-        # `src/pyramids_citymodels/`, so a `^pyramids_citymodels/` pattern matches
-        # nothing and the hook silently passes on every file.
-        files: ^src/pyramids_citymodels/
-
-  - repo: https://github.com/pycqa/flake8
-    rev: 7.1.1
-    hooks:
-      - id: flake8
-        additional_dependencies: [Flake8-pyproject]
-        name: "[py   - check] flake8"
-        exclude: ^(examples/|tests/)
-
-  - repo: https://github.com/ambv/black
-    # Keep in step with the `black==` pin in pyproject.toml's dev group; see the
-    # comment there for why it may not go below 26.3.1.
-    rev: 26.10.1
-    hooks:
-      - id: black
-        name: "[py   - format] black"
+      - id: ruff-check
+        name: "[py   -   lint] ruff"
+        args: [--fix]
+      - id: ruff-format
+        name: "[py   - format] ruff-format"
 
   - repo: https://github.com/lovesegfault/beautysh
     rev: v6.2.1
@@ -106,6 +91,20 @@ repos:
         name: "[bash -   format] check-summary-max-length"
       - id: check-summary-punctuation
         name: "[bash -   format] check-summary-punctuation"
+
+  # mypy runs inside the pixi `dev` environment (the package must be importable and its
+  # [tool.mypy] config resolved). `--frozen` uses pixi.lock as-is instead of re-solving
+  # every platform on each run. Unlike the three hooks below, this one is NOT skipped in
+  # CI (see lint.yml) — it is the type-check gate.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: "[py   -  type] mypy"
+        entry: pixi run --frozen -e dev mypy
+        language: system
+        pass_filenames: false
+        always_run: true
+        types: [python]
 
   - repo: local
     hooks:

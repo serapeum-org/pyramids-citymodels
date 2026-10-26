@@ -24,7 +24,7 @@ What this package adds — **file-format drivers for 3D city models, and nothing
 - **Readers** for the native exchange formats of 3D city modelling: CityGML, CityJSON, and the
   related tiled/interchange formats as they land.
 - **Writers** for the formats that support a faithful round-trip.
-- **Discovery** through the `pyramids.citymodel_drivers` entry-point group, so a read of a
+- **Discovery** through the `pyramids.vector_drivers` entry-point group, so a read of a
   city-model file resolves to the driver that claims it once this package is installed.
 
 Every GIS *operation* belongs upstream in `pyramids-core`. A driver parses a file and builds

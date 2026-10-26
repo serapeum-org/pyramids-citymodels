@@ -3,10 +3,11 @@
 The API surface of `pyramids_citymodels`, generated from the docstrings by
 [mkdocstrings](https://mkdocstrings.github.io/).
 
-What this package publishes is **drivers**, not an API you call directly. A driver is registered
-with `pyramids-core` through the `pyramids.citymodel_drivers` entry-point group, so installing this
-package is the whole integration: `pyramids` then dispatches a read of a city-model format it does
-not handle itself to the driver that claims it.
+What this package publishes is **drivers**, not an API you call directly. A driver is a
+`VectorDriver` class registered with `pyramids-core` through the `pyramids.vector_drivers`
+entry-point group (the group `FeatureCollection.read_file` consults — city models are vector
+features), so installing this package is the whole integration: `pyramids` then dispatches a read
+of a city-model format it does not handle itself to the driver that claims it.
 
 The scaffold registers no drivers yet. As each one lands it is listed here with its own page — its
 suffixes, capabilities and documented limitations — and the table below fills in:

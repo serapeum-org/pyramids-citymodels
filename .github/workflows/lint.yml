@@ -19,11 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      # Mirrors pyramids-eo: the dev pixi env is set up so any hook that shells
-      # back into the project has it available. The three `language: system`
-      # hooks (pytest-check, doctest, notebook-check) are skipped below, so the
-      # env is not activated here; the formatters and linters run in pre-commit's
-      # own isolated environments and read their config from pyproject.toml.
+      # The dev pixi env is set up because the `mypy` hook shells into it
+      # (`pixi run --frozen -e dev mypy`) — it needs the typed deps and an importable
+      # package. The other three `language: system` hooks (pytest-check, doctest,
+      # notebook-check) are skipped below; ruff runs in pre-commit's own isolated
+      # environment and reads its config from pyproject.toml.
       - name: Set up pixi dev env
         uses: serapeum-org/github-actions/actions/python-setup/pixi@38c111084f99d5ff5f4a1e63bedce48fe33a10c0  # pixi/v1.2.1
         with:
@@ -51,9 +51,11 @@ jobs:
           # pytest-check and notebook-check duplicate the `tests.yml` matrix on a
           # single runner, and `doctest` is the `static` job below — all three are
           # `language: system` hooks that would run against the runner's bare
-          # Python, where neither pyramids nor this package is installed.
-          # no-commit-to-branch and gitleaks match pyramids-eo's skip set (this
-          # repo has neither hook yet, so they are harmless no-ops until added).
+          # Python, where neither pyramids nor this package is installed. The `mypy`
+          # hook is deliberately NOT skipped: it shells into the pixi dev env set up
+          # above and is the type-check gate. no-commit-to-branch and gitleaks match
+          # pyramids-eo's skip set (this repo has neither hook yet, so they are
+          # harmless no-ops until added).
           SKIP: no-commit-to-branch,gitleaks,pytest-check,doctest,notebook-check
 
   # Src doctests. Need the full `dev` pixi env (an importable package, and the

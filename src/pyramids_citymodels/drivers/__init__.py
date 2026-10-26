@@ -3,7 +3,11 @@
 Grouped by format family rather than by file suffix, because related encodings of one
 standard share a parser (CityGML and its CityJSON sibling, for instance).
 
-This module must stay free of eager driver imports. A missing extra would otherwise break
-the whole package at import, instead of letting pyramids' registry skip that one driver
-with a warning.
+Each driver is a ``VectorDriver`` class registered into the ``pyramids.vector_drivers``
+entry-point group. Keep this subpackage -- and each driver module -- light at import:
+pyramids reads a driver's claims as class attributes without constructing it, so a driver's
+heavy backend belongs inside its ``read`` method, not at module top, and the optional
+dependency is named by the driver's ``extra`` attribute (the registry skips the driver
+silently at discovery when that package is absent). An eager backend import here would
+break the whole package import instead.
 """

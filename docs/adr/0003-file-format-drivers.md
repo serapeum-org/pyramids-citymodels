@@ -21,12 +21,19 @@ the vector I/O here, which gives the stack two feature models that drift apart.
 CityJSON and the related interchange formats — as `pyramids` objects. It owns file-format drivers;
 every GIS operation belongs upstream in `pyramids-core`.**
 
-- Drivers are discovered by `pyramids-core` through the `pyramids.citymodel_drivers` **entry-point
-  group**. This package depends on `pyramids-core`; `pyramids-core` never imports this package.
-- Each driver is a class declaring its `name`, `long_name`, `suffixes` and a `capabilities` set, and
-  implementing `can_open` plus the read/write methods the format supports. A driver whose optional
-  extra is absent raises at driver-module import, and the registry skips it with a warning, so a bare
-  install stays small and useful.
+- Drivers are discovered by `pyramids-core` through the `pyramids.vector_drivers` **entry-point
+  group** — the group `pyramids.feature.FeatureCollection.read_file` consults (siblings are
+  `pyramids.raster_drivers` and `pyramids.mesh_drivers`). City models are vector features, so that is
+  the group; pyramids has no city-model-specific consumer, and a driver registered under any other
+  group would never be discovered. This package depends on `pyramids-core`; `pyramids-core` never
+  imports this package.
+- Each driver is a `VectorDriver` class declaring `name`, `long_name`, `api_version`, `suffixes`,
+  `schemes`, a `capabilities` set (containing `read`) and an optional `extra`, and implementing the
+  `can_open` classmethod plus the read/write methods the format supports. pyramids reads those claims
+  without constructing the driver and builds it only on a dispatched read, so a driver's heavy backend
+  import belongs inside `read`, not at module top. When a driver's `extra` dependency is not
+  importable the registry skips it **silently** at discovery (no warning), so a bare install stays
+  small and useful.
 - Dependency-backed driver families live behind extras (one per family), added when the driver that
   needs one lands. Formats GDAL already reads (CityGML travels through GDAL's GML driver) use the
   vendored osgeo in the `pyramids-core` wheel rather than taking a new dependency.

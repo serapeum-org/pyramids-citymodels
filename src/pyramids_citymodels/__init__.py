@@ -8,10 +8,12 @@ follows once features are in hand — reprojection, overlays, spatial joins, con
 and spatial indexing. What it does not do is open the city-model exchange formats;
 that is this package's job, and its only job.
 
-Drivers are discovered by `pyramids-core` through the `pyramids.citymodel_drivers`
-entry-point group, so a read of a city-model file resolves to a driver here once this
-package is installed. Dependency-backed drivers sit behind extras and are skipped at
-discovery when their extra is absent. See ADR-0003 for the scope decision.
+Drivers are discovered by `pyramids-core` through the `pyramids.vector_drivers`
+entry-point group (the group `FeatureCollection.read_file` consults — city models are
+vector features), so a read of a city-model file resolves to a driver here once this
+package is installed. A dependency-backed driver names its optional dependency via a
+`VectorDriver.extra` attribute and is skipped silently at discovery when that package
+is not importable. See ADR-0003 for the scope decision.
 
 The package root deliberately re-exports nothing: it carries `__version__` and the
 import contract that activates the vendored osgeo bindings, and that is all. Installing
@@ -35,15 +37,9 @@ Examples:
 # GDAL_DATA / PROJ_DATA, registers the Windows DLL directory). Any module here
 # that does `from osgeo import gdal` at load time needs this line to have run
 # first, or that import fails wherever no separate GDAL is installed.
-import pyramids  # noqa: F401
+import pyramids  # noqa: F401  # isort:skip  (keep first — see above; ruff must not reorder it)
 
-try:
-    from importlib.metadata import PackageNotFoundError  # type: ignore
-    from importlib.metadata import version
-except ImportError:  # pragma: no cover
-    from importlib_metadata import PackageNotFoundError  # type: ignore
-    from importlib_metadata import version
-
+from importlib.metadata import PackageNotFoundError, version
 
 # The distribution name, not `__name__`: the import name is `pyramids_citymodels`
 # and the distribution is `pyramids-citymodels`. importlib.metadata normalizes `_`

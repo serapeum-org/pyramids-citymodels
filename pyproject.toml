@@ -47,10 +47,10 @@ dependencies = [
 
 [project.optional-dependencies]
 # One extra per dependency-backed driver family, added when the driver that needs
-# it lands. A driver whose extra is absent cannot import its backing library at
-# driver-module import, so pyramids' registry skips it with a warning — a bare
-# install stays small and every other driver keeps working. None is declared yet;
-# the scaffold ships no drivers.
+# it lands. The driver names that extra via its `extra` class attribute, and
+# pyramids' registry skips the driver silently at discovery when the package is not
+# importable — so a bare install stays small and every other driver keeps working.
+# None is declared yet; the scaffold ships no drivers.
 
 [dependency-groups]
 dev = [
@@ -71,16 +71,11 @@ dev = [
     "mypy>=1.10.0",
     "types-PyYAML>=6.0.0",
     "pytest-mock>=3.12.0",
-    # Same versions the pre-commit hooks pin, so `pixi run -e dev python -m black`,
-    # `-m flake8` and `-m pydocstyle` match what CI and the hooks enforce.
-    #
-    # black must stay >= 26.3.1: 24.10.0 carries PYSEC-2026-2120 and
-    # PYSEC-2026-2121, so `pip-audit.yml` fails on the py311 resolution. Keep this
-    # pin and the `.pre-commit-config.yaml` rev in step.
-    "black==26.10.1",
-    "flake8==7.1.1",
-    "Flake8-pyproject>=1.2.3",
-    "pydocstyle==6.3.0"
+    # ruff replaces black + isort + flake8 + pydocstyle (lint + format in one tool),
+    # matching the parent pyramids. Pinned exactly and kept in step with the
+    # `ruff-pre-commit` rev in `.pre-commit-config.yaml`, so `pixi run -e dev ruff
+    # {check,format}` locally matches byte-for-byte what the hook and CI enforce.
+    "ruff==0.17.2"
 ]
 docs = [
     "mkdocs >=1.5.3",
@@ -106,16 +101,22 @@ notebook = [
 ]
 
 
-# One entry point per driver. The value is a class, which pyramids' registry
-# instantiates with no arguments; a class rather than a function because `can_open`
-# matters -- several city-model formats share a `.gml` or `.json` suffix, so a
-# suffix alone cannot identify one. A driver whose optional extra is missing raises
-# at driver-module import and the registry skips it with a warning, which is why a
-# bare install stays useful.
+# One entry point per driver, pointing at a `VectorDriver` class (not a function).
+# pyramids reads the driver's claims — `name`, `long_name`, `api_version`,
+# `suffixes`, `schemes`, `capabilities`, `extra` — as class attributes WITHOUT
+# constructing it, and calls its `can_open` classmethod to disambiguate formats that
+# share a suffix (e.g. telling CityJSON from GeoJSON for a `.json`). The driver is
+# built only when `FeatureCollection.read_file` dispatches a read into it, so the
+# module must stay light: the heavy backend import belongs inside `read`, not at
+# module top. A driver names any optional dependency via its `extra` attribute; when
+# that package is not importable the registry skips the driver SILENTLY at discovery
+# (no warning), so a bare install stays useful.
 #
-# The scaffold registers no drivers yet. The group is `pyramids.citymodel_drivers`;
-# the first driver adds the table, e.g.
-#   [project.entry-points."pyramids.citymodel_drivers"]
+# The scaffold registers no drivers yet. The group is `pyramids.vector_drivers` — the
+# group `FeatureCollection.read_file` consults; city models are vector features, so
+# that is the group, not a city-model-specific one (pyramids has no such consumer).
+# The first driver adds the table, e.g.
+#   [project.entry-points."pyramids.vector_drivers"]
 #   cityjson = "pyramids_citymodels.drivers.cityjson:CityJsonDriver"
 
 
@@ -129,8 +130,6 @@ Changelog = "https://github.com/serapeum-org/pyramids-citymodels/blob/main/docs/
 [build-system]
 requires = ["setuptools>=80.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
-
-[tool.setuptools]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -147,22 +146,55 @@ exclude = ["tests*"]
 # no MANIFEST.in.
 
 
-[tool.flake8]
-ignore = ["E203", "E266", "E501", "W503", "E722", "C901", "E741", "E731"]
-max-line-length = 88
-max-complexity = 18
-select = "B,C,E,F,W,T4"
-
-[tool.black]
-# No `profile` key: black does not have one (that is an isort concept) and warns
-# "Invalid config keys detected: 'profile'" on every run when it is present.
+[tool.ruff]
 line-length = 88
-skip-string-normalization = true
+target-version = "py311"  # requires-python floors at 3.11
 
-[tool.isort]
-profile = "black"
-line_length = 88
-multi_line_output = 3
+[tool.ruff.format]
+# black had skip-string-normalization = true → preserve existing quotes.
+quote-style = "preserve"
+
+[tool.ruff.lint]
+# ruff replaces black + isort + flake8 + pydocstyle. The old flake8 `select` named B
+# and T4, but flake8-bugbear / flake8-print were never installed, so those were inert
+# (the effective set was E/F/W). Add I (isort) and UP (pyupgrade) to fold in what the
+# standalone isort config and a pyupgrade pass would do. Mirrors the parent pyramids.
+select = ["E", "F", "W", "I", "UP"]
+# Carried from the old [tool.flake8].ignore. E704/W503 are dropped: ruff does not
+# implement either (both are formatter-owned pycodestyle codes), so there is nothing
+# to ignore. E226/E701 match pyramids' set.
+ignore = ["E203", "E226", "E266", "E501", "E701", "E722", "C901", "E741", "E731"]
+
+[tool.ruff.lint.per-file-ignores]
+# flake8 excluded examples/ and tests/ from linting, and isort ran everywhere; keep the
+# migration's lint churn on shipped src/ by dropping E/F/W and UP there (import-sorting I
+# still applies). Notebooks legitimately import next to first use and run setup before
+# imports, both of which trip E402.
+"tests/**" = ["E", "F", "W", "UP"]
+"examples/**" = ["E", "F", "W", "UP"]
+"*.ipynb" = ["E402"]
+
+[tool.mypy]
+# Checker target is 3.12 even though `requires-python` floors at 3.11: numpy's stubs
+# ship PEP 695 `type` statements that mypy only parses when the target is >= 3.12 (at
+# 3.11 it aborts before checking any source). This widens only the *typing* target;
+# actual 3.11 runtime compatibility is covered by the py311 leg of the test matrix.
+python_version = "3.12"
+mypy_path = "src"
+packages = ["pyramids_citymodels"]
+explicit_package_bases = true
+warn_return_any = true
+warn_unused_configs = false
+disallow_untyped_defs = false
+check_untyped_defs = true
+# pyramids-core ships no py.typed, and GDAL's osgeo bindings are untyped; collapse those
+# to Any rather than failing on missing stubs. Gradual typing per ADR-0002.
+ignore_missing_imports = true
+exclude = [
+    "tests/",
+    "examples/",
+    "docs/",
+]
 
 
 [tool.commitizen]
@@ -239,6 +271,7 @@ pyramids-citymodels = { path = ".", editable = true }
 main = { cmd = "pytest -vvv --cov=src/pyramids_citymodels -sv -m 'not vendor_data' --cov-report=xml", description = "Run the main test suite" }
 test-all = { cmd = "pytest -vvv --cov=src/pyramids_citymodels -sv --cov-report=xml --cov-report=term-missing", description = "Run the whole test suite" }
 notebooks = { cmd = "pytest --nbval --nbval-lax --verbose docs/examples", description = "check notebooks" }
+mypy = { cmd = "mypy", description = "Run mypy type checking (config in [tool.mypy])" }
 build-dist = { cmd = "python -m build", description = "Build sdist and wheel for PyPI" }
 publish-pypi = { cmd = "twine upload --non-interactive --repository pypi dist/*", depends-on = ["build-dist"], description = "Build and upload package to PyPI" }
 cz-changelog = { cmd = "cz changelog", description = "Generate the changelog with commitizen" }
