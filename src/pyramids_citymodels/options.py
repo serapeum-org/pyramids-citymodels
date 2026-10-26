@@ -24,15 +24,10 @@ from enum import StrEnum
 from typing import Any
 
 __all__ = [
-    "DEFAULT_LOD",
     "GeometryDimension",
     "LoadStrategy",
     "ReadOptions",
 ]
-
-#: The level of detail selected when the caller does not ask for one and an object offers
-#: several. LOD2 is the semantic-building level both issues (#1383/#1384) target.
-DEFAULT_LOD = "2"
 
 
 class LoadStrategy(StrEnum):
