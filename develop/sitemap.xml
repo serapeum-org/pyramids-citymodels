@@ -49,7 +49,15 @@
          <lastmod>2026-10-26</lastmod>
     </url>
     <url>
+         <loc>https://serapeum-org.github.io/pyramids-citymodels/develop/examples/city-models/</loc>
+         <lastmod>2026-10-26</lastmod>
+    </url>
+    <url>
          <loc>https://serapeum-org.github.io/pyramids-citymodels/develop/reference/</loc>
+         <lastmod>2026-10-26</lastmod>
+    </url>
+    <url>
+         <loc>https://serapeum-org.github.io/pyramids-citymodels/develop/reference/drivers/</loc>
          <lastmod>2026-10-26</lastmod>
     </url>
 </urlset>
