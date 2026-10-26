@@ -238,6 +238,10 @@ def to_feature_collection(
         ``surface_type`` and ``surface_index`` take precedence: a city-object attribute that happens
         to share one of these names is overwritten by the structural value in the output table.
 
+        A ``footprint`` load omits an object whose surfaces are **all non-areal** (e.g. a wall-only
+        object): it has no plan-view area, so it contributes no row. This is omission by design, not
+        data loss — use ``semantic_surfaces`` to keep every surface.
+
     Returns:
         A :class:`pyramids.feature.FeatureCollection` in the model's CRS, with a stable column
         order; empty (but still a valid FeatureCollection) when the model has no usable geometry.
