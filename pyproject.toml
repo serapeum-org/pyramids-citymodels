@@ -1,6 +1,6 @@
 [project]
 name = "pyramids-citymodels"
-version = "0.1.0"
+version = "0.2.0"
 description = "3D city-model file-format drivers for pyramids: CityGML, CityJSON and more"
 readme = {file = "README.md", content-type = "text/markdown"}
 authors = [
@@ -203,6 +203,7 @@ name = "cz_conventional_commits"
 version_provider = "pep621"
 tag_format = "$version"
 changelog_file = "docs/change-log.md"
+changelog_incremental = false
 update_changelog_on_bump = false
 major_version_zero = true       # while < 1.0
 style = [
