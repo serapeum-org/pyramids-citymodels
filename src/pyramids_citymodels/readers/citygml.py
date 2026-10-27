@@ -240,6 +240,12 @@ def _collect_building_attributes(element: ElementTree.Element) -> dict[str, Any]
     the known-numeric names are coerced to numbers to match the CityJSON reader's types. Elements
     with child elements are structural (``boundedBy``, ``lod2Solid``, …) and skipped, except the
     generic ``gen:*Attribute`` wrappers, which are read as name/value pairs below.
+
+    The numeric coercion is best-effort: a value that does not parse (``measuredHeight`` of
+    ``"tall"``, a ``gYear`` carrying a timezone, a ``storeys*`` of ``"3.0"``) is kept as the raw
+    string, so type parity with the CityJSON reader is *approximate* — a number when parseable,
+    else the original text. Only element text is captured; attribute metadata such as a
+    ``measuredHeight`` ``uom`` unit is not.
     """
     attributes: dict[str, Any] = {}
     for child in element:
