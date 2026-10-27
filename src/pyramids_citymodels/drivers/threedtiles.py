@@ -68,6 +68,22 @@ class ThreeDTilesDriver:
             lod: Level of detail to select; ``None`` takes the highest present (3D Tiles has none).
             geometry_dimension: ``"xyz"`` (default) keeps Z, ``"xy"`` drops it.
             child_inherits_parent_attributes: Whether child rows carry parent attributes.
+
+        Examples:
+            - A ``tileset.json`` or ``.b3dm`` path yields one footprint row per batched feature;
+              an in-memory tileset (no base directory to resolve content against) reads as an
+              empty frame carrying only the geometry column:
+                ```python
+                >>> from pyramids_citymodels.drivers.threedtiles import ThreeDTilesDriver
+                >>> frame = ThreeDTilesDriver().read(
+                ...     '{"asset": {"version": "1.0"}, "geometricError": 0, "root": {}}'
+                ... )
+                >>> len(frame)
+                0
+                >>> list(frame.columns)
+                ['geometry']
+
+                ```
         """
         from pyramids_citymodels.flatten import to_feature_collection
         from pyramids_citymodels.readers.threedtiles import parse_3dtiles

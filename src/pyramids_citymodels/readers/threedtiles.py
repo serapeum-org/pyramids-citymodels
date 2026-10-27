@@ -531,6 +531,31 @@ def parse_3dtiles(source: Any) -> CityModel:
     Raises:
         UnsupportedGeometryError: A decoded tile is compressed or not a glTF/b3dm payload.
         TypeError: ``source`` is neither a tileset nor a readable binary tile.
+
+    Examples:
+        - An in-memory tileset has no base directory, so its content cannot be followed and the
+          model comes back well-formed but empty:
+            ```python
+            >>> from pyramids_citymodels.readers.threedtiles import parse_3dtiles
+            >>> model = parse_3dtiles(
+            ...     '{"asset": {"version": "1.0"}, "geometricError": 0, "root": {}}'
+            ... )
+            >>> model.source_format
+            '3DTiles'
+            >>> model.crs is None
+            True
+            >>> model.objects
+            {}
+
+            ```
+        - A decoded tileset dict is accepted the same way as a JSON string:
+            ```python
+            >>> from pyramids_citymodels.readers.threedtiles import parse_3dtiles
+            >>> model = parse_3dtiles({"asset": {"version": "1.0"}, "root": {}})
+            >>> model.source_format
+            '3DTiles'
+
+            ```
     """
     objects: dict[str, CityObject] = {}
     document, base = _load_tileset(source)
