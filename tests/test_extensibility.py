@@ -154,3 +154,47 @@ class TestUnsupportedGeometry:
             to_feature_collection(parse_cityjson(self._doc("MultiPoint")))
         message = str(exc.value)
         assert "'x'" in message and "MultiPoint" in message
+
+    def _mixed_doc(self) -> dict:
+        """A valid areal Building plus a stray non-areal (MultiPoint) object."""
+        return {
+            "type": "CityJSON",
+            "version": "2.0",
+            "CityObjects": {
+                "b": {
+                    "type": "Building",
+                    "geometry": [
+                        {
+                            "type": "MultiSurface",
+                            "lod": "2",
+                            "boundaries": [[[0, 1, 2]]],
+                            "semantics": {
+                                "surfaces": [{"type": "RoofSurface"}],
+                                "values": [0],
+                            },
+                        }
+                    ],
+                },
+                "tree": {
+                    "type": "SolitaryVegetationObject",
+                    "geometry": [{"type": "MultiPoint", "lod": "2", "boundaries": [3]}],
+                },
+            },
+            "vertices": [[0, 0, 0], [1, 0, 0], [1, 1, 0], [5, 5, 5]],
+        }
+
+    def test_mixed_model_keeps_areal_objects_and_warns(self) -> None:
+        """A stray non-areal object must not discard the valid buildings; it warns instead (MF1)."""
+        with pytest.warns(UserWarning, match="non-areal"):
+            fc = to_feature_collection(parse_cityjson(self._mixed_doc()))
+        ids = set(fc["city_object_id"])
+        assert "b" in ids, "the valid Building must survive a stray non-areal object"
+        assert "tree" not in ids, "the non-areal object contributes no rows"
+
+    def test_footprint_tolerates_non_areal_objects(self) -> None:
+        """A footprint load also skips (not aborts on) a non-areal object (SF1)."""
+        with pytest.warns(UserWarning, match="non-areal"):
+            fc = to_feature_collection(
+                parse_cityjson(self._mixed_doc()), strategy="footprint"
+            )
+        assert "b" in set(fc["city_object_id"])

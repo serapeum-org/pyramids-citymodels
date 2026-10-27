@@ -29,6 +29,7 @@ flows straight into the rest of the pyramids stack; this module builds no GIS of
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
+import warnings
 from typing import Any
 
 import geopandas as gpd
@@ -250,9 +251,23 @@ def to_feature_collection(
         object): it has no plan-view area, so it contributes no row. This is omission by design, not
         data loss — use ``semantic_surfaces`` to keep every surface.
 
+        A geometry whose **type** is not areal (``MultiPoint``, ``MultiLineString``,
+        ``GeometryInstance`` or an unknown type) cannot become a polygon. Such a geometry is skipped
+        per object — a mixed tile keeps its valid buildings — and a :func:`warnings.warn` reports how
+        many were skipped, under both strategies. Only when the model yields **no** areal rows at all
+        *because* of such types is :class:`~pyramids_citymodels.errors.UnsupportedGeometryError`
+        raised (see Raises), so a point/line-only file fails clearly instead of returning empty.
+
     Returns:
         A :class:`pyramids.feature.FeatureCollection` in the model's CRS, with a stable column
-        order; empty (but still a valid FeatureCollection) when the model has no usable geometry.
+        order; empty (but still a valid FeatureCollection) when the model has no usable geometry
+        (e.g. an empty model, or an explicit ``lod`` that matches nothing).
+
+    Raises:
+        UnsupportedGeometryError: If the selected geometries contain non-areal types and **no**
+            areal geometry remains to flatten — i.e. the result would be empty only because every
+            contributing geometry was a point/line/template/unknown type. A model that also has at
+            least one areal geometry never raises; the non-areal ones are skipped with a warning.
 
     Examples:
         - Flatten a one-building model into one row per semantic surface and read it back:
@@ -280,23 +295,47 @@ def to_feature_collection(
     )
 
     rows: list[dict[str, Any]] = []
+    unsupported: list[tuple[str, str]] = []
     for city_object in model.objects.values():
         geometries = _select_geometries(city_object.geometries, options.lod)
         if not geometries:
             continue
-        for geometry in geometries:
-            if geometry.type not in AREAL_GEOMETRY_TYPES:
-                raise UnsupportedGeometryError(
-                    f"city object {city_object.id!r} has geometry type {geometry.type!r}, "
-                    f"which is not areal; supported types are "
-                    f"{', '.join(sorted(AREAL_GEOMETRY_TYPES))}"
-                )
+        # Keep only the areal geometries; a non-areal one (point/line aggregate, template, or an
+        # "Unknown" type) cannot become a polygon. Skip it per object rather than aborting the whole
+        # read, so a mixed tile keeps its valid buildings (MF1); record it to warn/raise below.
+        areal = [g for g in geometries if g.type in AREAL_GEOMETRY_TYPES]
+        unsupported.extend(
+            (city_object.id, g.type)
+            for g in geometries
+            if g.type not in AREAL_GEOMETRY_TYPES
+        )
+        if not areal:
+            continue
         if options.strategy is LoadStrategy.SEMANTIC_SURFACES:
-            rows.extend(_semantic_surface_rows(city_object, geometries, model, options))
+            rows.extend(_semantic_surface_rows(city_object, areal, model, options))
         else:
-            row = _footprint_row(city_object, geometries, model, options)
+            row = _footprint_row(city_object, areal, model, options)
             if row is not None:
                 rows.append(row)
+
+    if not rows and unsupported:
+        # Nothing was representable *because* of unsupported types — fail loudly with a clear error
+        # rather than hand back a confusingly empty frame (report §5, risk #8).
+        object_id, geometry_type = unsupported[0]
+        raise UnsupportedGeometryError(
+            f"no areal geometry to flatten: {len(unsupported)} object(s) have only non-areal "
+            f"geometry types — e.g. city object {object_id!r} has type {geometry_type!r} "
+            f"(not areal); supported types are {', '.join(sorted(AREAL_GEOMETRY_TYPES))}"
+        )
+    if unsupported:
+        preview = ", ".join(f"{oid}:{gtype}" for oid, gtype in unsupported[:5])
+        suffix = "" if len(unsupported) <= 5 else f", … ({len(unsupported)} total)"
+        warnings.warn(
+            f"skipped {len(unsupported)} non-areal geometr"
+            f"{'y' if len(unsupported) == 1 else 'ies'} "
+            f"(point/line/template types are not flattened to polygons): {preview}{suffix}",
+            stacklevel=2,
+        )
 
     if rows:
         frame = gpd.GeoDataFrame(rows, geometry="geometry", crs=model.crs)
