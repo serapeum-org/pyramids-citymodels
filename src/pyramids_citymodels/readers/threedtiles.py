@@ -247,13 +247,18 @@ def _accessor_array(
     dtype = np.dtype(_COMPONENT_DTYPE[accessor["componentType"]]).newbyteorder("<")
     components = _TYPE_COMPONENTS[accessor["type"]]
     count = accessor["count"]
+    if count == 0:
+        return np.empty((0, components))
     start = view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
-    stride = view.get("byteStride") or components * dtype.itemsize
-    rows = []
-    for row in range(count):
-        base = start + row * stride
-        rows.append(np.frombuffer(binary, dtype=dtype, count=components, offset=base))
-    return np.array(rows, dtype=np.float64) if count else np.empty((0, components))
+    stride = int(view.get("byteStride") or components * dtype.itemsize)
+    # One strided read of ``count`` records instead of a Python per-vertex loop: a record-dtype whose
+    # itemsize is the (possibly interleaved) stride reads each vertex's ``components`` values and
+    # skips any padding between them, so a large real mesh decodes in a single numpy call.
+    record = np.dtype(
+        {"names": ["value"], "formats": [(dtype, (components,))], "itemsize": stride}
+    )
+    values = np.frombuffer(binary, dtype=record, count=count, offset=start)["value"]
+    return values.astype(np.float64)
 
 
 def _node_matrix(node: dict[str, Any]) -> np.ndarray:
