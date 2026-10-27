@@ -109,6 +109,23 @@ class TestCityGmlPassThroughAndVersion:
     ) -> None:
         assert parse_citygml(xml).version is None
 
+    def test_version_ignores_an_ade_namespace_version(self) -> None:
+        """Version detection uses the OGC CityGML namespace, not an ADE's embedded version (INF2).
+
+        Test scenario:
+            An energy-ADE element (namespace ``.../citygml/2.0/energy/1.0``) precedes the OGC
+            ``core:CityModel`` (``.../citygml/2.0``); the detected version is the core ``2.0``,
+            not the ADE's trailing ``1.0``.
+        """
+        energy = "http://www.sig3d.org/citygml/2.0/energy/1.0"
+        core = "http://www.opengis.net/citygml/2.0"
+        xml = (
+            '<wrap:Root xmlns:wrap="http://example.com/x" '
+            f'xmlns:energy="{energy}" xmlns:core="{core}">'
+            "<energy:thing/><core:CityModel/></wrap:Root>"
+        )
+        assert parse_citygml(xml).version == "2.0"
+
     def test_empty_and_whitespace_leaf_attributes_are_skipped(self) -> None:
         xml = f"""<core:CityModel {_NS}>
           <core:cityObjectMember><bldg:Building gml:id="B">

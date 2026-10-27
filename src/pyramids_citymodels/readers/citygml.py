@@ -81,7 +81,12 @@ def _detect_version(root: ElementTree.Element) -> str | None:
         tag = element.tag
         if isinstance(tag, str) and tag.startswith("{"):
             namespace = tag[1:].split("}", 1)[0]
-            if "citygml" in namespace.lower():
+            # Match the official OGC CityGML namespace only, not any namespace that merely
+            # contains the substring "citygml": a third-party ADE can embed its own version
+            # (e.g. .../citygml/2.0/energy/1.0) and would otherwise be read as the CityGML
+            # version (INF2). The trailing segment is the version for both core
+            # (.../citygml/2.0) and module (.../citygml/building/2.0) namespaces.
+            if "opengis.net/citygml/" in namespace.lower():
                 tail = namespace.rstrip("/").rsplit("/", 1)[-1]
                 if tail[:1].isdigit():
                     return tail
