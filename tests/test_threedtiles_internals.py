@@ -8,6 +8,7 @@ large committed binaries beyond the one happy-path fixture.
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 
+import io
 import json
 import struct
 
@@ -545,3 +546,39 @@ class TestMultiTileIds:
         tt._insert_object(objects, CityObject(id="a", type="Building"))
         tt._insert_object(objects, CityObject(id="b", type="Building"))
         assert sorted(objects) == ["a", "b"]
+
+
+class TestSniffEfficiency:
+    """The content sniff peeks the magic without reading a whole file or consuming a stream (SF4)."""
+
+    def test_sniff_does_not_consume_a_stream(self) -> None:
+        data = _b3dm(_mesh_glb(_SQUARE))
+        stream = io.BytesIO(data)
+        assert tt.looks_like_3dtiles(stream) is True
+        assert stream.read() == data, (
+            "the sniff must restore the stream position, not drain it"
+        )
+
+    def test_peek_magic_reads_only_the_first_four_bytes(self, tmp_path) -> None:
+        path = tmp_path / "tile.b3dm"
+        path.write_bytes(_b3dm(_mesh_glb(_SQUARE)))
+        assert tt._peek_magic(path) == b"b3dm"
+
+    def test_peek_magic_of_a_glb_matches_the_gltf_magic(self) -> None:
+        glb = _mesh_glb(_SQUARE)
+        assert struct.unpack_from("<I", tt._peek_magic(glb), 0)[0] == 0x46546C67
+
+
+class TestRemoteContent:
+    """An absolute-URL content.uri is skipped with a warning, not read as empty (SF5)."""
+
+    def test_remote_content_uri_is_skipped_with_warning(self, tmp_path) -> None:
+        tileset = tmp_path / "tileset.json"
+        tileset.write_text(
+            '{"asset": {"version": "1.0"}, "geometricError": 0, '
+            '"root": {"content": {"uri": "https://example.com/tiles/a.b3dm"}}}',
+            encoding="utf-8",
+        )
+        with pytest.warns(UserWarning, match="remote content"):
+            model = tt.parse_3dtiles(tileset)
+        assert model.objects == {}

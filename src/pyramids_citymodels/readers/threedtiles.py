@@ -92,6 +92,37 @@ def _read_bytes(source: Any) -> bytes | None:
     return None
 
 
+def _peek_magic(source: Any) -> bytes | None:
+    """Return a binary source's first four bytes without reading a whole file or consuming a stream.
+
+    The content sniff only needs the magic number, so reading the entire file (potentially gigabytes
+    for a real tile) or draining a passed stream — as a full :func:`_read_bytes` would — is wasteful
+    and, for a stream, destructive. This reads four bytes and, for a seekable stream, restores the
+    position. Never raises.
+    """
+    if isinstance(source, (bytes, bytearray)):
+        return bytes(source[:4])
+    if hasattr(source, "read"):
+        position = source.tell() if hasattr(source, "tell") else None
+        try:
+            head = source.read(4)
+        except (OSError, ValueError):
+            return None
+        if position is not None and hasattr(source, "seek"):
+            try:
+                source.seek(position)
+            except (OSError, ValueError):
+                pass
+        return bytes(head) if isinstance(head, (bytes, bytearray)) else None
+    if isinstance(source, (str, os.PathLike)):
+        try:
+            with open(source, "rb") as handle:
+                return handle.read(4)
+        except OSError:
+            return None
+    return None
+
+
 def _load_tileset(source: Any) -> tuple[dict[str, Any] | None, Path | None]:
     """Return a decoded ``tileset.json`` document and its base directory, or ``(None, None)``.
 
@@ -152,15 +183,12 @@ def looks_like_3dtiles(source: Any) -> bool:
 
             ```
     """
+    magic = _peek_magic(source)
+    if magic is not None and len(magic) >= 4:
+        if magic[:4] == b"b3dm" or struct.unpack_from("<I", magic, 0)[0] == _GLB_MAGIC:
+            return True
     document, _ = _load_tileset(source)
-    if _is_tileset(document):
-        return True
-    data = _read_bytes(source)
-    if data is None or len(data) < 4:
-        return False
-    return data[:4] == b"b3dm" or (
-        len(data) >= 4 and struct.unpack_from("<I", data, 0)[0] == _GLB_MAGIC
-    )
+    return _is_tileset(document)
 
 
 def _parse_glb(data: bytes) -> tuple[dict[str, Any], bytes]:
@@ -567,7 +595,17 @@ def _walk_tileset(
     content = tile.get("content") or {}
     uri = content.get("uri") or content.get("url")
     if uri and base is not None:
-        _decode_content(base / uri, here, up_axis, objects, counter)
+        if "://" in str(uri):
+            # A content.uri may be an absolute URL; this reader resolves only local, relative
+            # paths. Skip it loudly rather than turning it into a bogus local path read as empty.
+            warnings.warn(
+                f"3D Tiles remote content {uri!r} is skipped: this reader resolves only local "
+                f"relative content paths, not URLs",
+                UserWarning,
+                stacklevel=2,
+            )
+        else:
+            _decode_content(base / uri, here, up_axis, objects, counter)
     for child in tile.get("children", []):
         _walk_tileset(child, base, here, up_axis, objects, counter)
 
