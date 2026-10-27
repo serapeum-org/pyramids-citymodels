@@ -47,11 +47,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# One extra per dependency-backed driver family, added when the driver that needs
-# it lands. The driver names that extra via its `extra` class attribute, and
-# pyramids' registry skips the driver silently at discovery when the package is not
-# importable — so a bare install stays small and every other driver keeps working.
-# None is declared yet; the scaffold ships no drivers.
+# One extra per dependency-backed driver family, added when a driver that needs a heavy
+# backend lands. The driver names that extra via its `extra` class attribute, and pyramids'
+# registry skips the driver silently at discovery when the package is not importable — so a
+# bare install stays small and every other driver keeps working.
+#
+# None is declared: the CityJSON and CityGML drivers parse with only the standard library
+# (`json`, `xml.etree`) on top of the shapely/geopandas that `pyramids-core` already brings,
+# so both set `extra = None` and a bare install reads both formats. A future backend-requiring
+# driver (e.g. 3D Tiles, #16) adds its extra here and sets `extra = "<import-name>"`; the
+# registry-side skip of an absent-backend driver is exercised once the core
+# `pyramids.vector_drivers` consumer ships (#19).
 
 [dependency-groups]
 dev = [

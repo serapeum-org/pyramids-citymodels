@@ -118,6 +118,9 @@ nav:
     - Installation: installation.md
   - Reference:
     - Overview: reference/index.md
+    - Drivers: reference/drivers.md
+  - Examples:
+    - 3D city models: examples/city-models.ipynb
   - About:
     - Change-log: change-log.md
     - Code of Conduct: CODE_OF_CONDUCT.md

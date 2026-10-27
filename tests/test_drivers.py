@@ -24,6 +24,9 @@ def test_drivers_declare_the_class_attribute_contract() -> None:
         assert driver.api_version == 1
         assert isinstance(driver.suffixes, tuple) and driver.suffixes
         assert "read" in driver.capabilities
+        # Both drivers parse with the standard library only, so they declare no optional
+        # backend: extra is None and a bare install reads both formats (#12).
+        assert driver.extra is None
         # Claims live on the driver class itself (discovery reads them without constructing it);
         # check the class __dict__, not the metaclass, and that can_open is a classmethod.
         assert "capabilities" in driver.__dict__

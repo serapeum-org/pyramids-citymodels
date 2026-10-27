@@ -80,6 +80,10 @@ class Geometry:
         semantic_values: A structure parallel to :attr:`boundaries` down to surface level, each
             leaf an index into :attr:`semantics` (or ``None``). ``None`` when the geometry
             carries no semantics.
+        appearance: The geometry's raw appearance references (CityJSON ``material`` / ``texture``
+            maps), passed through untouched, or ``None``. Carried so a later renderer can resolve
+            materials/textures against :attr:`CityModel.appearances` without this package decoding
+            them (report §5, risk #4).
     """
 
     type: str
@@ -87,6 +91,7 @@ class Geometry:
     boundaries: list[Any]
     semantics: list[SemanticSurface] = field(default_factory=list)
     semantic_values: Any = None
+    appearance: dict[str, Any] | None = None
 
     def semantic_for(self, index: Any) -> SemanticSurface | None:
         """Resolve a semantic value (an index into :attr:`semantics`) to its surface, or ``None``."""
@@ -133,6 +138,12 @@ class CityModel:
         metadata: Free-form file metadata (title, geographical extent, …).
         version: The format version string as found in the file, or ``None``.
         source_format: ``"CityJSON"`` or ``"CityGML"`` — which front door produced this model.
+        appearances: The document-level appearance pool (CityJSON ``appearance`` — ``materials`` /
+            ``textures``), passed through untouched, or an empty dict. The geometries'
+            :attr:`Geometry.appearance` maps index into this.
+        extensions: Schema-extension information carried through verbatim (CityJSON ``extensions``;
+            a CityGML ADE's recorded namespaces), or an empty dict. Pass-through so an unknown
+            third-party extension is never silently discarded (report §5, risk #5).
     """
 
     objects: dict[str, CityObject] = field(default_factory=dict)
@@ -140,6 +151,8 @@ class CityModel:
     metadata: dict[str, Any] = field(default_factory=dict)
     version: str | None = None
     source_format: str | None = None
+    appearances: dict[str, Any] = field(default_factory=dict)
+    extensions: dict[str, Any] = field(default_factory=dict)
 
 
 _EPSG_RE = re.compile(r"EPSG.*?(\d{3,6})", re.IGNORECASE)

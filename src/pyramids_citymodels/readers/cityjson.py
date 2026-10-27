@@ -192,6 +192,10 @@ def parse_cityjson(source: Any) -> CityModel:
         if document.get("version") is not None
         else None,
         source_format="CityJSON",
+        # Carry the document-level appearance pool and any schema Extensions through untouched, so
+        # materials/textures and third-party extensions are never silently dropped (#13).
+        appearances=dict(document.get("appearance", {}) or {}),
+        extensions=dict(document.get("extensions", {}) or {}),
     )
 
     for object_id, raw in document.get("CityObjects", {}).items():
@@ -199,6 +203,11 @@ def parse_cityjson(source: Any) -> CityModel:
         for raw_geometry in raw.get("geometry", []):
             surfaces, values = _parse_semantics(raw_geometry.get("semantics"))
             lod = raw_geometry.get("lod")
+            appearance = {
+                key: raw_geometry[key]
+                for key in ("material", "texture")
+                if key in raw_geometry
+            }
             geometries.append(
                 Geometry(
                     type=raw_geometry.get("type", "Unknown"),
@@ -208,6 +217,7 @@ def parse_cityjson(source: Any) -> CityModel:
                     ),
                     semantics=surfaces,
                     semantic_values=values,
+                    appearance=appearance or None,
                 )
             )
         model.objects[object_id] = CityObject(
