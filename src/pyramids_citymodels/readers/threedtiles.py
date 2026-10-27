@@ -103,7 +103,14 @@ def _peek_magic(source: Any) -> bytes | None:
     if isinstance(source, (bytes, bytearray)):
         return bytes(source[:4])
     if hasattr(source, "read"):
-        position = source.tell() if hasattr(source, "tell") else None
+        position = None
+        if hasattr(source, "tell"):
+            # A readable but non-seekable stream (a pipe) has tell() but it raises ESPIPE; guard it so
+            # the sniff still answers (just without restoring position) instead of raising.
+            try:
+                position = source.tell()
+            except (OSError, ValueError):
+                position = None
         try:
             head = source.read(4)
         except (OSError, ValueError):
@@ -250,14 +257,26 @@ def _accessor_array(
     if count == 0:
         return np.empty((0, components))
     start = view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
-    stride = int(view.get("byteStride") or components * dtype.itemsize)
-    # One strided read of ``count`` records instead of a Python per-vertex loop: a record-dtype whose
-    # itemsize is the (possibly interleaved) stride reads each vertex's ``components`` values and
-    # skips any padding between them, so a large real mesh decodes in a single numpy call.
+    element = components * dtype.itemsize
+    stride = int(view.get("byteStride") or element)
+    # One strided read of ``count`` records instead of a Python per-vertex loop. The glTF 2.0 spec
+    # sizes an interleaved bufferView to ``(count - 1) * stride + element`` — no trailing stride
+    # padding after the last element — so read exactly that span and pad only the unused tail of the
+    # final record up to a full ``count`` records. (A genuinely short buffer still raises, which
+    # ``_parse_b3dm_tile`` maps to UnsupportedGeometryError.)
+    required = (count - 1) * stride + element
+    if start + required > len(binary):
+        raise ValueError(
+            f"glTF accessor needs {required} bytes at offset {start}, buffer has "
+            f"{len(binary) - start}"
+        )
+    blob = bytes(binary[start : start + required])
+    if stride != element:
+        blob += b"\x00" * (count * stride - required)
     record = np.dtype(
         {"names": ["value"], "formats": [(dtype, (components,))], "itemsize": stride}
     )
-    values = np.frombuffer(binary, dtype=record, count=count, offset=start)["value"]
+    values = np.frombuffer(blob, dtype=record, count=count)["value"]
     return values.astype(np.float64)
 
 
@@ -360,9 +379,9 @@ def _mesh_vertices(
 def _mesh_world_transforms(gltf: dict[str, Any]) -> dict[int, np.ndarray]:
     """Map each mesh index to the composed world transform of the first node that instances it.
 
-    Walks the default scene's node tree, composing parent→child transforms, so a glTF that places
-    its mesh under a y-up→z-up root node (as a ``b3dm`` conventionally does) has that rotation
-    applied to the vertices.
+    Walks the default scene's node tree, composing parent→child transforms, so any transform a glTF
+    bakes into its node hierarchy is applied to the vertices. This is separate from the glTF up-axis
+    convention (``gltfUpAxis``), which :func:`_decode_b3dm` applies on top of these node transforms.
     """
     nodes = gltf.get("nodes", [])
     scenes = gltf.get("scenes", [])
@@ -518,13 +537,14 @@ def _decode_b3dm(
         groups = {0: np.arange(len(points))}
         batch_length = 1
     else:
-        # Never trust a declared BATCH_LENGTH below the real maximum id: take whichever is larger so
-        # a too-small (malformed) declaration cannot silently drop out-of-range vertices.
-        declared = int(feature_table.get("BATCH_LENGTH", 0))
-        batch_length = max(declared, int(batch_ids.max()) + 1)
+        # Group over the batch ids actually present rather than range(BATCH_LENGTH): a too-small
+        # declared BATCH_LENGTH then cannot drop out-of-range vertices, and a too-large (malformed or
+        # hostile) one cannot drive an O(BATCH_LENGTH) loop — the cost is bounded by real vertices.
         groups = {
-            batch: np.where(batch_ids == batch)[0] for batch in range(batch_length)
+            int(batch): np.where(batch_ids == batch)[0]
+            for batch in np.unique(batch_ids)
         }
+        batch_length = int(batch_ids.max()) + 1
     rows = _batch_table_rows(batch_table, batch_length)
 
     objects: list[CityObject] = []

@@ -183,6 +183,36 @@ class TestAccessorArray:
         array = tt._accessor_array(gltf, packed, 0)
         assert np.allclose(array, [[1, 2, 3], [4, 5, 6]])
 
+    def test_spec_minimum_interleaved_buffer_decodes(self) -> None:
+        """A glTF-2.0 bufferView sized (count-1)*stride + element (no trailing pad) must decode (R2-1)."""
+        stride = 16
+        body = b""
+        for row in range(3):
+            body += struct.pack("<3f", row, row + 1, row + 2)
+            if (
+                row < 2
+            ):  # trailing stride padding only BETWEEN elements, none after the last
+                body += b"\x00\x00\x00\x00"
+        assert len(body) == 2 * stride + 12  # the spec minimum, not 3 * stride
+        gltf = {
+            "accessors": [
+                {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"}
+            ],
+            "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteStride": stride}],
+        }
+        array = tt._accessor_array(gltf, body, 0)
+        assert np.allclose(array, [[0, 1, 2], [1, 2, 3], [2, 3, 4]])
+
+    def test_genuinely_truncated_buffer_still_raises(self) -> None:
+        gltf = {
+            "accessors": [
+                {"bufferView": 0, "componentType": 5126, "count": 4, "type": "VEC3"}
+            ],
+            "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 48}],
+        }
+        with pytest.raises(ValueError):
+            tt._accessor_array(gltf, struct.pack("<f", 1.0), 0)
+
 
 class TestMeshVertices:
     """``_mesh_vertices`` collects positions, skips POSITION-less primitives, flags _BATCHID."""
@@ -296,6 +326,15 @@ class TestBatchLength:
         objects = tt._parse_b3dm_tile(tile, np.eye(4), up_axis="Z")
         assert len(objects) == 2, (
             "batch id 1 must not be dropped by a too-small BATCH_LENGTH"
+        )
+
+    def test_inflated_batch_length_is_bounded_by_real_vertices(self) -> None:
+        """A hostile BATCH_LENGTH must not drive an O(BATCH_LENGTH) loop (R2-3): cost tracks vertices."""
+        glb = _mesh_glb(_SQUARE, batch_ids=[0, 0, 0, 0])
+        tile = _b3dm(glb, feature_table={"BATCH_LENGTH": 1_000_000})
+        objects = tt._parse_b3dm_tile(tile, np.eye(4), up_axis="Z")
+        assert len(objects) == 1, (
+            "only the present batch id yields a feature, not a million"
         )
 
 
@@ -567,6 +606,23 @@ class TestSniffEfficiency:
     def test_peek_magic_of_a_glb_matches_the_gltf_magic(self) -> None:
         glb = _mesh_glb(_SQUARE)
         assert struct.unpack_from("<I", tt._peek_magic(glb), 0)[0] == 0x46546C67
+
+    def test_non_seekable_stream_whose_tell_raises_does_not_raise(self) -> None:
+        """A readable pipe whose tell() raises ESPIPE must not make the sniff raise (R2-2)."""
+
+        class _Pipe:
+            def __init__(self, data: bytes) -> None:
+                self._data = data
+
+            def read(self, size: int = -1) -> bytes:
+                return self._data[:size] if size and size > 0 else self._data
+
+            def tell(self) -> int:
+                raise OSError(29, "Illegal seek")
+
+        pipe = _Pipe(_b3dm(_mesh_glb(_SQUARE)))
+        assert tt._peek_magic(pipe) == b"b3dm"
+        assert tt.looks_like_3dtiles(_Pipe(b"b3dm____")) is True
 
 
 class TestRemoteContent:
