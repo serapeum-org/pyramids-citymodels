@@ -217,7 +217,7 @@ class TestB3dmEdges:
         tile = _b3dm(
             _mesh_glb(_SQUARE), feature_table={"RTC_CENTER": [100.0, 200.0, 0.0]}
         )
-        objects = tt._parse_b3dm_tile(tile, np.eye(4))
+        objects = tt._parse_b3dm_tile(tile, np.eye(4), up_axis="Z")
         ring = objects[0].geometries[0].boundaries[0][0]
         assert min(point[0] for point in ring) == 100.0
 
@@ -237,7 +237,7 @@ class TestB3dmEdges:
                 "height": {"byteOffset": 0, "componentType": "FLOAT", "type": "SCALAR"}
             },
         )
-        objects = tt._parse_b3dm_tile(tile, np.eye(4))
+        objects = tt._parse_b3dm_tile(tile, np.eye(4), up_axis="Z")
         assert objects[0].attributes == {}
 
     def test_wrong_magic_raises(self) -> None:
@@ -251,7 +251,7 @@ class TestTilesetWalk:
     def test_nested_tileset_is_recursed(self, tmp_path) -> None:
         (tmp_path / "inner.b3dm").write_bytes(_b3dm(_mesh_glb(_SQUARE)))
         (tmp_path / "inner.json").write_text(
-            '{"asset": {"version": "1.0"}, "geometricError": 0, '
+            '{"asset": {"version": "1.0", "gltfUpAxis": "Z"}, "geometricError": 0, '
             '"root": {"content": {"uri": "inner.b3dm"}}}',
             encoding="utf-8",
         )
@@ -271,7 +271,7 @@ class TestTilesetWalk:
         tileset.write_text(
             json.dumps(
                 {
-                    "asset": {"version": "1.0"},
+                    "asset": {"version": "1.0", "gltfUpAxis": "Z"},
                     "geometricError": 0,
                     "root": {"transform": shift, "content": {"uri": "t.b3dm"}},
                 }
@@ -305,7 +305,7 @@ class TestTilesetWalk:
         tileset.write_text(
             json.dumps(
                 {
-                    "asset": {"version": "1.0"},
+                    "asset": {"version": "1.0", "gltfUpAxis": "Z"},
                     "geometricError": 0,
                     "root": {"children": [{"content": {"uri": "c.b3dm"}}]},
                 }
@@ -359,6 +359,58 @@ class TestSceneNodes:
         gltf["scenes"] = [{"nodes": [99]}]
         points, _ = tt._mesh_vertices(gltf, binary)
         assert len(points) == 4 and points[:, 0].min() == 0.0
+
+
+# A square footprint authored y-up: it lies in the X-Z plane (y=0 ground) and is extruded to a
+# y=10 roof. Its plan is the X-Z square; its naive XY projection would be a 2x10 side wall.
+_YUP_FOOTPRINT = [
+    (0.0, 0.0, 0.0),
+    (2.0, 0.0, 0.0),
+    (2.0, 0.0, -2.0),
+    (0.0, 0.0, -2.0),
+    (0.0, 10.0, 0.0),
+    (2.0, 10.0, 0.0),
+    (2.0, 10.0, -2.0),
+    (0.0, 10.0, -2.0),
+]
+
+
+class TestUpAxis:
+    """``gltfUpAxis`` turns a y-up mesh into a plan footprint, not a side elevation (MF2)."""
+
+    def _extent(self, objects: list) -> tuple[float, float, float, float]:
+        ring = objects[0].geometries[0].boundaries[0][0]
+        xs = [point[0] for point in ring]
+        ys = [point[1] for point in ring]
+        return (min(xs), min(ys), max(xs), max(ys))
+
+    def test_default_y_up_yields_the_plan_not_a_side_wall(self) -> None:
+        """A y-up prism (2x2 footprint, 10 tall) must come back as a 2x2 plan, not a 2x10 wall."""
+        tile = _b3dm(_mesh_glb(_YUP_FOOTPRINT), feature_table={"BATCH_LENGTH": 1})
+        objects = tt._parse_b3dm_tile(tile, np.eye(4), up_axis="Y")
+        assert self._extent(objects) == (0.0, 0.0, 2.0, 2.0)
+
+    def test_up_axis_matrix_maps_axes_as_cesium_does(self) -> None:
+        y_up = tt._up_axis_to_zup("Y")[:3, :3] @ np.array([0.0, 1.0, 0.0])
+        x_up = tt._up_axis_to_zup("X")[:3, :3] @ np.array([1.0, 0.0, 0.0])
+        assert np.allclose(y_up, [0.0, 0.0, 1.0])
+        assert np.allclose(x_up, [0.0, 0.0, 1.0])
+        assert np.allclose(tt._up_axis_to_zup("Z"), np.eye(4))
+
+    def test_z_up_tileset_opts_out_of_rotation(self, tmp_path) -> None:
+        """A tileset declaring gltfUpAxis=Z keeps z-up geometry un-rotated."""
+        (tmp_path / "flat.b3dm").write_bytes(
+            _b3dm(_mesh_glb(_SQUARE), feature_table={"BATCH_LENGTH": 1})
+        )
+        tileset = tmp_path / "tileset.json"
+        tileset.write_text(
+            '{"asset": {"version": "1.0", "gltfUpAxis": "Z"}, "geometricError": 0, '
+            '"root": {"content": {"uri": "flat.b3dm"}}}',
+            encoding="utf-8",
+        )
+        model = tt.parse_3dtiles(tileset)
+        extent = self._extent(list(model.objects.values()))
+        assert extent == (0.0, 0.0, 2.0, 2.0)
 
     def test_no_scenes_falls_back_to_all_nodes(self) -> None:
         glb = _mesh_glb(_SQUARE)

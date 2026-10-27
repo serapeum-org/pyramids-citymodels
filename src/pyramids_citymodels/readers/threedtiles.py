@@ -19,9 +19,12 @@ Deliberate scope and limitations of this first reader (all documented, none sile
   vertices projected to XY — an approximation, not the true concave outline. Full mesh geometry is
   not surfaced here; a renderer consumes the ``b3dm`` directly.
 - **Vertices are in the tileset's stored coordinate system.** Tile and node transforms are composed
-  and applied, and ``RTC_CENTER`` is added, so footprints are internally consistent — but a 3D
-  Tiles tileset is typically Earth-centred Earth-fixed (ECEF) metres, and this reader does **not**
-  project ECEF to a geographic/projected CRS. The model's ``crs`` is therefore left ``None``.
+  and applied, ``RTC_CENTER`` is added, and the glTF up-axis convention is honoured — glTF content
+  is **y-up** by convention, so the tileset's ``asset.gltfUpAxis`` (default ``"Y"``) selects the
+  y-up→z-up (or x-up→z-up) rotation Cesium applies before placing a tile, and this reader applies it
+  too, so a footprint is the true plan view, not a side elevation. What it does **not** do is project
+  the resulting (typically Earth-centred Earth-fixed, ECEF, metre) coordinates to a geographic or
+  projected CRS; the model's ``crs`` is therefore left ``None``.
 - **Uncompressed glTF only.** Draco (``KHR_draco_mesh_compression``) and meshopt payloads are
   rejected with a clear :class:`~pyramids_citymodels.errors.UnsupportedGeometryError`; decoding them
   needs an optional backend, a documented follow-up (issue #12's extra convention).
@@ -259,6 +262,29 @@ def _quaternion_matrix(quaternion: list[float]) -> np.ndarray:
     return matrix
 
 
+def _up_axis_to_zup(axis: Any) -> np.ndarray:
+    """Return the 4x4 rotation that brings a glTF tile's up-axis to the z-up tile frame.
+
+    glTF content is y-up by convention; 3D Tiles places it with the rotation named by the tileset's
+    ``asset.gltfUpAxis`` (``"Y"`` by default). Mirrors Cesium's ``Axis.*_UP_TO_Z_UP``:
+
+    - ``"Z"`` → identity (content is already z-up);
+    - ``"Y"`` → +90° about X, mapping ``(x, y, z)`` to ``(x, -z, y)``;
+    - ``"X"`` → -90° about Y, mapping ``(x, y, z)`` to ``(-z, y, x)``.
+
+    An unrecognised value falls back to the ``"Y"`` default rather than raising.
+    """
+    matrix = np.eye(4)
+    label = str(axis).upper() if axis is not None else "Y"
+    if label == "Z":
+        return matrix
+    if label == "X":
+        matrix[:3, :3] = np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0]], dtype=np.float64)
+        return matrix
+    matrix[:3, :3] = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=np.float64)
+    return matrix
+
+
 def _mesh_vertices(
     gltf: dict[str, Any], binary: bytes
 ) -> tuple[np.ndarray, np.ndarray | None]:
@@ -393,12 +419,16 @@ def _feature_table(data: bytes, json_length: int, offset: int) -> dict[str, Any]
     return json.loads(raw) if raw.strip() else {}
 
 
-def _parse_b3dm_tile(data: bytes, tile_transform: np.ndarray) -> list[CityObject]:
+def _parse_b3dm_tile(
+    data: bytes, tile_transform: np.ndarray, up_axis: Any = "Y"
+) -> list[CityObject]:
     """Decode one ``b3dm`` tile into footprint :class:`CityObject` s.
 
     Args:
         data: The ``b3dm`` bytes.
         tile_transform: The composed tileset transform to apply to the tile's vertices.
+        up_axis: The tileset's ``asset.gltfUpAxis`` (``"Y"`` by default); selects the glTF
+            up-axis→z-up rotation applied before the tile transform.
 
     Returns:
         One :class:`CityObject` per batch id whose footprint is areal, each with its batch-table row
@@ -426,8 +456,10 @@ def _parse_b3dm_tile(data: bytes, tile_transform: np.ndarray) -> list[CityObject
     rtc = feature_table.get("RTC_CENTER")
     if rtc:
         points = points + np.array(rtc, dtype=np.float64)
+    # Bring the y-up glTF content into the z-up tile frame (gltfUpAxis), then place the tile.
+    placement = tile_transform @ _up_axis_to_zup(up_axis)
     homogeneous = np.column_stack([points, np.ones(len(points))])
-    points = (tile_transform @ homogeneous.T).T[:, :3]
+    points = (placement @ homogeneous.T).T[:, :3]
 
     if batch_ids is None:
         groups = {0: np.arange(len(points))}
@@ -475,6 +507,7 @@ def _walk_tileset(
     tile: dict[str, Any],
     base: Path | None,
     transform: np.ndarray,
+    up_axis: Any,
     objects: dict[str, CityObject],
 ) -> None:
     """Depth-first walk of a tileset tree, decoding each tile's content into ``objects``."""
@@ -482,20 +515,25 @@ def _walk_tileset(
     content = tile.get("content") or {}
     uri = content.get("uri") or content.get("url")
     if uri and base is not None:
-        _decode_content(base / uri, here, objects)
+        _decode_content(base / uri, here, up_axis, objects)
     for child in tile.get("children", []):
-        _walk_tileset(child, base, here, objects)
+        _walk_tileset(child, base, here, up_axis, objects)
 
 
 def _decode_content(
-    path: Path, transform: np.ndarray, objects: dict[str, CityObject]
+    path: Path, transform: np.ndarray, up_axis: Any, objects: dict[str, CityObject]
 ) -> None:
     """Decode one referenced content file (a nested tileset, a ``b3dm``, or a routed-out ``pnts``)."""
     suffix = path.suffix.lower()
     if suffix == ".json":
         nested, nested_base = _load_tileset(path)
-        if _is_tileset(nested) and nested is not None and "root" in nested:
-            _walk_tileset(nested["root"], nested_base, transform, objects)
+        if (
+            _is_tileset(nested)
+            and nested is not None
+            and isinstance(nested.get("root"), dict)
+        ):
+            nested_up = (nested.get("asset") or {}).get("gltfUpAxis", up_axis)
+            _walk_tileset(nested["root"], nested_base, transform, nested_up, objects)
         return
     data = _read_bytes(path)
     if data is None or len(data) < 4:
@@ -508,7 +546,7 @@ def _decode_content(
             stacklevel=2,
         )
         return
-    for city_object in _parse_b3dm_tile(data, transform):
+    for city_object in _parse_b3dm_tile(data, transform, up_axis):
         objects.setdefault(city_object.id, city_object)
 
 
@@ -560,14 +598,15 @@ def parse_3dtiles(source: Any) -> CityModel:
     objects: dict[str, CityObject] = {}
     document, base = _load_tileset(source)
     if _is_tileset(document) and document is not None:
+        up_axis = (document.get("asset") or {}).get("gltfUpAxis", "Y")
         root = document.get("root")
         if isinstance(root, dict):
-            _walk_tileset(root, base, np.eye(4), objects)
+            _walk_tileset(root, base, np.eye(4), up_axis, objects)
         return CityModel(objects=objects, source_format="3DTiles")
 
     data = _read_bytes(source)
     if data is not None and len(data) >= 4 and data[:4] == b"b3dm":
-        for city_object in _parse_b3dm_tile(data, np.eye(4)):
+        for city_object in _parse_b3dm_tile(data, np.eye(4), "Y"):
             objects.setdefault(city_object.id, city_object)
         return CityModel(objects=objects, source_format="3DTiles")
 

@@ -18,12 +18,13 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 
-# Two unit squares at known XY positions; z is the up axis (identity node transform), so each
-# feature's convex-hull footprint is exactly its square. Feature 0 around (0..2, 0..2), feature 1
-# around (5..7, 5..7).
+# Two squares authored y-up (the glTF convention): the footprint lies in the X-Z ground plane with
+# Y the up axis. The reader applies the default gltfUpAxis="Y" rotation (x, y, z) -> (x, -z, y), so
+# the plan footprint comes back in XY as (x, -z). Corners are chosen so that plan is exactly
+# feature 0 -> (0,0)..(2,2) and feature 1 -> (5,5)..(7,7), matching the extents the tests assert.
 _SQUARES = {
-    0: [(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)],
-    1: [(5.0, 5.0), (7.0, 5.0), (7.0, 7.0), (5.0, 7.0)],
+    0: [(0.0, 0.0, 0.0), (2.0, 0.0, 0.0), (2.0, 0.0, -2.0), (0.0, 0.0, -2.0)],
+    1: [(5.0, 0.0, -5.0), (7.0, 0.0, -5.0), (7.0, 0.0, -7.0), (5.0, 0.0, -7.0)],
 }
 
 
@@ -38,8 +39,8 @@ def _build_glb() -> bytes:
     positions: list[tuple[float, float, float]] = []
     batch_ids: list[int] = []
     for batch, corners in _SQUARES.items():
-        for x, y in corners:
-            positions.append((x, y, 0.0))
+        for point in corners:
+            positions.append(point)
             batch_ids.append(batch)
 
     position_bytes = b"".join(struct.pack("<3f", *point) for point in positions)
