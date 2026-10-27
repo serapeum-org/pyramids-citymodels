@@ -439,8 +439,24 @@ def _parse_b3dm_tile(
         as attributes; an empty list when the tile has no areal feature.
 
     Raises:
-        UnsupportedGeometryError: The glTF payload is compressed or malformed.
+        UnsupportedGeometryError: The glTF payload is compressed, truncated, or otherwise malformed.
+            A raw ``struct``/``numpy``/indexing error from decoding a corrupt payload is re-raised as
+            this, so a caller walking a tileset can catch one type to skip a bad tile.
     """
+    try:
+        return _decode_b3dm(data, tile_transform, up_axis, source_id)
+    except UnsupportedGeometryError:
+        raise
+    except (ValueError, IndexError, KeyError, struct.error) as error:
+        raise UnsupportedGeometryError(
+            f"b3dm/glTF payload is malformed and could not be decoded: {error!r}"
+        ) from error
+
+
+def _decode_b3dm(
+    data: bytes, tile_transform: np.ndarray, up_axis: Any, source_id: str
+) -> list[CityObject]:
+    """The raw b3dm decode, whose expected-on-corruption errors :func:`_parse_b3dm_tile` wraps."""
     magic, _version, _length, ft_json, ft_bin, bt_json, bt_bin = (
         _B3DM_HEADER.unpack_from(data, 0)
     )
@@ -469,7 +485,10 @@ def _parse_b3dm_tile(
         groups = {0: np.arange(len(points))}
         batch_length = 1
     else:
-        batch_length = int(feature_table.get("BATCH_LENGTH", batch_ids.max() + 1))
+        # Never trust a declared BATCH_LENGTH below the real maximum id: take whichever is larger so
+        # a too-small (malformed) declaration cannot silently drop out-of-range vertices.
+        declared = int(feature_table.get("BATCH_LENGTH", 0))
+        batch_length = max(declared, int(batch_ids.max()) + 1)
         groups = {
             batch: np.where(batch_ids == batch)[0] for batch in range(batch_length)
         }
@@ -608,7 +627,8 @@ def parse_3dtiles(source: Any) -> CityModel:
         and the model is empty.
 
     Raises:
-        UnsupportedGeometryError: A decoded tile is compressed or not a glTF/b3dm payload.
+        UnsupportedGeometryError: A decoded tile is compressed, truncated, or otherwise not a
+            decodable glTF/b3dm payload.
         TypeError: ``source`` is neither a tileset nor a readable binary tile.
 
     Examples:

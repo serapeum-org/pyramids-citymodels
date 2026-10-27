@@ -245,6 +245,59 @@ class TestB3dmEdges:
             tt._parse_b3dm_tile(b"xxxx" + b"\x00" * 24, np.eye(4))
 
 
+class TestMalformedPayload:
+    """A corrupt payload raises the documented ``UnsupportedGeometryError``, not a raw error (SF1)."""
+
+    def test_truncated_buffer_raises_unsupported_not_valueerror(self) -> None:
+        """A POSITION accessor claiming more vertices than the BIN chunk holds is caught and wrapped."""
+        gltf = {
+            "asset": {"version": "2.0"},
+            "scene": 0,
+            "scenes": [{"nodes": [0]}],
+            "nodes": [{"mesh": 0}],
+            "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}],
+            "buffers": [{"byteLength": 4}],
+            "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 48}],
+            "accessors": [
+                {"bufferView": 0, "componentType": 5126, "count": 4, "type": "VEC3"}
+            ],
+        }
+        tile = _b3dm(_pack_glb(gltf, struct.pack("<f", 1.0)))
+        with pytest.raises(UnsupportedGeometryError, match="malformed"):
+            tt._parse_b3dm_tile(tile, np.eye(4), up_axis="Z")
+
+    def test_bad_accessor_index_raises_unsupported(self) -> None:
+        """A primitive pointing at a non-existent accessor is wrapped, not an IndexError."""
+        gltf = {
+            "asset": {"version": "2.0"},
+            "scene": 0,
+            "scenes": [{"nodes": [0]}],
+            "nodes": [{"mesh": 0}],
+            "meshes": [{"primitives": [{"attributes": {"POSITION": 9}}]}],
+            "buffers": [{"byteLength": 4}],
+            "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 4}],
+            "accessors": [
+                {"bufferView": 0, "componentType": 5126, "count": 0, "type": "VEC3"}
+            ],
+        }
+        tile = _b3dm(_pack_glb(gltf, struct.pack("<f", 1.0)))
+        with pytest.raises(UnsupportedGeometryError):
+            tt._parse_b3dm_tile(tile, np.eye(4), up_axis="Z")
+
+
+class TestBatchLength:
+    """A declared ``BATCH_LENGTH`` below the real maximum id must not drop vertices (SF3)."""
+
+    def test_under_declared_batch_length_keeps_all_features(self) -> None:
+        positions = _SQUARE + _square_at(100.0)
+        glb = _mesh_glb(positions, batch_ids=[0, 0, 0, 0, 1, 1, 1, 1])
+        tile = _b3dm(glb, feature_table={"BATCH_LENGTH": 1})
+        objects = tt._parse_b3dm_tile(tile, np.eye(4), up_axis="Z")
+        assert len(objects) == 2, (
+            "batch id 1 must not be dropped by a too-small BATCH_LENGTH"
+        )
+
+
 class TestTilesetWalk:
     """Nested tilesets, tile transforms, and the malformed-source guards."""
 
