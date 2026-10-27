@@ -420,7 +420,7 @@ def _feature_table(data: bytes, json_length: int, offset: int) -> dict[str, Any]
 
 
 def _parse_b3dm_tile(
-    data: bytes, tile_transform: np.ndarray, up_axis: Any = "Y"
+    data: bytes, tile_transform: np.ndarray, up_axis: Any = "Y", source_id: str = ""
 ) -> list[CityObject]:
     """Decode one ``b3dm`` tile into footprint :class:`CityObject` s.
 
@@ -429,6 +429,10 @@ def _parse_b3dm_tile(
         tile_transform: The composed tileset transform to apply to the tile's vertices.
         up_axis: The tileset's ``asset.gltfUpAxis`` (``"Y"`` by default); selects the glTF
             up-axis→z-up rotation applied before the tile transform.
+        source_id: A per-tile prefix for a feature's **generated** id (when its batch table has no
+            ``id``/``name`` column). ``_BATCHID`` restarts at 0 in every tile, so without a prefix
+            two tiles both produce ``feature-0`` and the second is lost; prefixing keeps them
+            distinct across the tileset.
 
     Returns:
         One :class:`CityObject` per batch id whose footprint is areal, each with its batch-table row
@@ -479,9 +483,8 @@ def _parse_b3dm_tile(
         if ring is None:
             continue
         attributes = dict(rows[batch]) if batch < len(rows) else {}
-        identifier = str(
-            attributes.get("id") or attributes.get("name") or f"feature-{batch}"
-        )
+        generated = f"{source_id}/feature-{batch}" if source_id else f"feature-{batch}"
+        identifier = str(attributes.get("id") or attributes.get("name") or generated)
         objects.append(
             CityObject(
                 id=identifier,
@@ -493,6 +496,31 @@ def _parse_b3dm_tile(
             )
         )
     return objects
+
+
+def _insert_object(objects: dict[str, CityObject], city_object: CityObject) -> None:
+    """Add a city object, disambiguating (never dropping) a duplicate id with a warning.
+
+    Two tiles can legitimately carry the same batch-table ``id``; the earlier reader's
+    ``setdefault`` silently discarded the second. This keeps both — the later one is re-keyed with a
+    ``#2`` suffix and a warning — so a multi-tile read never loses a feature without saying so.
+    """
+    key = city_object.id
+    if key not in objects:
+        objects[key] = city_object
+        return
+    suffix = 2
+    while f"{key}#{suffix}" in objects:
+        suffix += 1
+    new_key = f"{key}#{suffix}"
+    warnings.warn(
+        f"3D Tiles feature id {key!r} occurs in more than one tile; keeping both (the later as "
+        f"{new_key!r}) rather than dropping it",
+        UserWarning,
+        stacklevel=2,
+    )
+    city_object.id = new_key
+    objects[new_key] = city_object
 
 
 def _tile_transform(tile: dict[str, Any], parent: np.ndarray) -> np.ndarray:
@@ -509,19 +537,28 @@ def _walk_tileset(
     transform: np.ndarray,
     up_axis: Any,
     objects: dict[str, CityObject],
+    counter: list[int],
 ) -> None:
-    """Depth-first walk of a tileset tree, decoding each tile's content into ``objects``."""
+    """Depth-first walk of a tileset tree, decoding each tile's content into ``objects``.
+
+    ``counter`` is a single-element list used as a running tile index, so each decoded content file
+    gets a distinct ``source_id`` for its generated feature ids across the whole walk.
+    """
     here = _tile_transform(tile, transform)
     content = tile.get("content") or {}
     uri = content.get("uri") or content.get("url")
     if uri and base is not None:
-        _decode_content(base / uri, here, up_axis, objects)
+        _decode_content(base / uri, here, up_axis, objects, counter)
     for child in tile.get("children", []):
-        _walk_tileset(child, base, here, up_axis, objects)
+        _walk_tileset(child, base, here, up_axis, objects, counter)
 
 
 def _decode_content(
-    path: Path, transform: np.ndarray, up_axis: Any, objects: dict[str, CityObject]
+    path: Path,
+    transform: np.ndarray,
+    up_axis: Any,
+    objects: dict[str, CityObject],
+    counter: list[int],
 ) -> None:
     """Decode one referenced content file (a nested tileset, a ``b3dm``, or a routed-out ``pnts``)."""
     suffix = path.suffix.lower()
@@ -533,7 +570,9 @@ def _decode_content(
             and isinstance(nested.get("root"), dict)
         ):
             nested_up = (nested.get("asset") or {}).get("gltfUpAxis", up_axis)
-            _walk_tileset(nested["root"], nested_base, transform, nested_up, objects)
+            _walk_tileset(
+                nested["root"], nested_base, transform, nested_up, objects, counter
+            )
         return
     data = _read_bytes(path)
     if data is None or len(data) < 4:
@@ -546,8 +585,10 @@ def _decode_content(
             stacklevel=2,
         )
         return
-    for city_object in _parse_b3dm_tile(data, transform, up_axis):
-        objects.setdefault(city_object.id, city_object)
+    source_id = f"{path.stem}#{counter[0]}"
+    counter[0] += 1
+    for city_object in _parse_b3dm_tile(data, transform, up_axis, source_id):
+        _insert_object(objects, city_object)
 
 
 def parse_3dtiles(source: Any) -> CityModel:
@@ -601,13 +642,13 @@ def parse_3dtiles(source: Any) -> CityModel:
         up_axis = (document.get("asset") or {}).get("gltfUpAxis", "Y")
         root = document.get("root")
         if isinstance(root, dict):
-            _walk_tileset(root, base, np.eye(4), up_axis, objects)
+            _walk_tileset(root, base, np.eye(4), up_axis, objects, [0])
         return CityModel(objects=objects, source_format="3DTiles")
 
     data = _read_bytes(source)
     if data is not None and len(data) >= 4 and data[:4] == b"b3dm":
-        for city_object in _parse_b3dm_tile(data, np.eye(4), "Y"):
-            objects.setdefault(city_object.id, city_object)
+        for city_object in _parse_b3dm_tile(data, np.eye(4), "Y", "tile"):
+            _insert_object(objects, city_object)
         return CityModel(objects=objects, source_format="3DTiles")
 
     raise TypeError(

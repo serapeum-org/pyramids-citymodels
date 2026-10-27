@@ -419,3 +419,76 @@ class TestUpAxis:
         del gltf["scene"]
         points, _ = tt._mesh_vertices(gltf, binary)
         assert len(points) == 4
+
+
+def _square_at(dx: float) -> list:
+    """A z-up unit square footprint shifted by ``dx`` along X."""
+    return [(dx, 0.0, 0.0), (dx + 2.0, 0.0, 0.0), (dx + 2.0, 2.0, 0.0), (dx, 2.0, 0.0)]
+
+
+def _two_tile_tileset(tmp_path, batch_table: dict | None = None):
+    """Write a z-up, two-child tileset whose tiles sit at distinct X offsets; return its path."""
+    (tmp_path / "a.b3dm").write_bytes(
+        _b3dm(
+            _mesh_glb(_square_at(0.0)),
+            feature_table={"BATCH_LENGTH": 1},
+            batch_table=batch_table,
+        )
+    )
+    (tmp_path / "b.b3dm").write_bytes(
+        _b3dm(
+            _mesh_glb(_square_at(100.0)),
+            feature_table={"BATCH_LENGTH": 1},
+            batch_table=batch_table,
+        )
+    )
+    tileset = tmp_path / "tileset.json"
+    tileset.write_text(
+        json.dumps(
+            {
+                "asset": {"version": "1.0", "gltfUpAxis": "Z"},
+                "geometricError": 0,
+                "root": {
+                    "children": [
+                        {"content": {"uri": "a.b3dm"}},
+                        {"content": {"uri": "b.b3dm"}},
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return tileset
+
+
+class TestMultiTileIds:
+    """Cross-tile feature ids must not silently drop buildings (MF1)."""
+
+    def test_two_tiles_without_ids_keep_both_features(self, tmp_path) -> None:
+        """Two id-less tiles both yield feature-0 locally; namespacing keeps both, not one."""
+        model = tt.parse_3dtiles(_two_tile_tileset(tmp_path))
+        assert len(model.objects) == 2
+        xmins = sorted(
+            min(point[0] for point in obj.geometries[0].boundaries[0][0])
+            for obj in model.objects.values()
+        )
+        assert xmins == [0.0, 100.0]
+
+    def test_duplicate_real_id_across_tiles_warns_and_keeps_both(
+        self, tmp_path
+    ) -> None:
+        """Two tiles sharing the batch-table id 'X' are both kept (second re-keyed) with a warning."""
+        with pytest.warns(UserWarning, match="occurs in more than one tile"):
+            model = tt.parse_3dtiles(
+                _two_tile_tileset(tmp_path, batch_table={"id": ["X"]})
+            )
+        assert len(model.objects) == 2
+        assert "X" in model.objects and "X#2" in model.objects
+
+    def test_insert_object_is_a_no_op_rename_for_unique_ids(self) -> None:
+        from pyramids_citymodels.ir import CityObject
+
+        objects: dict = {}
+        tt._insert_object(objects, CityObject(id="a", type="Building"))
+        tt._insert_object(objects, CityObject(id="b", type="Building"))
+        assert sorted(objects) == ["a", "b"]
