@@ -677,6 +677,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#3d-tiles-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3D Tiles scope
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -739,6 +750,34 @@
     <span class="md-ellipsis">
       
         CityGmlDriver
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.drivers.threedtiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        threedtiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="threedtiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ThreeDTilesDriver
       
     </span>
   </a>
@@ -834,6 +873,45 @@
     <span class="md-ellipsis">
       
         looks_like_citygml
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.readers.threedtiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        threedtiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="threedtiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        parse_3dtiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        looks_like_3dtiles
       
     </span>
   </a>
@@ -1537,6 +1615,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#3d-tiles-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3D Tiles scope
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1599,6 +1688,34 @@
     <span class="md-ellipsis">
       
         CityGmlDriver
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.drivers.threedtiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        threedtiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="threedtiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ThreeDTilesDriver
       
     </span>
   </a>
@@ -1694,6 +1811,45 @@
     <span class="md-ellipsis">
       
         looks_like_citygml
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.readers.threedtiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        threedtiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="threedtiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        parse_3dtiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        looks_like_3dtiles
       
     </span>
   </a>
@@ -1861,7 +2017,7 @@
 
 
 <h1 id="drivers"><a class="toclink" href="#drivers">Drivers</a><a class="headerlink" href="#drivers" title="Permanent link">#</a></h1>
-<p><code>pyramids-citymodels</code> ships two readers for the 3D city-model exchange formats. Both turn a file
+<p><code>pyramids-citymodels</code> ships three readers for the 3D city-model exchange formats. Each turns a file
 into a <code>pyramids</code> <a href="https://serapeum-org.github.io/pyramids/latest/"><code>FeatureCollection</code></a> — a
 GeoDataFrame subclass — using one flat row model: a <code>surface_type</code> discriminator column and a
 <code>parent_id</code> foreign key, with the object's attributes passed through.</p>
@@ -1887,23 +2043,30 @@ GeoDataFrame subclass — using one flat row model: a <code>surface_type</code> 
 <td><code>.gml</code>, <code>.citygml</code>, <code>.xml</code> (namespace-sniffed)</td>
 <td>stdlib <code>xml.etree</code></td>
 </tr>
+<tr>
+<td><code>ThreeDTilesDriver</code></td>
+<td><code>3dtiles</code></td>
+<td><code>tileset.json</code> (<code>.json</code>, content-sniffed), <code>.b3dm</code>, <code>.glb</code></td>
+<td>stdlib <code>struct</code> + <code>numpy</code></td>
+</tr>
 </tbody>
 </table>
-<p>Neither declares a separate GDAL or any heavy backend: parsing is pure standard library on top of
-the shapely/geopandas that <code>pyramids-core</code> already provides.</p>
+<p>None declares a separate GDAL or any heavy backend: parsing is pure standard library (plus the
+<code>numpy</code>/<code>shapely</code>/<code>geopandas</code> that <code>pyramids-core</code> already provides).</p>
 <h2 id="usage"><a class="toclink" href="#usage">Usage</a><a class="headerlink" href="#usage" title="Permanent link">#</a></h2>
-<p>Once a released <code>pyramids-core</code> exposes the <code>pyramids.vector_drivers</code> registry, a city-model file is
-read through <code>pyramids</code> itself — the driver is selected by content, or named explicitly:</p>
+<p>A released <code>pyramids-core</code> (≥ 0.72.0) exposes the <code>pyramids.vector_drivers</code> registry, so a
+city-model file is read through <code>pyramids</code> itself — the driver is selected by content, or named
+explicitly:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pyramids.feature</span><span class="w"> </span><span class="kn">import</span> <span class="n">FeatureCollection</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># selected by content sniff (.json is shared with GeoJSON, so content decides)</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">features</span> <span class="o">=</span> <span class="n">FeatureCollection</span><span class="o">.</span><span class="n">read_file</span><span class="p">(</span><span class="s2">"building.city.json"</span><span class="p">)</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># or named explicitly</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">features</span> <span class="o">=</span> <span class="n">FeatureCollection</span><span class="o">.</span><span class="n">read_file</span><span class="p">(</span><span class="s2">"building.gml"</span><span class="p">,</span> <span class="n">driver</span><span class="o">=</span><span class="s2">"citygml"</span><span class="p">)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="c1"># selected by content sniff (.json is shared by CityJSON, GeoJSON and a 3D Tiles tileset,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># so content decides which driver claims it — or None of them, falling through to OGR)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">features</span> <span class="o">=</span> <span class="n">FeatureCollection</span><span class="o">.</span><span class="n">read_file</span><span class="p">(</span><span class="s2">"building.city.json"</span><span class="p">)</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">tiles</span> <span class="o">=</span> <span class="n">FeatureCollection</span><span class="o">.</span><span class="n">read_file</span><span class="p">(</span><span class="s2">"tileset.json"</span><span class="p">)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># or named explicitly</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">features</span> <span class="o">=</span> <span class="n">FeatureCollection</span><span class="o">.</span><span class="n">read_file</span><span class="p">(</span><span class="s2">"building.gml"</span><span class="p">,</span> <span class="n">driver</span><span class="o">=</span><span class="s2">"citygml"</span><span class="p">)</span>
 </code></pre></div>
-<p>Until that registry ships (tracked in
-<a href="https://github.com/serapeum-org/pyramids-citymodels/issues/19">#19</a>), the drivers are used
-directly — the integration is otherwise identical:</p>
+<p>The drivers can also be used directly (e.g. on an older core), with an identical result:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pyramids_citymodels.drivers.cityjson</span><span class="w"> </span><span class="kn">import</span> <span class="n">CityJsonDriver</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">features</span> <span class="o">=</span> <span class="n">CityJsonDriver</span><span class="p">()</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="s2">"building.city.json"</span><span class="p">,</span> <span class="n">strategy</span><span class="o">=</span><span class="s2">"semantic_surfaces"</span><span class="p">)</span>
@@ -1922,6 +2085,21 @@ directly — the integration is otherwise identical:</p>
 design, so it is valid-but-zero-area in <code>semantic_surfaces</code> and excluded from a <code>footprint</code>. An
 unsupported geometry type (a point/line aggregate) raises
 <a class="autorefs autorefs-internal" href="#pyramids_citymodels.errors.UnsupportedGeometryError"><code>UnsupportedGeometryError</code></a>.</p>
+<h3 id="3d-tiles-scope"><a class="toclink" href="#3d-tiles-scope">3D Tiles scope</a><a class="headerlink" href="#3d-tiles-scope" title="Permanent link">#</a></h3>
+<p>3D Tiles is a renderer-oriented format, so this driver surfaces only what maps cleanly onto a
+<code>FeatureCollection</code> — a building's <strong>footprint plus its batch-table attributes</strong>. The deliberate
+limits of this first reader (all documented, none silent):</p>
+<ul>
+<li><strong>Footprints, not meshes.</strong> Each feature's geometry is the 2D convex-hull footprint of its
+  vertices; the full textured mesh is left to a renderer (Digital-Earth's 3-D layer).</li>
+<li><strong>No ECEF→geographic projection.</strong> Tile and node transforms are composed and <code>RTC_CENTER</code> is
+  applied, so footprints are internally consistent, but a tileset's stored (usually ECEF) coordinates
+  are not re-projected — the <code>FeatureCollection</code> carries <code>crs=None</code>.</li>
+<li><strong>Uncompressed glTF only.</strong> A Draco- or meshopt-compressed tile raises <code>UnsupportedGeometryError</code>;
+  a compressed-mesh backend is a documented follow-up (<a href="https://github.com/serapeum-org/pyramids-citymodels/issues/12">#12</a>).</li>
+<li><strong><code>pnts</code> is routed out.</strong> Point-cloud tiles belong to the <code>pointclouds</code> package and are skipped
+  with a warning, not mis-read as meshes.</li>
+</ul>
 <h2 id="driver-classes"><a class="toclink" href="#driver-classes">Driver classes</a><a class="headerlink" href="#driver-classes" title="Permanent link">#</a></h2>
 
 
@@ -2823,6 +3001,417 @@ CityGML namespace or a <code>CityModel</code> element rather than trusting the s
 <a id="pyramids_citymodels.drivers.citygml.CityGmlDriver.read--source--__codelineno-0-82" name="pyramids_citymodels.drivers.citygml.CityGmlDriver.read--source--__codelineno-0-82"></a>
 <a id="pyramids_citymodels.drivers.citygml.CityGmlDriver.read--source--__codelineno-0-83" name="pyramids_citymodels.drivers.citygml.CityGmlDriver.read--source--__codelineno-0-83"></a>    <span class="n">model</span> <span class="o">=</span> <span class="n">parse_citygml</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
 <a id="pyramids_citymodels.drivers.citygml.CityGmlDriver.read--source--__codelineno-0-84" name="pyramids_citymodels.drivers.citygml.CityGmlDriver.read--source--__codelineno-0-84"></a>    <span class="k">return</span> <span class="n">to_feature_collection</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-module">
+
+
+
+<h3 id="pyramids_citymodels.drivers.threedtiles" class="doc doc-heading"><a href="#pyramids_citymodels.drivers.threedtiles" class="toclink">
+            <code>pyramids_citymodels.drivers.threedtiles</code>
+
+
+</a><a href="#pyramids_citymodels.drivers.threedtiles" class="headerlink" title="Permanent link">#</a></h3>
+
+    <div class="doc doc-contents first">
+
+        <p>The 3D Tiles vector driver (issue #16).</p>
+<p>Registered into the <code>pyramids.vector_drivers</code> entry-point group alongside the CityJSON and
+CityGML drivers, this is what <code>FeatureCollection.read_file</code> dispatches a 3D Tiles read into. It
+follows the same class-attribute contract — claims are class attributes, :meth:<code>can_open</code> is a
+classmethod — so discovery reads the class without importing the parser or numpy/shapely; those
+load only inside :meth:<code>read</code>.</p>
+<p>A <code>tileset.json</code> shares the <code>.json</code> suffix with CityJSON and GeoJSON, so :meth:<code>can_open</code>
+<strong>content-sniffs</strong> the tileset structure (an <code>asset</code> object plus a <code>root</code>/<code>geometricError</code>)
+and the <code>b3dm</code> / glTF binary magic rather than trusting the suffix. The driver surfaces building
+<strong>footprints and batch-table attributes</strong>; see :mod:<code>pyramids_citymodels.readers.threedtiles</code> for
+the deliberate scope (footprints not meshes, no ECEF→geographic projection, uncompressed glTF only,
+<code>pnts</code> routed to the pointclouds package).</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver" class="doc doc-heading"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver" class="toclink">
+            <code>ThreeDTilesDriver</code>
+
+
+</a><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver" class="headerlink" title="Permanent link">#</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Read Cesium 3D Tiles (<code>tileset.json</code> / <code>.b3dm</code>) footprints as a <code>FeatureCollection</code>.</p>
+
+
+
+
+
+
+
+
+              <details class="mkdocstrings-source">
+                <summary>Source code in <code>src/pyramids_citymodels/drivers/threedtiles.py</code></summary>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-22">22</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-23">23</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-24">24</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-25">25</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-26">26</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-27">27</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-28">28</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-29">29</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-30">30</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-31">31</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-32">32</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-33">33</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-34">34</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-35">35</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-36">36</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-37">37</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-38">38</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-39">39</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-40">40</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-41">41</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-42">42</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-43">43</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-44">44</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-45">45</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-46">46</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-47">47</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-48">48</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-49">49</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-50">50</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-51">51</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-52">52</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-53">53</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-54">54</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-55">55</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-56">56</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-57">57</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-58">58</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-59">59</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-60">60</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-61">61</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-62">62</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-63">63</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-64">64</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-65">65</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-66">66</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-67">67</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-68">68</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-69">69</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-70">70</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-71">71</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-72">72</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-73">73</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-74">74</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-75">75</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-76">76</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-22" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-22"></a><span class="k">class</span><span class="w"> </span><span class="nc">ThreeDTilesDriver</span><span class="p">:</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-23" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-23"></a><span class="w">    </span><span class="sd">"""Read Cesium 3D Tiles (``tileset.json`` / ``.b3dm``) footprints as a ``FeatureCollection``."""</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-24" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-24"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-25" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-25"></a>    <span class="n">name</span> <span class="o">=</span> <span class="s2">"3dtiles"</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-26" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-26"></a>    <span class="n">long_name</span> <span class="o">=</span> <span class="s2">"3D Tiles (Cesium — building footprints + batch-table attributes)"</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-27" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-27"></a>    <span class="n">api_version</span> <span class="o">=</span> <span class="mi">1</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-28" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-28"></a>    <span class="n">suffixes</span> <span class="o">=</span> <span class="p">(</span><span class="s2">".json"</span><span class="p">,</span> <span class="s2">".b3dm"</span><span class="p">,</span> <span class="s2">".glb"</span><span class="p">)</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-29" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-29"></a>    <span class="n">schemes</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">()</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-30" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-30"></a>    <span class="n">capabilities</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">"read"</span><span class="p">})</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-31" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-31"></a>    <span class="c1">#: The tileset/b3dm/glb containers decode with the standard library and numpy (already a</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-32" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-32"></a>    <span class="c1">#: dependency), so there is no optional backend. A compressed-mesh backend (Draco/meshopt) is a</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-33" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-33"></a>    <span class="c1">#: documented follow-up that would attach its own ``extra`` here (#12).</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-34" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-34"></a>    <span class="n">extra</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-35" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-35"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-36" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-36"></a>    <span class="nd">@classmethod</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-37" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-37"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">can_open</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">source</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-38" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-38"></a><span class="w">        </span><span class="sd">"""Return ``True`` only when ``source`` is a 3D Tiles tileset or a ``b3dm``/glTF tile.</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-39" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-39"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-40" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-40"></a><span class="sd">        Content-sniffs the tileset structure (and the binary magic) rather than trusting the</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-41" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-41"></a><span class="sd">        ``.json`` suffix it shares with CityJSON/GeoJSON, so a CityJSON file is declined. Never</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-42" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-42"></a><span class="sd">        raises.</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-43" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-43"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-44" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-44"></a><span class="sd">        Examples:</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-45" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-45"></a><span class="sd">            - A tileset is claimed; a CityJSON document sharing the ``.json`` suffix is declined:</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-46" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-46"></a><span class="sd">                ```python</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-47" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-47"></a><span class="sd">                &gt;&gt;&gt; ThreeDTilesDriver.can_open(</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-48" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-48"></a><span class="sd">                ...     '{"asset": {"version": "1.0"}, "geometricError": 0, "root": {}}'</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-49" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-49"></a><span class="sd">                ... )</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-50" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-50"></a><span class="sd">                True</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-51" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-51"></a><span class="sd">                &gt;&gt;&gt; ThreeDTilesDriver.can_open(</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-52" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-52"></a><span class="sd">                ...     '{"type": "CityJSON", "CityObjects": {}, "vertices": []}'</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-53" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-53"></a><span class="sd">                ... )</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-54" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-54"></a><span class="sd">                False</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-55" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-55"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-56" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-56"></a><span class="sd">                ```</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-57" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-57"></a><span class="sd">        """</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-58" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-58"></a>        <span class="kn">from</span><span class="w"> </span><span class="nn">pyramids_citymodels.readers.threedtiles</span><span class="w"> </span><span class="kn">import</span> <span class="n">looks_like_3dtiles</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-59" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-59"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-60" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-60"></a>        <span class="k">return</span> <span class="n">looks_like_3dtiles</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-61" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-61"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-62" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-62"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-63" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-63"></a><span class="w">        </span><span class="sd">"""Parse ``source`` and flatten its footprints into a ``FeatureCollection``.</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-64" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-64"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-65" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-65"></a><span class="sd">        Keyword Args:</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-66" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-66"></a><span class="sd">            strategy: ``"footprint"`` or ``"semantic_surfaces"`` (default). 3D Tiles carries no</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-67" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-67"></a><span class="sd">                semantic surfaces, so each feature's footprint becomes one row either way.</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-68" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-68"></a><span class="sd">            lod: Level of detail to select; ``None`` takes the highest present (3D Tiles has none).</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-69" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-69"></a><span class="sd">            geometry_dimension: ``"xyz"`` (default) keeps Z, ``"xy"`` drops it.</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-70" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-70"></a><span class="sd">            child_inherits_parent_attributes: Whether child rows carry parent attributes.</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-71" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-71"></a><span class="sd">        """</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-72" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-72"></a>        <span class="kn">from</span><span class="w"> </span><span class="nn">pyramids_citymodels.flatten</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_feature_collection</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-73" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-73"></a>        <span class="kn">from</span><span class="w"> </span><span class="nn">pyramids_citymodels.readers.threedtiles</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse_3dtiles</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-74" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-74"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-75" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-75"></a>        <span class="n">model</span> <span class="o">=</span> <span class="n">parse_3dtiles</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-76" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver--source--__codelineno-0-76"></a>        <span class="k">return</span> <span class="n">to_feature_collection</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+              </details>
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h5 id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open" class="doc doc-heading"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open" class="toclink">
+            <code class="highlight language-python"><span class="n">can_open</span><span class="p">(</span><span class="n">source</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
+  </span>
+
+</a><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open" class="headerlink" title="Permanent link">#</a></h5>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return <code>True</code> only when <code>source</code> is a 3D Tiles tileset or a <code>b3dm</code>/glTF tile.</p>
+<p>Content-sniffs the tileset structure (and the binary magic) rather than trusting the
+<code>.json</code> suffix it shares with CityJSON/GeoJSON, so a CityJSON file is declined. Never
+raises.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <ul>
+<li>A tileset is claimed; a CityJSON document sharing the <code>.json</code> suffix is declined:
+    <div class="highlight"><pre><span></span><code><a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-1" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-1" href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-1"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">ThreeDTilesDriver</span><span class="o">.</span><span class="n">can_open</span><span class="p">(</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-2" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-2" href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-2"></a><span class="o">...</span>     <span class="s1">'{"asset": {"version": "1.0"}, "geometricError": 0, "root": </span><span class="si">{}</span><span class="s1">}'</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-3" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-3" href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-3"></a><span class="o">...</span> <span class="p">)</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-4" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-4" href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-4"></a><span class="kc">True</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-5" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-5" href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-5"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">ThreeDTilesDriver</span><span class="o">.</span><span class="n">can_open</span><span class="p">(</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-6" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-6" href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-6"></a><span class="o">...</span>     <span class="s1">'{"type": "CityJSON", "CityObjects": </span><span class="si">{}</span><span class="s1">, "vertices": []}'</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-7" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-7" href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-7"></a><span class="o">...</span> <span class="p">)</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-8" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-8" href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--__codelineno-0-8"></a><span class="kc">False</span>
+</code></pre></div></li>
+</ul>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/pyramids_citymodels/drivers/threedtiles.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-36">36</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-37">37</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-38">38</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-39">39</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-40">40</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-41">41</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-42">42</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-43">43</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-44">44</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-45">45</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-46">46</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-47">47</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-48">48</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-49">49</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-50">50</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-51">51</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-52">52</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-53">53</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-54">54</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-55">55</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-56">56</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-57">57</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-58">58</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-59">59</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-60">60</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-36" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-36"></a><span class="nd">@classmethod</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-37" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-37"></a><span class="k">def</span><span class="w"> </span><span class="nf">can_open</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">source</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-38" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-38"></a><span class="w">    </span><span class="sd">"""Return ``True`` only when ``source`` is a 3D Tiles tileset or a ``b3dm``/glTF tile.</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-39" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-39"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-40" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-40"></a><span class="sd">    Content-sniffs the tileset structure (and the binary magic) rather than trusting the</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-41" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-41"></a><span class="sd">    ``.json`` suffix it shares with CityJSON/GeoJSON, so a CityJSON file is declined. Never</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-42" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-42"></a><span class="sd">    raises.</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-43" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-43"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-44" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-44"></a><span class="sd">    Examples:</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-45" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-45"></a><span class="sd">        - A tileset is claimed; a CityJSON document sharing the ``.json`` suffix is declined:</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-46" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-46"></a><span class="sd">            ```python</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-47" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-47"></a><span class="sd">            &gt;&gt;&gt; ThreeDTilesDriver.can_open(</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-48" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-48"></a><span class="sd">            ...     '{"asset": {"version": "1.0"}, "geometricError": 0, "root": {}}'</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-49" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-49"></a><span class="sd">            ... )</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-50" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-50"></a><span class="sd">            True</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-51" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-51"></a><span class="sd">            &gt;&gt;&gt; ThreeDTilesDriver.can_open(</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-52" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-52"></a><span class="sd">            ...     '{"type": "CityJSON", "CityObjects": {}, "vertices": []}'</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-53" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-53"></a><span class="sd">            ... )</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-54" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-54"></a><span class="sd">            False</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-55" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-55"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-56" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-56"></a><span class="sd">            ```</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-57" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-57"></a><span class="sd">    """</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-58" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-58"></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">pyramids_citymodels.readers.threedtiles</span><span class="w"> </span><span class="kn">import</span> <span class="n">looks_like_3dtiles</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-59" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-59"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-60" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.can_open--source--__codelineno-0-60"></a>    <span class="k">return</span> <span class="n">looks_like_3dtiles</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h5 id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read" class="doc doc-heading"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read" class="toclink">
+            <code class="highlight language-python"><span class="n">read</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></code>
+
+</a><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read" class="headerlink" title="Permanent link">#</a></h5>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Parse <code>source</code> and flatten its footprints into a <code>FeatureCollection</code>.</p>
+
+
+<p><span class="doc-section-title">Other Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code>strategy</code></td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>"footprint"</code> or <code>"semantic_surfaces"</code> (default). 3D Tiles carries no
+semantic surfaces, so each feature's footprint becomes one row either way.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>lod</code></td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Level of detail to select; <code>None</code> takes the highest present (3D Tiles has none).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>geometry_dimension</code></td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>"xyz"</code> (default) keeps Z, <code>"xy"</code> drops it.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code>child_inherits_parent_attributes</code></td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Whether child rows carry parent attributes.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/pyramids_citymodels/drivers/threedtiles.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-62">62</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-63">63</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-64">64</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-65">65</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-66">66</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-67">67</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-68">68</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-69">69</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-70">70</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-71">71</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-72">72</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-73">73</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-74">74</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-75">75</a></span>
+<span class="normal"><a href="#pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-76">76</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-62" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-62"></a><span class="k">def</span><span class="w"> </span><span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">source</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-63" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-63"></a><span class="w">    </span><span class="sd">"""Parse ``source`` and flatten its footprints into a ``FeatureCollection``.</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-64" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-64"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-65" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-65"></a><span class="sd">    Keyword Args:</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-66" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-66"></a><span class="sd">        strategy: ``"footprint"`` or ``"semantic_surfaces"`` (default). 3D Tiles carries no</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-67" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-67"></a><span class="sd">            semantic surfaces, so each feature's footprint becomes one row either way.</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-68" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-68"></a><span class="sd">        lod: Level of detail to select; ``None`` takes the highest present (3D Tiles has none).</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-69" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-69"></a><span class="sd">        geometry_dimension: ``"xyz"`` (default) keeps Z, ``"xy"`` drops it.</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-70" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-70"></a><span class="sd">        child_inherits_parent_attributes: Whether child rows carry parent attributes.</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-71" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-71"></a><span class="sd">    """</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-72" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-72"></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">pyramids_citymodels.flatten</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_feature_collection</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-73" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-73"></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">pyramids_citymodels.readers.threedtiles</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse_3dtiles</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-74" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-74"></a>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-75" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-75"></a>    <span class="n">model</span> <span class="o">=</span> <span class="n">parse_3dtiles</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
+<a id="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-76" name="pyramids_citymodels.drivers.threedtiles.ThreeDTilesDriver.read--source--__codelineno-0-76"></a>    <span class="k">return</span> <span class="n">to_feature_collection</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -3848,6 +4437,387 @@ Never raises — a non-XML or unreadable file returns <code>False</code>.</p>
 <a id="pyramids_citymodels.readers.citygml.looks_like_citygml--source--__codelineno-0-143" name="pyramids_citymodels.readers.citygml.looks_like_citygml--source--__codelineno-0-143"></a>    <span class="k">except</span> <span class="p">(</span><span class="ne">OSError</span><span class="p">,</span> <span class="n">ElementTree</span><span class="o">.</span><span class="n">ParseError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
 <a id="pyramids_citymodels.readers.citygml.looks_like_citygml--source--__codelineno-0-144" name="pyramids_citymodels.readers.citygml.looks_like_citygml--source--__codelineno-0-144"></a>        <span class="k">return</span> <span class="kc">False</span>
 <a id="pyramids_citymodels.readers.citygml.looks_like_citygml--source--__codelineno-0-145" name="pyramids_citymodels.readers.citygml.looks_like_citygml--source--__codelineno-0-145"></a>    <span class="k">return</span> <span class="kc">False</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-module">
+
+
+
+<h3 id="pyramids_citymodels.readers.threedtiles" class="doc doc-heading"><a href="#pyramids_citymodels.readers.threedtiles" class="toclink">
+            <code>pyramids_citymodels.readers.threedtiles</code>
+
+
+</a><a href="#pyramids_citymodels.readers.threedtiles" class="headerlink" title="Permanent link">#</a></h3>
+
+    <div class="doc doc-contents first">
+
+        <p>Parse Cesium 3D Tiles into the shared IR (issue #16).</p>
+<p>3D Tiles is a different animal from CityJSON/CityGML: a <code>tileset.json</code> is a tree of bounding
+volumes whose leaves point at <strong>binary</strong> content — <code>b3dm</code> (Batched 3D Model, a glTF mesh with a
+per-feature <em>batch table</em> of attributes), <code>pnts</code> (point cloud) and bare <code>glTF</code>/<code>glb</code>. This is
+why the package is <code>citymodels</code> and not <code>citygml</code>.</p>
+<p>What maps cleanly onto a <code>FeatureCollection</code> is a building's <strong>footprint plus its batch-table
+attributes</strong>; the full textured mesh is for a renderer (Digital-Earth's 3-D layer), not a flat
+GeoDataFrame (issue #16, scoping caveats). So this reader walks the tileset tree, decodes each
+<code>b3dm</code> tile's glTF mesh, groups the vertices by <code>_BATCHID</code> into one feature per batch id, and
+emits each feature's footprint (the 2-D convex hull of its vertices) as an IR <code>CityObject</code> with a
+<code>MultiSurface</code> footprint geometry and the batch-table row as its attributes. The flattener
+(:mod:<code>pyramids_citymodels.flatten</code>) turns that into footprint rows like any other city model.</p>
+<p>Deliberate scope and limitations of this first reader (all documented, none silent):</p>
+<ul>
+<li><strong>Footprints, not meshes.</strong> The emitted geometry is the convex-hull footprint of each feature's
+  vertices projected to XY — an approximation, not the true concave outline. Full mesh geometry is
+  not surfaced here; a renderer consumes the <code>b3dm</code> directly.</li>
+<li><strong>Vertices are in the tileset's stored coordinate system.</strong> Tile and node transforms are composed
+  and applied, and <code>RTC_CENTER</code> is added, so footprints are internally consistent — but a 3D
+  Tiles tileset is typically Earth-centred Earth-fixed (ECEF) metres, and this reader does <strong>not</strong>
+  project ECEF to a geographic/projected CRS. The model's <code>crs</code> is therefore left <code>None</code>.</li>
+<li><strong>Uncompressed glTF only.</strong> Draco (<code>KHR_draco_mesh_compression</code>) and meshopt payloads are
+  rejected with a clear :class:<code>~pyramids_citymodels.errors.UnsupportedGeometryError</code>; decoding them
+  needs an optional backend, a documented follow-up (issue #12's extra convention).</li>
+<li><strong><code>pnts</code> is routed out, not read here.</strong> Point-cloud tiles belong to the <code>pointclouds</code> package
+  (serapeum-org/pointclouds#10); a <code>pnts</code> tile is skipped with a warning rather than mis-read as a
+  mesh.</li>
+</ul>
+<p>Only the standard library plus <code>numpy</code> is used (<code>json</code> + <code>struct</code> for the containers, <code>numpy</code>
+for the vertex arithmetic and the hull), so importing this module pulls in no heavy backend — the
+same import-light contract the CityJSON and CityGML readers keep.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="pyramids_citymodels.readers.threedtiles.parse_3dtiles" class="doc doc-heading"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles" class="toclink">
+            <code class="highlight language-python"><span class="n">parse_3dtiles</span><span class="p">(</span><span class="n">source</span><span class="p">)</span></code>
+
+</a><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles" class="headerlink" title="Permanent link">#</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Parse a 3D Tiles tileset or a single <code>b3dm</code> tile into a :class:<code>CityModel</code>.</p>
+<p>A <code>tileset.json</code> path (or decoded dict/JSON string) is walked from its root, following every
+<code>content.uri</code> relative to the tileset file and composing the tile transforms; a <code>b3dm</code> path
+or byte string is decoded on its own. Each batched feature becomes a :class:<code>CityObject</code> whose
+geometry is its convex-hull footprint and whose attributes are its batch-table row.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>source</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A <code>tileset.json</code> path / dict / JSON string, or a <code>b3dm</code> path / bytes.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="pyramids_citymodels.ir.CityModel">CityModel</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The parsed model. Its <code>crs</code> is <code>None</code> — see the module docstring on coordinate systems.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="pyramids_citymodels.ir.CityModel">CityModel</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>An in-memory tileset (dict/string) has no base directory, so its content cannot be followed</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="pyramids_citymodels.ir.CityModel">CityModel</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>and the model is empty.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code&gt;UnsupportedGeometryError&lt;/code&gt; (&lt;code&gt;pyramids_citymodels.errors.UnsupportedGeometryError&lt;/code&gt;)" href="#pyramids_citymodels.errors.UnsupportedGeometryError">UnsupportedGeometryError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A decoded tile is compressed or not a glTF/b3dm payload.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="TypeError">TypeError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>source</code> is neither a tileset nor a readable binary tile.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/pyramids_citymodels/readers/threedtiles.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-515">515</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-516">516</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-517">517</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-518">518</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-519">519</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-520">520</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-521">521</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-522">522</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-523">523</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-524">524</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-525">525</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-526">526</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-527">527</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-528">528</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-529">529</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-530">530</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-531">531</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-532">532</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-533">533</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-534">534</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-535">535</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-536">536</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-537">537</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-538">538</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-539">539</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-540">540</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-541">541</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-542">542</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-543">543</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-544">544</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-545">545</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-546">546</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-547">547</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-548">548</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-549">549</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-550">550</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-551">551</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-515" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-515"></a><span class="k">def</span><span class="w"> </span><span class="nf">parse_3dtiles</span><span class="p">(</span><span class="n">source</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CityModel</span><span class="p">:</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-516" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-516"></a><span class="w">    </span><span class="sd">"""Parse a 3D Tiles tileset or a single ``b3dm`` tile into a :class:`CityModel`.</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-517" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-517"></a>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-518" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-518"></a><span class="sd">    A ``tileset.json`` path (or decoded dict/JSON string) is walked from its root, following every</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-519" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-519"></a><span class="sd">    ``content.uri`` relative to the tileset file and composing the tile transforms; a ``b3dm`` path</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-520" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-520"></a><span class="sd">    or byte string is decoded on its own. Each batched feature becomes a :class:`CityObject` whose</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-521" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-521"></a><span class="sd">    geometry is its convex-hull footprint and whose attributes are its batch-table row.</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-522" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-522"></a>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-523" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-523"></a><span class="sd">    Args:</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-524" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-524"></a><span class="sd">        source: A ``tileset.json`` path / dict / JSON string, or a ``b3dm`` path / bytes.</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-525" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-525"></a>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-526" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-526"></a><span class="sd">    Returns:</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-527" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-527"></a><span class="sd">        The parsed model. Its ``crs`` is ``None`` — see the module docstring on coordinate systems.</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-528" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-528"></a><span class="sd">        An in-memory tileset (dict/string) has no base directory, so its content cannot be followed</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-529" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-529"></a><span class="sd">        and the model is empty.</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-530" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-530"></a>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-531" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-531"></a><span class="sd">    Raises:</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-532" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-532"></a><span class="sd">        UnsupportedGeometryError: A decoded tile is compressed or not a glTF/b3dm payload.</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-533" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-533"></a><span class="sd">        TypeError: ``source`` is neither a tileset nor a readable binary tile.</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-534" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-534"></a><span class="sd">    """</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-535" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-535"></a>    <span class="n">objects</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">CityObject</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-536" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-536"></a>    <span class="n">document</span><span class="p">,</span> <span class="n">base</span> <span class="o">=</span> <span class="n">_load_tileset</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-537" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-537"></a>    <span class="k">if</span> <span class="n">_is_tileset</span><span class="p">(</span><span class="n">document</span><span class="p">)</span> <span class="ow">and</span> <span class="n">document</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-538" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-538"></a>        <span class="n">root</span> <span class="o">=</span> <span class="n">document</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"root"</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-539" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-539"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-540" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-540"></a>            <span class="n">_walk_tileset</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">base</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="mi">4</span><span class="p">),</span> <span class="n">objects</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-541" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-541"></a>        <span class="k">return</span> <span class="n">CityModel</span><span class="p">(</span><span class="n">objects</span><span class="o">=</span><span class="n">objects</span><span class="p">,</span> <span class="n">source_format</span><span class="o">=</span><span class="s2">"3DTiles"</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-542" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-542"></a>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-543" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-543"></a>    <span class="n">data</span> <span class="o">=</span> <span class="n">_read_bytes</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-544" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-544"></a>    <span class="k">if</span> <span class="n">data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">4</span> <span class="ow">and</span> <span class="n">data</span><span class="p">[:</span><span class="mi">4</span><span class="p">]</span> <span class="o">==</span> <span class="sa">b</span><span class="s2">"b3dm"</span><span class="p">:</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-545" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-545"></a>        <span class="k">for</span> <span class="n">city_object</span> <span class="ow">in</span> <span class="n">_parse_b3dm_tile</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="mi">4</span><span class="p">)):</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-546" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-546"></a>            <span class="n">objects</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">city_object</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">city_object</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-547" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-547"></a>        <span class="k">return</span> <span class="n">CityModel</span><span class="p">(</span><span class="n">objects</span><span class="o">=</span><span class="n">objects</span><span class="p">,</span> <span class="n">source_format</span><span class="o">=</span><span class="s2">"3DTiles"</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-548" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-548"></a>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-549" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-549"></a>    <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-550" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-550"></a>        <span class="sa">f</span><span class="s2">"cannot read 3D Tiles from </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">source</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">: expected a tileset.json or a b3dm tile"</span>
+<a id="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-551" name="pyramids_citymodels.readers.threedtiles.parse_3dtiles--source--__codelineno-0-551"></a>    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles" class="doc doc-heading"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles" class="toclink">
+            <code class="highlight language-python"><span class="n">looks_like_3dtiles</span><span class="p">(</span><span class="n">source</span><span class="p">)</span></code>
+
+</a><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles" class="headerlink" title="Permanent link">#</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return <code>True</code> when <code>source</code> is a 3D Tiles tileset or a <code>b3dm</code> tile. Never raises.</p>
+<p>The driver's <code>can_open</code> uses this to claim a <code>.json</code> that is a <em>tileset</em> (not CityJSON or
+GeoJSON) and a <code>.b3dm</code>/<code>.glb</code> binary. A tileset is recognised by its <code>asset</code> object plus a
+<code>root</code> or <code>geometricError</code>; a binary tile by its <code>b3dm</code> / <code>glTF</code> magic.</p>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <ul>
+<li>A tileset.json is recognised; a CityJSON document sharing the <code>.json</code> suffix is not:
+    <div class="highlight"><pre><span></span><code><a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-0-1" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-0-1" href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-0-1"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">looks_like_3dtiles</span><span class="p">(</span><span class="s1">'{"asset": {"version": "1.0"}, "geometricError": 0, "root": </span><span class="si">{}</span><span class="s1">}'</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-0-2" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-0-2" href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-0-2"></a><span class="kc">True</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-0-3" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-0-3" href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-0-3"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">looks_like_3dtiles</span><span class="p">(</span><span class="s1">'{"type": "CityJSON", "CityObjects": </span><span class="si">{}</span><span class="s1">, "vertices": []}'</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-0-4" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-0-4" href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-0-4"></a><span class="kc">False</span>
+</code></pre></div></li>
+<li>A non-tileset, non-binary source is declined without raising:
+    <div class="highlight"><pre><span></span><code><a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-1-1" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-1-1" href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-1-1"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">looks_like_3dtiles</span><span class="p">(</span><span class="s2">"not a tileset"</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-1-2" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-1-2" href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--__codelineno-1-2"></a><span class="kc">False</span>
+</code></pre></div></li>
+</ul>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/pyramids_citymodels/readers/threedtiles.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-129">129</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-130">130</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-131">131</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-132">132</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-133">133</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-134">134</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-135">135</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-136">136</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-137">137</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-138">138</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-139">139</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-140">140</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-141">141</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-142">142</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-143">143</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-144">144</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-145">145</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-146">146</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-147">147</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-148">148</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-149">149</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-150">150</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-151">151</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-152">152</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-153">153</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-154">154</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-155">155</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-156">156</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-157">157</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-158">158</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-159">159</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-160">160</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-129" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-129"></a><span class="k">def</span><span class="w"> </span><span class="nf">looks_like_3dtiles</span><span class="p">(</span><span class="n">source</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-130" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-130"></a><span class="w">    </span><span class="sd">"""Return ``True`` when ``source`` is a 3D Tiles tileset or a ``b3dm`` tile. Never raises.</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-131" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-131"></a>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-132" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-132"></a><span class="sd">    The driver's ``can_open`` uses this to claim a ``.json`` that is a *tileset* (not CityJSON or</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-133" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-133"></a><span class="sd">    GeoJSON) and a ``.b3dm``/``.glb`` binary. A tileset is recognised by its ``asset`` object plus a</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-134" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-134"></a><span class="sd">    ``root`` or ``geometricError``; a binary tile by its ``b3dm`` / ``glTF`` magic.</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-135" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-135"></a>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-136" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-136"></a><span class="sd">    Examples:</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-137" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-137"></a><span class="sd">        - A tileset.json is recognised; a CityJSON document sharing the ``.json`` suffix is not:</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-138" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-138"></a><span class="sd">            ```python</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-139" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-139"></a><span class="sd">            &gt;&gt;&gt; looks_like_3dtiles('{"asset": {"version": "1.0"}, "geometricError": 0, "root": {}}')</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-140" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-140"></a><span class="sd">            True</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-141" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-141"></a><span class="sd">            &gt;&gt;&gt; looks_like_3dtiles('{"type": "CityJSON", "CityObjects": {}, "vertices": []}')</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-142" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-142"></a><span class="sd">            False</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-143" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-143"></a>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-144" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-144"></a><span class="sd">            ```</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-145" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-145"></a><span class="sd">        - A non-tileset, non-binary source is declined without raising:</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-146" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-146"></a><span class="sd">            ```python</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-147" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-147"></a><span class="sd">            &gt;&gt;&gt; looks_like_3dtiles("not a tileset")</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-148" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-148"></a><span class="sd">            False</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-149" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-149"></a>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-150" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-150"></a><span class="sd">            ```</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-151" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-151"></a><span class="sd">    """</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-152" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-152"></a>    <span class="n">document</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_load_tileset</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-153" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-153"></a>    <span class="k">if</span> <span class="n">_is_tileset</span><span class="p">(</span><span class="n">document</span><span class="p">):</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-154" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-154"></a>        <span class="k">return</span> <span class="kc">True</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-155" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-155"></a>    <span class="n">data</span> <span class="o">=</span> <span class="n">_read_bytes</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-156" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-156"></a>    <span class="k">if</span> <span class="n">data</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">4</span><span class="p">:</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-157" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-157"></a>        <span class="k">return</span> <span class="kc">False</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-158" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-158"></a>    <span class="k">return</span> <span class="n">data</span><span class="p">[:</span><span class="mi">4</span><span class="p">]</span> <span class="o">==</span> <span class="sa">b</span><span class="s2">"b3dm"</span> <span class="ow">or</span> <span class="p">(</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-159" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-159"></a>        <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">4</span> <span class="ow">and</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack_from</span><span class="p">(</span><span class="s2">"&lt;I"</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="mi">0</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">_GLB_MAGIC</span>
+<a id="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-160" name="pyramids_citymodels.readers.threedtiles.looks_like_3dtiles--source--__codelineno-0-160"></a>    <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
