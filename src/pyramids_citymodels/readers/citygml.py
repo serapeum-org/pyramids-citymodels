@@ -245,7 +245,9 @@ def _collect_building_attributes(element: ElementTree.Element) -> dict[str, Any]
     ``"tall"``, a ``gYear`` carrying a timezone, a ``storeys*`` of ``"3.0"``) is kept as the raw
     string, so type parity with the CityJSON reader is *approximate* — a number when parseable,
     else the original text. Only element text is captured; attribute metadata such as a
-    ``measuredHeight`` ``uom`` unit is not.
+    ``measuredHeight`` ``uom`` unit is not. A **repeated** property (CityGML allows several
+    ``bldg:function`` / ``bldg:usage``) keeps only its **last** occurrence — attributes are a flat
+    ``dict``, not a multimap.
     """
     attributes: dict[str, Any] = {}
     for child in element:
