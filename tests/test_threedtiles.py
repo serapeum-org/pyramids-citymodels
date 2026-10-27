@@ -80,10 +80,13 @@ class TestParseTileset:
 
     def test_footprints_match_the_known_square_extents(self) -> None:
         model = parse_3dtiles(TILESET)
-        ring = model.objects["b0"].geometries[0].boundaries[0][0]
-        xs = [point[0] for point in ring]
-        ys = [point[1] for point in ring]
-        assert (min(xs), min(ys), max(xs), max(ys)) == (0.0, 0.0, 2.0, 2.0)
+        # Assert both features' extents so the y-up->z-up mapping is pinned at two offsets, not one.
+        expected = {"b0": (0.0, 0.0, 2.0, 2.0), "b1": (5.0, 5.0, 7.0, 7.0)}
+        for object_id, bounds in expected.items():
+            ring = model.objects[object_id].geometries[0].boundaries[0][0]
+            xs = [point[0] for point in ring]
+            ys = [point[1] for point in ring]
+            assert (min(xs), min(ys), max(xs), max(ys)) == bounds
 
     def test_b3dm_read_directly(self) -> None:
         model = parse_3dtiles(B3DM)
