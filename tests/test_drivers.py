@@ -10,6 +10,7 @@ import geopandas as gpd
 
 from pyramids_citymodels.drivers.citygml import CityGmlDriver
 from pyramids_citymodels.drivers.cityjson import CityJsonDriver
+from pyramids_citymodels.drivers.threedtiles import ThreeDTilesDriver
 
 DATA = Path(__file__).parent / "data"
 CITYJSON = DATA / "minimal.city.json"
@@ -18,7 +19,7 @@ PYPROJECT = Path(__file__).parent.parent / "pyproject.toml"
 
 
 def test_drivers_declare_the_class_attribute_contract() -> None:
-    for driver in (CityJsonDriver, CityGmlDriver):
+    for driver in (CityJsonDriver, CityGmlDriver, ThreeDTilesDriver):
         assert isinstance(driver.name, str) and driver.name
         assert isinstance(driver.long_name, str) and driver.long_name
         assert driver.api_version == 1
@@ -76,6 +77,10 @@ def test_entry_points_registered_under_vector_drivers_group() -> None:
     )
     assert (
         entry_points["citygml"] == "pyramids_citymodels.drivers.citygml:CityGmlDriver"
+    )
+    assert (
+        entry_points["3dtiles"]
+        == "pyramids_citymodels.drivers.threedtiles:ThreeDTilesDriver"
     )
 
 

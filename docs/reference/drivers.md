@@ -1,6 +1,6 @@
 # Drivers
 
-`pyramids-citymodels` ships two readers for the 3D city-model exchange formats. Both turn a file
+`pyramids-citymodels` ships three readers for the 3D city-model exchange formats. Each turns a file
 into a `pyramids` [`FeatureCollection`](https://serapeum-org.github.io/pyramids/latest/) — a
 GeoDataFrame subclass — using one flat row model: a `surface_type` discriminator column and a
 `parent_id` foreign key, with the object's attributes passed through.
@@ -9,27 +9,29 @@ GeoDataFrame subclass — using one flat row model: a `surface_type` discriminat
 |---|---|---|---|
 | `CityJsonDriver` | `cityjson` | `.city.json`, `.cityjson`, `.json` (content-sniffed) | stdlib `json` |
 | `CityGmlDriver` | `citygml` | `.gml`, `.citygml`, `.xml` (namespace-sniffed) | stdlib `xml.etree` |
+| `ThreeDTilesDriver` | `3dtiles` | `tileset.json` (`.json`, content-sniffed), `.b3dm`, `.glb` | stdlib `struct` + `numpy` |
 
-Neither declares a separate GDAL or any heavy backend: parsing is pure standard library on top of
-the shapely/geopandas that `pyramids-core` already provides.
+None declares a separate GDAL or any heavy backend: parsing is pure standard library (plus the
+`numpy`/`shapely`/`geopandas` that `pyramids-core` already provides).
 
 ## Usage
 
-Once a released `pyramids-core` exposes the `pyramids.vector_drivers` registry, a city-model file is
-read through `pyramids` itself — the driver is selected by content, or named explicitly:
+A released `pyramids-core` (≥ 0.72.0) exposes the `pyramids.vector_drivers` registry, so a
+city-model file is read through `pyramids` itself — the driver is selected by content, or named
+explicitly:
 
 ```python
 from pyramids.feature import FeatureCollection
 
-# selected by content sniff (.json is shared with GeoJSON, so content decides)
+# selected by content sniff (.json is shared by CityJSON, GeoJSON and a 3D Tiles tileset,
+# so content decides which driver claims it — or None of them, falling through to OGR)
 features = FeatureCollection.read_file("building.city.json")
+tiles = FeatureCollection.read_file("tileset.json")
 # or named explicitly
 features = FeatureCollection.read_file("building.gml", driver="citygml")
 ```
 
-Until that registry ships (tracked in
-[#19](https://github.com/serapeum-org/pyramids-citymodels/issues/19)), the drivers are used
-directly — the integration is otherwise identical:
+The drivers can also be used directly (e.g. on an older core), with an identical result:
 
 ```python
 from pyramids_citymodels.drivers.cityjson import CityJsonDriver
@@ -53,6 +55,22 @@ design, so it is valid-but-zero-area in `semantic_surfaces` and excluded from a 
 unsupported geometry type (a point/line aggregate) raises
 [`UnsupportedGeometryError`][pyramids_citymodels.errors.UnsupportedGeometryError].
 
+### 3D Tiles scope
+
+3D Tiles is a renderer-oriented format, so this driver surfaces only what maps cleanly onto a
+`FeatureCollection` — a building's **footprint plus its batch-table attributes**. The deliberate
+limits of this first reader (all documented, none silent):
+
+- **Footprints, not meshes.** Each feature's geometry is the 2D convex-hull footprint of its
+  vertices; the full textured mesh is left to a renderer (Digital-Earth's 3-D layer).
+- **No ECEF→geographic projection.** Tile and node transforms are composed and `RTC_CENTER` is
+  applied, so footprints are internally consistent, but a tileset's stored (usually ECEF) coordinates
+  are not re-projected — the `FeatureCollection` carries `crs=None`.
+- **Uncompressed glTF only.** A Draco- or meshopt-compressed tile raises `UnsupportedGeometryError`;
+  a compressed-mesh backend is a documented follow-up ([#12](https://github.com/serapeum-org/pyramids-citymodels/issues/12)).
+- **`pnts` is routed out.** Point-cloud tiles belong to the `pointclouds` package and are skipped
+  with a warning, not mis-read as meshes.
+
 ## Driver classes
 
 ::: pyramids_citymodels.drivers.cityjson
@@ -61,6 +79,11 @@ unsupported geometry type (a point/line aggregate) raises
         heading_level: 3
 
 ::: pyramids_citymodels.drivers.citygml
+    options:
+        show_root_heading: true
+        heading_level: 3
+
+::: pyramids_citymodels.drivers.threedtiles
     options:
         show_root_heading: true
         heading_level: 3
@@ -81,6 +104,12 @@ flattener directly.
         show_root_heading: true
         heading_level: 3
         members: ["parse_citygml", "looks_like_citygml"]
+
+::: pyramids_citymodels.readers.threedtiles
+    options:
+        show_root_heading: true
+        heading_level: 3
+        members: ["parse_3dtiles", "looks_like_3dtiles"]
 
 ::: pyramids_citymodels.flatten
     options:

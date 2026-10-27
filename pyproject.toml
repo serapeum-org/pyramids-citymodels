@@ -34,8 +34,12 @@ requires-python = ">= 3.11, <4"
 # drivers build on.
 dependencies = [
     # `pyramids-core` is the PyPI distribution name; the import stays `pyramids`.
-    # The floor is 0.70.0 (the first release under that name).
-    "pyramids-core >=0.70.0",
+    # Floor is 0.72.0 — the first release whose `FeatureCollection.read_file`
+    # actually consults the `pyramids.vector_drivers` entry-point group (the
+    # `feature/_drivers.py` registry). Earlier releases register these drivers but
+    # never dispatch to them, so `read_file("x.city.json")` would silently fall
+    # through to OGR; 0.72.0 is what makes the dispatch real (#19).
+    "pyramids-core >=0.72.0",
     "numpy >=2.0.0",
     # Declared because `flatten.py` imports them directly to build the feature
     # table (shapely geometries, a GeoDataFrame the `FeatureCollection` wraps).
@@ -52,12 +56,13 @@ dependencies = [
 # registry skips the driver silently at discovery when the package is not importable — so a
 # bare install stays small and every other driver keeps working.
 #
-# None is declared: the CityJSON and CityGML drivers parse with only the standard library
-# (`json`, `xml.etree`) on top of the shapely/geopandas that `pyramids-core` already brings,
-# so both set `extra = None` and a bare install reads both formats. A future backend-requiring
-# driver (e.g. 3D Tiles, #16) adds its extra here and sets `extra = "<import-name>"`; the
-# registry-side skip of an absent-backend driver is exercised once the core
-# `pyramids.vector_drivers` consumer ships (#19).
+# None is declared: all three drivers (CityJSON, CityGML, 3D Tiles) parse with only the
+# standard library (`json`, `xml.etree`, `struct`) plus the numpy/shapely/geopandas that
+# `pyramids-core` already brings, so each sets `extra = None` and a bare install reads every
+# format. The 3D Tiles reader decodes uncompressed glTF with numpy; a compressed-mesh backend
+# (Draco/meshopt) is the first case that would add an extra here and set
+# `extra = "<import-name>"`, and the registry then skips the driver silently when that package
+# is absent (exercised in tests/test_registry_dispatch.py against the shipped core registry).
 
 [dependency-groups]
 dev = [
@@ -125,6 +130,7 @@ notebook = [
 [project.entry-points."pyramids.vector_drivers"]
 cityjson = "pyramids_citymodels.drivers.cityjson:CityJsonDriver"
 citygml = "pyramids_citymodels.drivers.citygml:CityGmlDriver"
+3dtiles = "pyramids_citymodels.drivers.threedtiles:ThreeDTilesDriver"
 
 
 [project.urls]
