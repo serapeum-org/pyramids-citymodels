@@ -16,7 +16,7 @@
         <link rel="prev" href="../installation/">
       
       
-        <link rel="next" href="drivers/">
+        <link rel="next" href="../change-log/">
       
       
         
@@ -307,28 +307,6 @@
     
     
       <li class="md-tabs__item">
-        <a href="../examples/city-models/" class="md-tabs__link">
-          
-  
-  
-    
-  
-  Examples
-
-        </a>
-      </li>
-    
-  
-
-      
-        
-  
-  
-  
-  
-    
-    
-      <li class="md-tabs__item">
         <a href="../change-log/" class="md-tabs__link">
           
   
@@ -529,8 +507,6 @@
           
         
       
-        
-      
     
     
     
@@ -568,11 +544,6 @@
 
             </a>
             
-              
-              <label class="md-nav__link md-nav__link--active" for="__nav_3" id="__nav_3_label" tabindex="">
-                <span class="md-nav__icon md-icon"></span>
-              </label>
-            
           </div>
         
         <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
@@ -586,34 +557,6 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="drivers/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Drivers
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
               
             
           </ul>
@@ -631,6 +574,16 @@
   
     
     
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
       
         
       
@@ -659,7 +612,7 @@
   <span class="md-ellipsis">
     
   
-    Examples
+    About
   
 
     
@@ -672,109 +625,6 @@
         
         <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_4">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Examples
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../examples/city-models/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Reading 3D city models
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    
-    
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
-        
-          
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    About
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -960,7 +810,7 @@
         
           
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5_6" >
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_6" >
         
           
           <div class="md-nav__link md-nav__container">
@@ -982,14 +832,14 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_5_6" id="__nav_5_6_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_4_6" id="__nav_4_6_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_5_6">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_6">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1206,7 +1056,8 @@
 entry-point group (the group <code>FeatureCollection.read_file</code> consults — city models are vector
 features), so installing this package is the whole integration: <code>pyramids</code> then dispatches a read
 of a city-model format it does not handle itself to the driver that claims it.</p>
-<p>Each driver has its own page listing its suffixes, options and documented limitations:</p>
+<p>The scaffold registers no drivers yet. As each one lands it is listed here with its own page — its
+suffixes, capabilities and documented limitations — and the table below fills in:</p>
 <table>
 <thead>
 <tr>
@@ -1217,19 +1068,12 @@ of a city-model format it does not handle itself to the driver that claims it.</
 </thead>
 <tbody>
 <tr>
-<td><code>CityJsonDriver</code></td>
-<td>CityJSON</td>
-<td><a href="drivers/">Drivers</a></td>
-</tr>
-<tr>
-<td><code>CityGmlDriver</code></td>
-<td>CityGML LOD2</td>
-<td><a href="drivers/">Drivers</a></td>
+<td><em>(none yet)</em></td>
+<td></td>
+<td></td>
 </tr>
 </tbody>
 </table>
-<p>See the <a href="drivers/">Drivers</a> page for the <code>driver=</code> / <code>read_file</code> usage and the read options, and
-the <a href="../examples/city-models/">example notebook</a> for a runnable walkthrough.</p>
 <p>The package root deliberately re-exports nothing (<code>__all__</code> is empty): it carries <code>__version__</code> and
 the import contract that activates the vendored osgeo bindings. Driver classes are reached by their
 module path — <code>pyramids_citymodels.drivers.&lt;module&gt;.&lt;Driver&gt;</code> — which is also how their entry points
@@ -1370,13 +1214,13 @@ pyramids_citymodels.<strong>all</strong>
         
         
           
-          <a href="drivers/" class="md-footer__link md-footer__link--next" aria-label="Next: Drivers">
+          <a href="../change-log/" class="md-footer__link md-footer__link--next" aria-label="Next: Change-log">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Drivers
+                Change-log
               </div>
             </div>
             <div class="md-footer__button md-icon">
