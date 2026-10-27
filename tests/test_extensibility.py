@@ -215,3 +215,89 @@ class TestUnsupportedGeometry:
                 parse_cityjson(self._mixed_doc()), strategy="footprint"
             )
         assert "b" in set(fc["city_object_id"])
+
+    def test_areal_object_yielding_no_rows_with_non_areal_sibling_returns_empty(self) -> None:
+        """An empty frame, not a raise, when an areal geometry existed but produced no rows (MF1 r2).
+
+        Test scenario:
+            A ``footprint`` load of a Building whose only surface is a vertical wall (zero plan
+            area) next to a ``MultiPoint`` tree: the Building IS areal-typed, so the read must
+            return an empty FeatureCollection (per the documented contract), not raise.
+        """
+        doc = {
+            "type": "CityJSON",
+            "version": "2.0",
+            "CityObjects": {
+                "b": {
+                    "type": "Building",
+                    "geometry": [
+                        {
+                            "type": "MultiSurface",
+                            "lod": "2",
+                            "boundaries": [[[0, 1, 2, 3]]],
+                            "semantics": {
+                                "surfaces": [{"type": "WallSurface"}],
+                                "values": [0],
+                            },
+                        }
+                    ],
+                },
+                "tree": {
+                    "type": "SolitaryVegetationObject",
+                    "geometry": [{"type": "MultiPoint", "lod": "2", "boundaries": [4]}],
+                },
+            },
+            # A vertical wall (XY projection is a line) then a stray point.
+            "vertices": [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1], [5, 5, 5]],
+        }
+        with pytest.warns(UserWarning, match="non-areal"):
+            fc = to_feature_collection(parse_cityjson(doc), strategy="footprint")
+        assert len(fc) == 0, "an areal object yielding no rows must not raise"
+
+    def test_single_object_with_areal_and_non_areal_geometry_emits_areal_and_warns(self) -> None:
+        """One object carrying both an areal and a non-areal geometry keeps the areal rows."""
+        doc = {
+            "type": "CityJSON",
+            "version": "2.0",
+            "CityObjects": {
+                "b": {
+                    "type": "Building",
+                    "geometry": [
+                        {
+                            "type": "MultiSurface",
+                            "lod": "2",
+                            "boundaries": [[[0, 1, 2]]],
+                            "semantics": {
+                                "surfaces": [{"type": "RoofSurface"}],
+                                "values": [0],
+                            },
+                        },
+                        {"type": "MultiPoint", "lod": "2", "boundaries": [3]},
+                    ],
+                }
+            },
+            "vertices": [[0, 0, 0], [1, 0, 0], [1, 1, 0], [5, 5, 5]],
+        }
+        with pytest.warns(UserWarning, match="non-areal"):
+            fc = to_feature_collection(parse_cityjson(doc))
+        assert len(fc) == 1 and fc["surface_type"].iloc[0] == "RoofSurface"
+
+    def test_raise_message_counts_objects_not_geometries(self) -> None:
+        """The all-non-areal raise message counts distinct objects, not geometries (SF1 r2)."""
+        doc = {
+            "type": "CityJSON",
+            "version": "2.0",
+            "CityObjects": {
+                "x": {
+                    "type": "Building",
+                    "geometry": [
+                        {"type": "MultiPoint", "lod": "2", "boundaries": [0]},
+                        {"type": "MultiLineString", "lod": "2", "boundaries": [[0, 1]]},
+                    ],
+                }
+            },
+            "vertices": [[0, 0, 0], [1, 0, 0]],
+        }
+        with pytest.raises(UnsupportedGeometryError) as exc:
+            to_feature_collection(parse_cityjson(doc))
+        assert "1 object" in str(exc.value), f"should count 1 object, got: {exc.value}"

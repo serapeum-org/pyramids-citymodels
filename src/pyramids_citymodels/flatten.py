@@ -296,6 +296,7 @@ def to_feature_collection(
 
     rows: list[dict[str, Any]] = []
     unsupported: list[tuple[str, str]] = []
+    had_areal = False
     for city_object in model.objects.values():
         geometries = _select_geometries(city_object.geometries, options.lod)
         if not geometries:
@@ -311,6 +312,7 @@ def to_feature_collection(
         )
         if not areal:
             continue
+        had_areal = True
         if options.strategy is LoadStrategy.SEMANTIC_SURFACES:
             rows.extend(_semantic_surface_rows(city_object, areal, model, options))
         else:
@@ -318,12 +320,16 @@ def to_feature_collection(
             if row is not None:
                 rows.append(row)
 
-    if not rows and unsupported:
-        # Nothing was representable *because* of unsupported types — fail loudly with a clear error
-        # rather than hand back a confusingly empty frame (report §5, risk #8).
+    if not had_areal and unsupported:
+        # The result is empty *because* every geometry in the model was non-areal — fail loudly
+        # with a clear error rather than hand back a confusingly empty frame (report §5, risk #8).
+        # When some areal geometry existed (even if it produced no rows — a vertical-only footprint,
+        # a degenerate ring), the empty frame is the documented, non-raising outcome, so key the
+        # raise off `had_areal`, not off `not rows`.
+        object_ids = {object_id for object_id, _ in unsupported}
         object_id, geometry_type = unsupported[0]
         raise UnsupportedGeometryError(
-            f"no areal geometry to flatten: {len(unsupported)} object(s) have only non-areal "
+            f"no areal geometry to flatten: {len(object_ids)} object(s) have only non-areal "
             f"geometry types — e.g. city object {object_id!r} has type {geometry_type!r} "
             f"(not areal); supported types are {', '.join(sorted(AREAL_GEOMETRY_TYPES))}"
         )
