@@ -216,7 +216,9 @@ class TestUnsupportedGeometry:
             )
         assert "b" in set(fc["city_object_id"])
 
-    def test_areal_object_yielding_no_rows_with_non_areal_sibling_returns_empty(self) -> None:
+    def test_areal_object_yielding_no_rows_with_non_areal_sibling_returns_empty(
+        self,
+    ) -> None:
         """An empty frame, not a raise, when an areal geometry existed but produced no rows (MF1 r2).
 
         Test scenario:
@@ -254,7 +256,9 @@ class TestUnsupportedGeometry:
             fc = to_feature_collection(parse_cityjson(doc), strategy="footprint")
         assert len(fc) == 0, "an areal object yielding no rows must not raise"
 
-    def test_single_object_with_areal_and_non_areal_geometry_emits_areal_and_warns(self) -> None:
+    def test_single_object_with_areal_and_non_areal_geometry_emits_areal_and_warns(
+        self,
+    ) -> None:
         """One object carrying both an areal and a non-areal geometry keeps the areal rows."""
         doc = {
             "type": "CityJSON",
