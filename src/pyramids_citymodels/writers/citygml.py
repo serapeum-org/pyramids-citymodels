@@ -17,11 +17,18 @@ The writer targets exactly what that reader rebuilds, so the round-trip fidelity
   (``int`` → ``gen:intAttribute``, ``float`` → ``gen:doubleAttribute``, else
   ``gen:stringAttribute``); the known numeric building attributes (``measuredHeight``, …) are
   written as their native ``bldg:`` elements. Rings are emitted closed (first position repeated) so
-  the ``gml:LinearRing`` is schema-valid even though the IR (CityJSON-style) carries open rings.
+  the ``gml:LinearRing`` is schema-valid even though the IR (CityJSON-style) carries open rings. A
+  CityGML→CityGML round-trip is therefore exact only for a **spec-conformant source, whose rings are
+  already closed** (re-closing is then a no-op); an open-ring source gains the required closing
+  position, so its re-parsed rings carry one extra coordinate. Real GML ``LinearRing``\\ s are always
+  closed, so this affects only hand-authored open-ring input, not conformant CityGML.
 - **Lossy:** attribute ``uom`` units, original ``gml:id``\\ s of surfaces/polygons (regenerated),
   a geometry whose surfaces carry *no* semantic type (written as a plain building geometry, which
   this package's semantic reader does not read back), and any non-``Building``/``BuildingPart``
   object type (written, but not reconstructed by the reader — the writer warns when it drops one).
+  The geometry **type** does not survive a conversion either: the reader always rebuilds a
+  ``MultiSurface``, so a CityJSON ``Solid``/``MultiSolid`` keeps its *surfaces* but comes back as a
+  ``MultiSurface``, not a ``Solid``.
 
 It writes with the standard-library :mod:`xml.etree.ElementTree` (no ``lxml``, matching the reader),
 so there is no new dependency and no optional ``extra``.

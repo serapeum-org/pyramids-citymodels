@@ -7,7 +7,10 @@ back to integer indices (the round-trip-fidelity work of issue #24 — done pure
 the IR stays format-neutral and carries no CityJSON-specific vertex pool). Semantics
 (``surfaces``/``values``), per-geometry appearance references, the document appearance pool,
 extensions, metadata, the CRS and the version are all re-emitted from the IR, so
-``parse_cityjson(write_cityjson(model))`` reproduces ``model``.
+``parse_cityjson(write_cityjson(model))`` reproduces ``model``. The one gap is texture
+*coordinates*: the reader does not capture CityJSON's top-level ``vertices-texture`` pool, so a
+geometry's ``texture.values`` (UV indices into it) are re-emitted but reference a pool that is not
+carried — material references resolve, texture-coordinate references do not round-trip.
 
 :func:`write_cityjson` is the public orchestrator (a small set of private ``_encode_*`` helpers
 build each part); :meth:`pyramids_citymodels.ir.CityModel.to_cityjson` is the entry point on the
