@@ -8,14 +8,20 @@ The writer targets exactly what that reader rebuilds, so the round-trip fidelity
 
 - **Preserved:** each object's id (written as ``gml:id``), its type (``Building`` / ``BuildingPart``),
   the parent/child hierarchy (children nested in ``bldg:consistsOfBuildingPart``), every boundary
-  surface's geometry (rings, holes, coordinates) and its semantic type, the CRS and the version.
+  surface's geometry (rings, holes, coordinates) across ``MultiSurface`` and ``Solid``/``MultiSolid``
+  alike, its semantic type, and the CRS. The **version** round-trips for a ``1.0`` or ``2.0`` source
+  (whose LOD2 building structure this writer matches element-for-element): the source version's
+  namespaces are emitted. A ``3.0`` or unknown source is emitted as ``2.0`` (its version does *not*
+  round-trip) — 3.0 restructures the geometry model, which this writer does not reproduce.
 - **Best-effort:** attribute *values* keep their Python type via ``gen:*Attribute`` kinds
   (``int`` → ``gen:intAttribute``, ``float`` → ``gen:doubleAttribute``, else
   ``gen:stringAttribute``); the known numeric building attributes (``measuredHeight``, …) are
-  written as their native ``bldg:`` elements.
+  written as their native ``bldg:`` elements. Rings are emitted closed (first position repeated) so
+  the ``gml:LinearRing`` is schema-valid even though the IR (CityJSON-style) carries open rings.
 - **Lossy:** attribute ``uom`` units, original ``gml:id``\\ s of surfaces/polygons (regenerated),
   a geometry whose surfaces carry *no* semantic type (written as a plain building geometry, which
-  this package's semantic reader does not read back), and any non-``Building`` object type.
+  this package's semantic reader does not read back), and any non-``Building``/``BuildingPart``
+  object type (written, but not reconstructed by the reader — the writer warns when it drops one).
 
 It writes with the standard-library :mod:`xml.etree.ElementTree` (no ``lxml``, matching the reader),
 so there is no new dependency and no optional ``extra``.
@@ -23,12 +29,22 @@ so there is no new dependency and no optional ``extra``.
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
+import warnings
 from typing import Any
 from xml.etree import ElementTree
 
-from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+from pyramids_citymodels.ir import CityModel, CityObject, Geometry, iter_surfaces
 
 __all__ = ["write_citygml"]
+
+#: CityGML versions whose LOD2 building structure this writer matches element-for-element. A source
+#: in one of these is re-emitted under its own namespaces (so the version string round-trips); any
+#: other version (e.g. 3.0, which restructures geometry) is emitted as 2.0.
+_MATCHED_VERSIONS = frozenset({"1.0", "2.0"})
+
+#: Object types the CityGML reader reconstructs. A top-level object of any other type is written but
+#: not read back by this package's semantic reader, so writing one warns rather than losing it silently.
+_READABLE_OBJECT_TYPES = frozenset({"Building", "BuildingPart"})
 
 #: CityGML 2.0 namespace URIs, by the prefix this writer registers for them.
 _NS = {
@@ -68,17 +84,24 @@ def _pos_list(ring: list[Any]) -> tuple[str, int]:
 
     The dimension is taken from the ring's first coordinate, and every coordinate is normalized to
     it, so the whitespace-separated token stream chunks back into equal-length coordinates exactly
-    as the reader expects.
+    as the reader expects. The ring is **closed** — a GML ``LinearRing`` requires its first position
+    to be repeated as its last — so a CityJSON ring (never closed by spec) and a bare triangle (3
+    positions) are emitted as valid closed rings of at least four positions.
     """
     dimension = len(ring[0]) if ring and len(ring[0]) >= 2 else 3
-    tokens: list[str] = []
-    for point in ring:
-        tokens.extend(repr(component) for component in _coordinate(point, dimension))
+    coordinates = [_coordinate(point, dimension) for point in ring]
+    if len(coordinates) >= 3 and coordinates[0] != coordinates[-1]:
+        coordinates.append(list(coordinates[0]))
+    tokens = [repr(component) for coordinate in coordinates for component in coordinate]
     return " ".join(tokens), dimension
 
 
 def _polygon_element(surface: list[Any]) -> ElementTree.Element | None:
-    """Build a ``gml:Polygon`` (exterior ring first, then interior rings) from an IR surface."""
+    """Build a ``gml:Polygon`` (exterior ring first, then interior rings) from an IR surface.
+
+    A ring needs at least three distinct positions to bound an area; such a ring is emitted closed
+    (first position repeated), giving the four-position minimum a GML ``LinearRing`` requires.
+    """
     rings = [ring for ring in surface if ring and len(ring) >= 3]
     if not rings:
         return None
@@ -160,13 +183,12 @@ def _feature_element(
 
     for geometry in city_object.geometries:
         lod = _lod_number(geometry)
-        values = geometry.semantic_values
-        for index, surface in enumerate(geometry.boundaries):
-            semantic_value = (
-                values[index]
-                if isinstance(values, list) and index < len(values)
-                else None
-            )
+        # Walk to surface level for ANY geometry type (MultiSurface, Solid, MultiSolid, …) via the
+        # shared IR traversal, pairing each surface with its semantic value — so a Solid's surfaces
+        # (nested one shell deeper, with nested semantic values) are reached, not silently dropped.
+        for surface, semantic_value in iter_surfaces(
+            geometry.boundaries, geometry.semantic_values
+        ):
             surface_object = geometry.semantic_for(semantic_value)
             if surface_object is None:
                 # No semantic type — this package's semantic reader cannot place it; emit it as a
@@ -303,8 +325,29 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
 
             ```
     """
+    # Emit the source version's namespaces for a version this writer matches (1.0/2.0), so the
+    # version string round-trips through the reader; a 3.0 or unknown source falls back to 2.0.
+    version = model.version if model.version in _MATCHED_VERSIONS else "2.0"
+    _NS["core"] = f"http://www.opengis.net/citygml/{version}"
+    _NS["bldg"] = f"http://www.opengis.net/citygml/building/{version}"
+    _NS["gen"] = f"http://www.opengis.net/citygml/generics/{version}"
     for prefix, uri in _NS.items():
         ElementTree.register_namespace(prefix, uri)
+
+    unreadable = sorted(
+        {
+            city_object.type
+            for city_object in model.objects.values()
+            if city_object.type not in _READABLE_OBJECT_TYPES
+        }
+    )
+    if unreadable:
+        warnings.warn(
+            "CityGML writer: object type(s) "
+            f"{', '.join(unreadable)} are written but not reconstructed by this package's "
+            "CityGML reader (it reads only Building/BuildingPart), so they will not round-trip",
+            stacklevel=2,
+        )
 
     root = ElementTree.Element(_q("core", "CityModel"))
     _add_envelope(root, model)

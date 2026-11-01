@@ -105,7 +105,7 @@ CityModel.from_file("building.gml").to_file("building.city.json")   # CityGML �
 |---|---|---|
 | `to_cityjson` | CityJSON 2.0 | Yes — `parse → write → parse` reproduces the model (the vertex pool is rebuilt and re-indexed from the IR). |
 | `to_cityjsonseq` | CityJSON Text Sequence (`.city.jsonl`) | Yes, via CityJSON — a header line then one `CityJSONFeature` per top-level object. |
-| `to_citygml` | CityGML 2.0 | Partially — geometry, semantic surface types, object ids/types, the parent/child hierarchy and the CRS round-trip; attribute `uom` units and surface `gml:id`s are lost (see the writer's module docs). |
+| `to_citygml` | CityGML (2.0; a 1.0/2.0 source keeps its version) | Partially — geometry (`MultiSurface` and `Solid`/`MultiSolid`), semantic surface types, object ids/types, the parent/child hierarchy and the CRS round-trip; a `1.0`/`2.0` source also keeps its version, while a `3.0`/unknown source is emitted as `2.0`. Attribute `uom` units and surface `gml:id`s are lost, and a non-`Building`/`BuildingPart` object is written with a warning but not read back (see the writer's module docs). |
 | `to_jsonfg` | JSON-FG | No — a one-way GIS-exchange projection (3D geometry in each feature's `place`); there is no JSON-FG reader. |
 
 ## Writing API
