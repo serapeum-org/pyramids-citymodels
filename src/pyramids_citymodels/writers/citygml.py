@@ -207,45 +207,52 @@ def _add_attributes(
         value_element.text = repr(value) if isinstance(value, float) else str(value)
 
 
-def _feature_element(
-    ns: dict[str, str], city_object: CityObject, model: CityModel, visited: set[str]
-) -> ElementTree.Element:
-    """Build one ``bldg:<type>`` feature element: its id, attributes, surfaces and nested children."""
-    feature = ElementTree.Element(_q(ns, "bldg", city_object.type))
-    feature.set(_q(ns, "gml", "id"), city_object.id)
-    visited.add(city_object.id)
+def _append_plain_surface(
+    ns: dict[str, str], feature: ElementTree.Element, surface: list[Any], lod: int
+) -> None:
+    """Append a surface with no semantic type as a bare ``bldg:lod{n}MultiSurface`` on the feature."""
+    plain = _polygon_element(ns, surface)
+    if plain is None:
+        return
+    multi_property = ElementTree.SubElement(
+        feature, _q(ns, "bldg", f"lod{lod}MultiSurface")
+    )
+    multi = ElementTree.SubElement(multi_property, _q(ns, "gml", "MultiSurface"))
+    member = ElementTree.SubElement(multi, _q(ns, "gml", "surfaceMember"))
+    member.append(plain)
 
-    _add_attributes(ns, feature, city_object.attributes)
 
-    for geometry in city_object.geometries:
-        lod = _lod_number(geometry)
-        # Walk to surface level for ANY geometry type (MultiSurface, Solid, MultiSolid, …) via the
-        # shared IR traversal, pairing each surface with its semantic value — so a Solid's surfaces
-        # (nested one shell deeper, with nested semantic values) are reached, not silently dropped.
-        for surface, semantic_value in iter_surfaces(
-            geometry.boundaries, geometry.semantic_values
-        ):
-            surface_object = geometry.semantic_for(semantic_value)
-            if surface_object is None:
-                # No semantic type — this package's semantic reader cannot place it; emit it as a
-                # plain building geometry (valid CityGML, documented as not round-tripped here).
-                plain = _polygon_element(ns, surface)
-                if plain is not None:
-                    multi_property = ElementTree.SubElement(
-                        feature, _q(ns, "bldg", f"lod{lod}MultiSurface")
-                    )
-                    multi = ElementTree.SubElement(
-                        multi_property, _q(ns, "gml", "MultiSurface")
-                    )
-                    member = ElementTree.SubElement(
-                        multi, _q(ns, "gml", "surfaceMember")
-                    )
-                    member.append(plain)
-                continue
-            bounded_by = _bounded_by(ns, surface_object.type, surface, lod)
-            if bounded_by is not None:
-                feature.append(bounded_by)
+def _append_geometry(
+    ns: dict[str, str], feature: ElementTree.Element, geometry: Geometry
+) -> None:
+    """Append one IR geometry's surfaces to ``feature`` as semantic ``bldg:boundedBy`` surfaces.
 
+    Walks to surface level for ANY geometry type (``MultiSurface``, ``Solid``, ``MultiSolid``, …) via
+    the shared IR traversal, pairing each surface with its semantic value — so a ``Solid``'s surfaces
+    (nested one shell deeper, with nested semantic values) are reached, not silently dropped. A
+    surface with no semantic type becomes a plain building geometry instead.
+    """
+    lod = _lod_number(geometry)
+    for surface, semantic_value in iter_surfaces(
+        geometry.boundaries, geometry.semantic_values
+    ):
+        surface_object = geometry.semantic_for(semantic_value)
+        if surface_object is None:
+            _append_plain_surface(ns, feature, surface, lod)
+            continue
+        bounded_by = _bounded_by(ns, surface_object.type, surface, lod)
+        if bounded_by is not None:
+            feature.append(bounded_by)
+
+
+def _append_children(
+    ns: dict[str, str],
+    feature: ElementTree.Element,
+    city_object: CityObject,
+    model: CityModel,
+    visited: set[str],
+) -> None:
+    """Nest each child object: a ``BuildingPart`` under ``bldg:consistsOfBuildingPart``, else attached."""
     for child_id in city_object.children:
         child = model.objects.get(child_id)
         if child is None or child_id in visited:
@@ -260,6 +267,19 @@ def _feature_element(
             # A non-part child cannot nest in a building; attach it so its geometry is not lost,
             # though this package's reader will not re-link it as a child.
             feature.append(child_element)
+
+
+def _feature_element(
+    ns: dict[str, str], city_object: CityObject, model: CityModel, visited: set[str]
+) -> ElementTree.Element:
+    """Build one ``bldg:<type>`` feature element: its id, attributes, surfaces and nested children."""
+    feature = ElementTree.Element(_q(ns, "bldg", city_object.type))
+    feature.set(_q(ns, "gml", "id"), city_object.id)
+    visited.add(city_object.id)
+    _add_attributes(ns, feature, city_object.attributes)
+    for geometry in city_object.geometries:
+        _append_geometry(ns, feature, geometry)
+    _append_children(ns, feature, city_object, model, visited)
     return feature
 
 
