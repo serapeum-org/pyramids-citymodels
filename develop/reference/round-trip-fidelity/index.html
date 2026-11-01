@@ -1387,7 +1387,9 @@ its children) are built against.</p>
 </ul>
 <h2 id="cityjson"><a class="toclink" href="#cityjson">CityJSON</a><a class="headerlink" href="#cityjson" title="Permanent link">#</a></h2>
 <p>CityJSON is a JSON encoding of (a subset of) the CityGML data model, and the IR is modelled on it, so
-a CityJSON → IR → CityJSON round-trip is <strong>structurally lossless</strong>. What the IR carries through:</p>
+a CityJSON → IR → CityJSON round-trip is <strong>value-lossless</strong>: the object graph, geometry and coordinate
+<em>values</em> survive, but the vertex table and <code>transform</code> are rebuilt, not round-tripped verbatim (see
+below). What the IR carries through:</p>
 <table>
 <thead>
 <tr>
@@ -1436,10 +1438,13 @@ an optional source pool + transform on the model:</p>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># -&gt; pool.vertices and pool.transform are the document-wide `vertices` + `transform` to write</span>
 </code></pre></div>
 <p><code>CityModel.vertex_pool(precision=None)</code> returns a lossless pool (<code>transform</code> is <code>None</code>, coordinates are
-pooled unchanged, so the round-trip is exact). A <code>precision</code> quantizes coordinates to integers through a
-CityJSON <code>transform</code> — smaller files, a round-trip exact to within the quantization step.
-<code>VertexPool.dereference</code> is the exact inverse of <code>Geometry.index_into</code>, which is the property the
-round-trip tests assert.</p>
+pooled unchanged). A <code>precision</code> quantizes coordinates to integers through a CityJSON <code>transform</code> —
+smaller files, coordinates preserved to within the quantization step. Either way the <em>vertex encoding</em>
+is not round-tripped: a document read with a <code>transform</code> and integer <code>vertices</code> re-serialises, by
+default, with float <code>vertices</code> and no <code>transform</code> (coordinate values unchanged). The one <em>exact</em> claim
+is the in-memory inverse — <code>VertexPool.dereference</code> is the exact inverse of <code>Geometry.index_into</code> for a
+lossless pool, <code>dereference(index_into(pool)) == boundaries</code>, which is the property the round-trip tests
+assert.</p>
 <h2 id="citygml"><a class="toclink" href="#citygml">CityGML</a><a class="headerlink" href="#citygml" title="Permanent link">#</a></h2>
 <p>A CityGML → IR → CityGML round-trip is <strong>lossy by design</strong>: the reader reconstructs the LOD2 <em>semantic</em>
 model (<code>Building → BuildingPart → boundary surface → polygon</code>) that GDAL's GML driver does not expose,
