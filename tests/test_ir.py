@@ -173,3 +173,29 @@ def test_vertex_pool_preloaded_with_vertices_dedupes_against_them() -> None:
     assert pool.index_of((1.0, 0.0, 0.0)) == 1  # existing, not appended
     assert pool.index_of((2.0, 0.0, 0.0)) == 2  # new, appended
     assert len(pool.vertices) == 3
+
+
+def test_geometry_coordinates_walks_boundaries_to_coordinate_level() -> None:
+    # Geometry.coordinates yields each coordinate of a Solid (surfaces two levels down).
+    surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]]
+    geometry = Geometry(type="Solid", lod="2", boundaries=[[surface]])
+    assert list(geometry.coordinates()) == [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]
+
+
+def test_geometry_coordinates_skips_non_coordinate_non_list_leaves() -> None:
+    # A stray leaf that is neither a coordinate nor a list (defensive guard in the boundary walk)
+    # is skipped rather than raising, so a malformed boundaries structure still yields its real
+    # coordinates.
+    geometry = Geometry(
+        type="MultiSurface",
+        lod="2",
+        boundaries=[[[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]], "stray"],
+    )
+    assert list(geometry.coordinates()) == [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]
+
+
+def test_vertex_pool_quantize_and_dequantize_are_inverse_within_the_step() -> None:
+    # quantize/dequantize directly: a real coordinate maps to an integer vertex and back.
+    pool = VertexPool(transform={"scale": [0.01, 0.01], "translate": [100.0, 200.0]})
+    assert pool.quantize((100.5, 200.25)) == (50, 25)
+    assert pool.dequantize((50, 25)) == (100.5, 200.25)
