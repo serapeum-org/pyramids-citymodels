@@ -420,6 +420,10 @@ class VertexPool:
                     minima[axis] = min(minima[axis], value)
                 else:
                     minima.append(value)
+        if not minima:
+            # No coordinates to quantize (an empty or geometry-less model): a transform with empty
+            # scale/translate is invalid CityJSON, so there is nothing to carry — stay lossless.
+            return cls(transform=None)
         scale = round(10.0**-precision, precision)
         return cls(
             transform={"scale": [scale] * len(minima), "translate": list(minima)}

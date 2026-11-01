@@ -137,10 +137,10 @@ def test_coordinates_walks_every_geometry_in_document_order() -> None:
 
 def test_empty_model_rebuilds_an_empty_pool() -> None:
     assert CityModel().vertex_pool().vertices == []
-    assert CityModel().vertex_pool(precision=3).transform == {
-        "scale": [],
-        "translate": [],
-    }
+    # With no coordinates there is nothing to quantize, so even a precision request yields no
+    # transform (rather than a degenerate, invalid {"scale": [], "translate": []}).
+    assert CityModel().vertex_pool(precision=3).transform is None
+    assert CityModel().vertex_pool(precision=3).vertices == []
 
 
 def test_vertex_pool_rebuilt_from_a_parsed_cityjson_document_round_trips() -> None:
