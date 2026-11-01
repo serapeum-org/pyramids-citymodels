@@ -86,19 +86,19 @@ from pyramids_citymodels.ir import CityModel
 model = CityModel.from_file("building.gml")
 
 # write — the format is chosen by the output suffix
-model.to_file("building.city.json")     # CityJSON 2.0
-model.to_file("building.city.jsonl")    # CityJSON Text Sequence (one feature per line)
-model.to_file("building.gml")           # CityGML 2.0
-model.to_file("building.fg.json")       # JSON-FG (OGC Features & Geometries JSON)
+model.to_file("building.city.json")  # CityJSON 2.0
+model.to_file("building.city.jsonl")  # CityJSON Text Sequence (one feature per line)
+model.to_file("building.gml")  # CityGML 2.0
+model.to_file("building.fg.json")  # JSON-FG (OGC Features & Geometries JSON)
 
 # or call a format method directly; a None path returns the document instead of writing
-document = model.to_cityjson()          # -> dict
+document = model.to_cityjson()  # -> dict
 ```
 
 Format conversion is therefore a single IR→IR expression that never touches the flattened form:
 
 ```python
-CityModel.from_file("building.gml").to_file("building.city.json")   # CityGML → CityJSON
+CityModel.from_file("building.gml").to_file("building.city.json")  # CityGML → CityJSON
 ```
 
 | Method | Format | Round-trips? |
