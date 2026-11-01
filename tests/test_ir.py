@@ -3,11 +3,15 @@
 import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 
 from pyramids_citymodels.ir import (
+    CityModel,
     CityObject,
+    Geometry,
+    VertexPool,
     crs_from_identifier,
     iter_surfaces,
     normalize_lod,
 )
+from pyramids_citymodels.readers.cityjson import parse_cityjson
 
 
 def test_crs_from_identifier_handles_urn_url_and_plain() -> None:
@@ -47,3 +51,125 @@ def test_iter_surfaces_solid_descends_shells() -> None:
 def test_city_object_parent_is_first_parent_or_none() -> None:
     assert CityObject(id="a", type="Building").parent is None
     assert CityObject(id="b", type="BuildingPart", parents=["a"]).parent == "a"
+
+
+# --- round-trip rebuild of the CityJSON vertex pool (issue #24) -------------------------------
+
+
+def _model_with(*boundaries: list) -> tuple[CityModel, list[Geometry]]:
+    """A one-building model whose single object carries one geometry per ``boundaries`` entry."""
+    geometries = [
+        Geometry(type="MultiSurface", lod="2", boundaries=b) for b in boundaries
+    ]
+    model = CityModel(
+        objects={"b": CityObject(id="b", type="Building", geometries=geometries)}
+    )
+    return model, geometries
+
+
+def test_vertex_pool_reindexes_to_geometry_identical_to_source() -> None:
+    # The issue's acceptance criterion: a pool rebuilt from the IR re-indexes back to the exact
+    # same geometry (lossless, no transform).
+    surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+    model, (geometry,) = _model_with([surface])
+    pool = model.vertex_pool()
+    assert pool.transform is None
+    indexed = geometry.index_into(pool)
+    assert indexed == [[[0, 1, 2]]]
+    assert pool.dereference(indexed) == geometry.boundaries
+
+
+def test_vertex_pool_deduplicates_shared_vertices() -> None:
+    # Two surfaces sharing an edge pool to four vertices, not six, and both still round-trip.
+    surface_a = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+    surface_b = [[(1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]]
+    model, (geometry,) = _model_with([surface_a, surface_b])
+    pool = model.vertex_pool()
+    indexed = geometry.index_into(pool)
+    assert len(pool.vertices) == 4
+    assert indexed == [[[0, 1, 2]], [[1, 2, 3]]]
+    assert pool.dereference(indexed) == geometry.boundaries
+
+
+def test_vertex_pool_shared_across_geometries() -> None:
+    # One pool indexed by several geometries is the single document-wide vertices array a writer
+    # emits; a coordinate common to two geometries is stored once.
+    surface_a = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+    surface_b = [[(0.0, 0.0, 0.0), (2.0, 0.0, 0.0), (2.0, 2.0, 0.0)]]
+    model, (first, second) = _model_with([surface_a], [surface_b])
+    pool = model.vertex_pool()
+    assert first.index_into(pool) == [[[0, 1, 2]]]
+    assert second.index_into(pool) == [[[0, 3, 4]]]  # reuses vertex 0, appends the rest
+    assert len(pool.vertices) == 5
+
+
+def test_vertex_pool_quantizes_with_a_transform_and_round_trips_within_tolerance() -> (
+    None
+):
+    surface = [[(1234.567, 10.0, 0.0), (1234.568, 11.0, 5.0)]]
+    model, (geometry,) = _model_with([surface])
+    pool = model.vertex_pool(precision=3)
+    assert pool.transform == {
+        "scale": [0.001, 0.001, 0.001],
+        "translate": [1234.567, 10.0, 0.0],
+    }
+    assert all(isinstance(component, int) for v in pool.vertices for component in v)
+    recovered = pool.dereference(geometry.index_into(pool))
+    for got_ring, want_ring in zip(recovered[0], surface):
+        for got, want in zip(got_ring, want_ring):
+            for got_c, want_c in zip(got, want):
+                assert abs(got_c - want_c) <= 5e-4
+
+
+def test_coordinates_walks_every_geometry_in_document_order() -> None:
+    surface_a = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]]
+    surface_b = [[(2.0, 0.0, 0.0)]]
+    model, _ = _model_with([surface_a], [surface_b])
+    assert list(model.coordinates()) == [
+        (0.0, 0.0, 0.0),
+        (1.0, 0.0, 0.0),
+        (2.0, 0.0, 0.0),
+    ]
+
+
+def test_empty_model_rebuilds_an_empty_pool() -> None:
+    assert CityModel().vertex_pool().vertices == []
+    assert CityModel().vertex_pool(precision=3).transform == {
+        "scale": [],
+        "translate": [],
+    }
+
+
+def test_vertex_pool_rebuilt_from_a_parsed_cityjson_document_round_trips() -> None:
+    # End to end: parse real CityJSON (vertices+transform dereferenced away on read), rebuild the
+    # pool, and confirm every geometry re-indexes to coordinates identical to the parsed ones.
+    document = {
+        "type": "CityJSON",
+        "version": "2.0",
+        "transform": {"scale": [0.001, 0.001, 0.001], "translate": [0.0, 0.0, 0.0]},
+        "CityObjects": {
+            "b": {
+                "type": "Building",
+                "geometry": [
+                    {
+                        "type": "MultiSurface",
+                        "lod": "2",
+                        "boundaries": [[[0, 1, 2]], [[1, 2, 0]]],
+                    }
+                ],
+            }
+        },
+        "vertices": [[0, 0, 0], [1000, 0, 0], [1000, 1000, 0]],
+    }
+    model = parse_cityjson(document)
+    pool = model.vertex_pool()
+    for city_object in model.objects.values():
+        for geometry in city_object.geometries:
+            assert pool.dereference(geometry.index_into(pool)) == geometry.boundaries
+
+
+def test_vertex_pool_preloaded_with_vertices_dedupes_against_them() -> None:
+    pool = VertexPool(vertices=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)])
+    assert pool.index_of((1.0, 0.0, 0.0)) == 1  # existing, not appended
+    assert pool.index_of((2.0, 0.0, 0.0)) == 2  # new, appended
+    assert len(pool.vertices) == 3
