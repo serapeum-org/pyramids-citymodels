@@ -178,7 +178,12 @@ class Geometry:
 
                 ```
         """
-        indexed: list[Any] = _map_coordinates(self.boundaries, pool.index_of)
+        indexed = _map_coordinates(self.boundaries, pool.index_of)
+        # boundaries is a nested list (surface/shell of rings), so _map_coordinates returns a list;
+        # a bare-coordinate boundaries is out of contract and would make the list[Any] return a lie.
+        assert isinstance(indexed, list), (
+            "geometry boundaries must be a nested list, not a coordinate"
+        )
         return indexed
 
 
