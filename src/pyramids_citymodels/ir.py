@@ -154,6 +154,12 @@ class Geometry:
             The boundaries with each coordinate tuple replaced by its integer index in ``pool``,
             nesting preserved.
 
+        Raises:
+            TypeError: If :attr:`boundaries` is a bare coordinate rather than a nested list (a real
+                geometry's boundaries are always nested, so this signals an out-of-contract value).
+            CityModelError: Propagated from :meth:`VertexPool.index_of` if a coordinate's dimension
+                disagrees with the pool's.
+
         Examples:
             - Re-index a one-surface geometry and read back the pool it filled:
                 ```python
