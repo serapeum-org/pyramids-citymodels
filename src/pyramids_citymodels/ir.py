@@ -31,6 +31,8 @@ from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from pyramids_citymodels.errors import CityModelError
+
 __all__ = [
     "CityModel",
     "CityObject",
@@ -358,10 +360,14 @@ class VertexPool:
 
     def __post_init__(self) -> None:
         # Index coordinates for O(1) de-duplication in index_of; rebuilt from any preloaded vertices
-        # so a pool constructed with vertices already present still dedupes correctly.
+        # so a pool constructed with vertices already present still dedupes correctly. Track the
+        # pool's single coordinate dimension too, validating that any preloaded vertices are uniform.
         self._index: dict[tuple[float, ...], int] = {
             vertex: position for position, vertex in enumerate(self.vertices)
         }
+        self._dimension: int | None = None
+        for vertex in self.vertices:
+            self._dimension = _require_uniform_dimension(self._dimension, len(vertex))
 
     @classmethod
     def for_coordinates(
@@ -405,7 +411,9 @@ class VertexPool:
         if precision is None:
             return cls(transform=None)
         minima: list[float] = []
+        dimension: int | None = None
         for coordinate in coordinates:
+            dimension = _require_uniform_dimension(dimension, len(coordinate))
             for axis, component in enumerate(coordinate):
                 value = float(component)
                 if axis < len(minima):
@@ -511,6 +519,7 @@ class VertexPool:
                 ```
         """
         key = self.quantize(coordinate)
+        self._dimension = _require_uniform_dimension(self._dimension, len(key))
         existing = self._index.get(key)
         if existing is not None:
             return existing
@@ -620,6 +629,21 @@ def _is_ring(value: Any) -> bool:
 def _is_surface(value: Any) -> bool:
     """True when ``value`` is a surface — a non-empty list whose first element is a ring."""
     return isinstance(value, list) and len(value) > 0 and _is_ring(value[0])
+
+
+def _require_uniform_dimension(seen: int | None, got: int) -> int:
+    """Return the pool's coordinate dimension, raising if ``got`` disagrees with ``seen``.
+
+    A CityJSON ``vertices`` array must have one dimension throughout; a model can carry
+    mixed-dimension coordinates (e.g. a CityGML source with per-element ``srsDimension``), so the
+    pool rejects them rather than emit a non-uniform, non-serializable array.
+    """
+    if seen is not None and got != seen:
+        raise CityModelError(
+            f"cannot build a vertex pool from mixed-dimension coordinates ({seen}D and {got}D); "
+            "every CityJSON vertex must have the same dimension"
+        )
+    return seen if seen is not None else got
 
 
 def _iter_coordinates(element: Any) -> Iterator[tuple[float, ...]]:

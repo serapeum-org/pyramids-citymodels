@@ -2,6 +2,9 @@
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 
+import pytest
+
+from pyramids_citymodels.errors import CityModelError
 from pyramids_citymodels.ir import (
     CityModel,
     CityObject,
@@ -199,3 +202,34 @@ def test_vertex_pool_quantize_and_dequantize_are_inverse_within_the_step() -> No
     pool = VertexPool(transform={"scale": [0.01, 0.01], "translate": [100.0, 200.0]})
     assert pool.quantize((100.5, 200.25)) == (50, 25)
     assert pool.dequantize((50, 25)) == (100.5, 200.25)
+
+
+def test_index_of_rejects_mixed_dimension_coordinates() -> None:
+    # A 2D vertex pooled after a 3D one cannot share one CityJSON `vertices` array, so index_of
+    # raises rather than silently building a non-uniform (non-serializable) pool.
+    pool = VertexPool()
+    pool.index_of((0.0, 0.0, 0.0))
+    with pytest.raises(CityModelError, match="mixed-dimension"):
+        pool.index_of((1.0, 0.0))
+
+
+def test_vertex_pool_rejects_mixed_dimension_model() -> None:
+    # Mixed-dimension geometries (reachable from CityGML's per-element srsDimension) are rejected
+    # when rebuilding the pool, in both the lossless and the quantized paths.
+    three_d = Geometry(type="MultiSurface", lod="2", boundaries=[[[(0.0, 0.0, 0.0)]]])
+    two_d = Geometry(type="MultiSurface", lod="2", boundaries=[[[(1.0, 2.0)]]])
+    model = CityModel(
+        objects={"b": CityObject(id="b", type="Building", geometries=[three_d, two_d])}
+    )
+    for precision in (None, 3):
+        # Lossless catches it at index_into; quantized catches it earlier, in vertex_pool's scan.
+        with pytest.raises(CityModelError, match="mixed-dimension"):
+            pool = model.vertex_pool(precision=precision)
+            for geometry in model.objects["b"].geometries:
+                geometry.index_into(pool)
+
+
+def test_for_coordinates_rejects_mixed_dimension_stream() -> None:
+    # The quantizing scan catches a mixed-dimension stream early, before any indexing.
+    with pytest.raises(CityModelError, match="mixed-dimension"):
+        VertexPool.for_coordinates([(10.0, 20.0), (5.0, 8.0, 3.0)], precision=2)
