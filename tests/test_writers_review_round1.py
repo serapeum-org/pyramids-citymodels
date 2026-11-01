@@ -118,3 +118,40 @@ class TestM2NonBuildingWarning:
         model = CityModel(objects={"x": CityObject(id="x", type="Bridge")})
         with pytest.warns(UserWarning, match="Bridge"):
             write_citygml(model)
+
+
+class TestM3SequenceAppearance:
+    """M3 — the CityJSON sequence header must carry the appearance pool its features reference."""
+
+    def test_sequence_header_carries_appearance(self) -> None:
+        """A model with an appearance pool emits it on the header line of the sequence."""
+        import json
+
+        from pyramids_citymodels.writers.cityjson import write_cityjsonseq
+
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building")},
+            appearances={"materials": [{"name": "brick"}]},
+        )
+        header = json.loads(write_cityjsonseq(model).splitlines()[0])
+        assert header["appearance"] == {"materials": [{"name": "brick"}]}
+
+
+class TestL4NonEpsgCrs:
+    """L4 — a non-EPSG CRS must not be coerced into a malformed EPSG URI."""
+
+    def test_non_epsg_crs_passes_through_in_cityjson(self) -> None:
+        """A non-EPSG CRS identifier is written verbatim, not as `.../EPSG/0/<junk>`."""
+        from pyramids_citymodels.writers.cityjson import write_cityjson
+
+        model = CityModel(objects={}, crs="OGC:CRS84")
+        assert write_cityjson(model)["metadata"]["referenceSystem"] == "OGC:CRS84"
+
+    def test_non_epsg_crs_passes_through_in_jsonfg(self) -> None:
+        """JSON-FG also passes a non-EPSG CRS through verbatim."""
+        from pyramids_citymodels.writers.jsonfg import write_jsonfg
+
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building")}, crs="OGC:CRS84"
+        )
+        assert write_jsonfg(model)["coordRefSys"] == "OGC:CRS84"

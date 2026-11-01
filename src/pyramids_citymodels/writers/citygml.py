@@ -33,7 +33,13 @@ import warnings
 from typing import Any
 from xml.etree import ElementTree
 
-from pyramids_citymodels.ir import CityModel, CityObject, Geometry, iter_surfaces
+from pyramids_citymodels.ir import (
+    CityModel,
+    CityObject,
+    Geometry,
+    is_coordinate,
+    iter_surfaces,
+)
 
 __all__ = ["write_citygml"]
 
@@ -227,11 +233,7 @@ def _feature_element(
 
 def _collect_points(element: Any, points: list[list[float]]) -> None:
     """Append every coordinate found anywhere in a boundaries structure to ``points``."""
-    if (
-        isinstance(element, (list, tuple))
-        and 2 <= len(element) <= 4
-        and all(isinstance(component, (int, float)) for component in element)
-    ):
+    if is_coordinate(element):
         points.append([float(component) for component in element])
         return
     if isinstance(element, list):

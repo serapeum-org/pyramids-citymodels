@@ -30,9 +30,16 @@ _CONFORMS_TO = [
 
 
 def _coord_ref_sys(model: CityModel) -> str | None:
-    """The JSON-FG ``coordRefSys`` (an OGC CRS URI) for the model's CRS, or ``None``."""
+    """The JSON-FG ``coordRefSys`` (an OGC CRS URI) for the model's CRS, or ``None``.
+
+    An EPSG CRS becomes the OGC URI JSON-FG's examples use (note the ``http`` scheme, per the
+    JSON-FG spec — the CityJSON writer uses ``https`` per CityJSON's; both are intentional). A
+    non-EPSG identifier is passed through verbatim rather than forced into a malformed EPSG URI.
+    """
     if not model.crs:
         return None
+    if not model.crs.upper().startswith("EPSG:"):
+        return model.crs
     code = model.crs.split(":")[-1]
     return f"http://www.opengis.net/def/crs/EPSG/0/{code}"
 

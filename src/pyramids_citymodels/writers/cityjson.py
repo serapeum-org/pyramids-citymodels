@@ -21,7 +21,7 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored 
 import json
 from typing import Any
 
-from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+from pyramids_citymodels.ir import CityModel, CityObject, Geometry, is_coordinate
 
 __all__ = ["write_cityjson", "write_cityjsonseq"]
 
@@ -61,18 +61,9 @@ class _VertexPool:
         a vertex index); anything else is a nesting level and is recursed into. This is the exact
         inverse of :func:`pyramids_citymodels.readers.cityjson._dereference`.
         """
-        if _is_coordinate(element):
+        if is_coordinate(element):
             return self.intern(element)
         return [self.reindex(child) for child in element]
-
-
-def _is_coordinate(value: Any) -> bool:
-    """True when ``value`` is a single coordinate — a short sequence of numbers, not a nesting."""
-    return (
-        isinstance(value, (list, tuple))
-        and 2 <= len(value) <= 4
-        and all(isinstance(component, (int, float)) for component in value)
-    )
 
 
 def _encode_semantics(geometry: Geometry) -> dict[str, Any] | None:
@@ -135,10 +126,13 @@ def _reference_system(model: CityModel) -> str | None:
     """The OGC CRS URL for the model's CRS, or ``None``.
 
     The reader recognizes a URN, an OGC URL and a plain ``EPSG:code`` alike; the OGC URL is the
-    spelling CityJSON 2.0's ``metadata.referenceSystem`` uses, so emit that.
+    spelling CityJSON 2.0's ``metadata.referenceSystem`` uses, so emit that for an EPSG CRS. A
+    non-EPSG identifier is passed through verbatim rather than forced into a malformed EPSG URL.
     """
     if not model.crs:
         return None
+    if not model.crs.upper().startswith("EPSG:"):
+        return model.crs
     code = model.crs.split(":")[-1]
     return f"https://www.opengis.net/def/crs/EPSG/0/{code}"
 
@@ -197,7 +191,9 @@ def write_cityjson(model: CityModel, path: Any = None) -> dict[str, Any] | None:
     Rebuilds the flat ``vertices`` pool and re-indexes every boundary from the IR's coordinate
     tuples (the reader's dereferencing, inverted), then re-emits semantics, appearances,
     extensions, metadata, CRS and version. The result round-trips:
-    ``parse_cityjson(write_cityjson(model))`` reproduces ``model``.
+    ``parse_cityjson(write_cityjson(model))`` reproduces ``model`` for a conformant source — the one
+    exception is a versionless model (``version is None``), which is normalized to ``"2.0"`` on
+    output (a CityJSON document must carry a version).
 
     Args:
         model: The city model to serialize.
@@ -322,6 +318,11 @@ def write_cityjsonseq(model: CityModel, path: Any = None) -> str | None:
     metadata = _metadata(model)
     if metadata:
         header["metadata"] = metadata
+    if model.appearances:
+        # Carry the document appearance pool on the header line (CityJSONSeq permits it there), so
+        # the per-geometry material/texture indices each CityJSONFeature still emits can resolve —
+        # dropping it would leave those indices dangling.
+        header["appearance"] = dict(model.appearances)
     if model.extensions:
         header["extensions"] = dict(model.extensions)
 

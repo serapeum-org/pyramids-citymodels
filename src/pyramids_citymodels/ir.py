@@ -37,6 +37,7 @@ __all__ = [
     "Geometry",
     "SemanticSurface",
     "crs_from_identifier",
+    "is_coordinate",
     "iter_surfaces",
     "normalize_lod",
 ]
@@ -338,6 +339,11 @@ class CityModel:
         - ``.gml`` / ``.xml`` / ``.citygml`` → CityGML (:meth:`to_citygml`)
         - ``.fg.json`` / ``.jsonfg`` → JSON-FG (:meth:`to_jsonfg`)
 
+        The CityJSON and CityGML suffixes are symmetric with :meth:`from_file`. The CityJSON Text
+        Sequence (``.city.jsonl`` / ``.cityjsonseq`` / ``.jsonl``) and JSON-FG (``.fg.json`` /
+        ``.jsonfg``) suffixes are **write-only**: this package ships no reader for either, so
+        :meth:`from_file` cannot read them back.
+
         Args:
             path: The output path; its suffix selects the format.
 
@@ -439,8 +445,22 @@ def normalize_lod(lod: Any) -> str | None:
         return str(lod).strip()
 
 
-def _is_coordinate(value: Any) -> bool:
-    """True when ``value`` is a single coordinate — a short sequence of numbers."""
+def is_coordinate(value: Any) -> bool:
+    """True when ``value`` is a single coordinate — a short (2–4) sequence of numbers.
+
+    The one place the "is this a coordinate leaf, not a nesting level?" test lives, shared by the
+    IR traversal here and by the writers (which both re-index boundaries and walk them for bounds).
+
+    Examples:
+        - A 3-number sequence is a coordinate; a list of coordinates (a ring) is not:
+            ```python
+            >>> is_coordinate((1.0, 2.0, 3.0))
+            True
+            >>> is_coordinate([(1.0, 2.0, 3.0), (4.0, 5.0, 6.0)])
+            False
+
+            ```
+    """
     return (
         isinstance(value, (list, tuple))
         and 2 <= len(value) <= 4
@@ -450,7 +470,7 @@ def _is_coordinate(value: Any) -> bool:
 
 def _is_ring(value: Any) -> bool:
     """True when ``value`` is a ring — a non-empty list whose first element is a coordinate."""
-    return isinstance(value, list) and len(value) > 0 and _is_coordinate(value[0])
+    return isinstance(value, list) and len(value) > 0 and is_coordinate(value[0])
 
 
 def _is_surface(value: Any) -> bool:
