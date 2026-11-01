@@ -384,7 +384,11 @@ class VertexPool:
         Args:
             coordinates: The coordinate stream the pool will hold, e.g.
                 :meth:`CityModel.coordinates`. Consumed once, only when ``precision`` is given.
-            precision: Decimal places to quantize to, or ``None`` for a lossless pool.
+            precision: Decimal places to quantize to (a non-negative integer), or ``None`` for a
+                lossless pool.
+
+        Raises:
+            ValueError: If ``precision`` is negative.
 
         Returns:
             An empty :class:`VertexPool`: its :attr:`transform` is ``None`` for a lossless pool, or
@@ -410,6 +414,10 @@ class VertexPool:
         """
         if precision is None:
             return cls(transform=None)
+        if precision < 0:
+            raise ValueError(
+                f"precision must be a non-negative integer (decimal places), got {precision}"
+            )
         minima: list[float] = []
         dimension: int | None = None
         for coordinate in coordinates:

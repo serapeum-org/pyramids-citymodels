@@ -233,3 +233,10 @@ def test_for_coordinates_rejects_mixed_dimension_stream() -> None:
     # The quantizing scan catches a mixed-dimension stream early, before any indexing.
     with pytest.raises(CityModelError, match="mixed-dimension"):
         VertexPool.for_coordinates([(10.0, 20.0), (5.0, 8.0, 3.0)], precision=2)
+
+
+def test_for_coordinates_rejects_negative_precision() -> None:
+    # precision is decimal places; a negative value would quantize to tens/hundreds, which a caller
+    # passing "decimal places" never means, so it is rejected rather than silently accepted.
+    with pytest.raises(ValueError, match="precision"):
+        VertexPool.for_coordinates([(1234.0, 5678.0)], precision=-1)
