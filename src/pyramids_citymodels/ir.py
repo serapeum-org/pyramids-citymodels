@@ -435,18 +435,7 @@ class VertexPool:
 
                 ```
         """
-        # bool is an int subclass, so exclude it explicitly: precision=True must not mean 1 decimal.
-        if precision is not None and (
-            not isinstance(precision, int) or isinstance(precision, bool)
-        ):
-            raise TypeError(
-                "precision must be an int (decimal places) or None, got "
-                f"{type(precision).__name__}"
-            )
-        if precision is not None and precision < 0:
-            raise ValueError(
-                f"precision must be a non-negative integer (decimal places), got {precision}"
-            )
+        _validate_precision(precision)
         # Always scan the coordinates for a single uniform dimension, so a mixed-dimension model
         # fails fast at build time on both the lossless and the quantizing paths (not only later,
         # in index_of). The per-axis minimum is accumulated only when quantizing needs it.
@@ -454,14 +443,8 @@ class VertexPool:
         dimension: int | None = None
         for coordinate in coordinates:
             dimension = _require_uniform_dimension(dimension, len(coordinate))
-            if precision is None:
-                continue
-            for axis, component in enumerate(coordinate):
-                value = float(component)
-                if axis < len(minima):
-                    minima[axis] = min(minima[axis], value)
-                else:
-                    minima.append(value)
+            if precision is not None:
+                _accumulate_minimum(minima, coordinate)
         if precision is None or not minima:
             # Lossless, or no coordinates to quantize (an empty/geometry-less model): a transform
             # with empty scale/translate is invalid CityJSON, so carry none — stay lossless.
@@ -685,6 +668,36 @@ def _is_ring(value: Any) -> bool:
 def _is_surface(value: Any) -> bool:
     """True when ``value`` is a surface — a non-empty list whose first element is a ring."""
     return isinstance(value, list) and len(value) > 0 and _is_ring(value[0])
+
+
+def _validate_precision(precision: int | None) -> None:
+    """Reject a ``precision`` that is not ``None`` or a non-negative, non-bool ``int``.
+
+    Raises:
+        TypeError: If ``precision`` is neither ``None`` nor an ``int`` (``bool`` excluded).
+        ValueError: If ``precision`` is a negative integer.
+    """
+    if precision is None:
+        return
+    # bool is an int subclass, so exclude it explicitly: precision=True must not mean 1 decimal.
+    if not isinstance(precision, int) or isinstance(precision, bool):
+        raise TypeError(
+            f"precision must be an int (decimal places) or None, got {type(precision).__name__}"
+        )
+    if precision < 0:
+        raise ValueError(
+            f"precision must be a non-negative integer (decimal places), got {precision}"
+        )
+
+
+def _accumulate_minimum(minima: list[float], coordinate: Sequence[float]) -> None:
+    """Fold ``coordinate`` into ``minima`` in place, keeping the per-axis running minimum."""
+    for axis, component in enumerate(coordinate):
+        value = float(component)
+        if axis < len(minima):
+            minima[axis] = min(minima[axis], value)
+        else:
+            minima.append(value)
 
 
 def _require_uniform_dimension(seen: int | None, got: int) -> int:
