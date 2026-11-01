@@ -16,7 +16,7 @@
         <link rel="prev" href="../">
       
       
-        <link rel="next" href="../../examples/city-models/">
+        <link rel="next" href="../round-trip-fidelity/">
       
       
         
@@ -64,7 +64,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -527,6 +527,8 @@
       
         
           
+        
+      
         
       
         
@@ -1177,6 +1179,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../round-trip-fidelity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Round-trip fidelity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1506,6 +1536,8 @@
       
         
       
+        
+      
     
     
     
@@ -1661,6 +1693,34 @@
     
   
     ADR-0004 Versioned docs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0005-city-model-writers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ADR-0005 City-model writers
   
 
     
@@ -2358,16 +2418,16 @@ appearances and metadata are preserved. This is the decision recorded in
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">model</span> <span class="o">=</span> <span class="n">CityModel</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"building.gml"</span><span class="p">)</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># write — the format is chosen by the output suffix</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="n">model</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.city.json"</span><span class="p">)</span>     <span class="c1"># CityJSON 2.0</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">model</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.city.jsonl"</span><span class="p">)</span>    <span class="c1"># CityJSON Text Sequence (one feature per line)</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">model</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.gml"</span><span class="p">)</span>           <span class="c1"># CityGML 2.0</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="n">model</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.fg.json"</span><span class="p">)</span>       <span class="c1"># JSON-FG (OGC Features &amp; Geometries JSON)</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="n">model</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.city.json"</span><span class="p">)</span>  <span class="c1"># CityJSON 2.0</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">model</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.city.jsonl"</span><span class="p">)</span>  <span class="c1"># CityJSON Text Sequence (one feature per line)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">model</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.gml"</span><span class="p">)</span>  <span class="c1"># CityGML 2.0</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="n">model</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.fg.json"</span><span class="p">)</span>  <span class="c1"># JSON-FG (OGC Features &amp; Geometries JSON)</span>
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1"># or call a format method directly; a None path returns the document instead of writing</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="n">document</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">to_cityjson</span><span class="p">()</span>          <span class="c1"># -&gt; dict</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="n">document</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">to_cityjson</span><span class="p">()</span>  <span class="c1"># -&gt; dict</span>
 </code></pre></div>
 <p>Format conversion is therefore a single IR→IR expression that never touches the flattened form:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">CityModel</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"building.gml"</span><span class="p">)</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.city.json"</span><span class="p">)</span>   <span class="c1"># CityGML → CityJSON</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">CityModel</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"building.gml"</span><span class="p">)</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.city.json"</span><span class="p">)</span>  <span class="c1"># CityGML → CityJSON</span>
 </code></pre></div>
 <table>
 <thead>
@@ -7919,13 +7979,13 @@ dropping them would hand back an empty row set with no indication why (report §
         
         
           
-          <a href="../../examples/city-models/" class="md-footer__link md-footer__link--next" aria-label="Next: Reading 3D city models">
+          <a href="../round-trip-fidelity/" class="md-footer__link md-footer__link--next" aria-label="Next: Round-trip fidelity">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Reading 3D city models
+                Round-trip fidelity
               </div>
             </div>
             <div class="md-footer__button md-icon">
