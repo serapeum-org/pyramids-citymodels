@@ -236,12 +236,10 @@ def test_vertex_pool_rejects_mixed_dimension_model() -> None:
     model = CityModel(
         objects={"b": CityObject(id="b", type="Building", geometries=[three_d, two_d])}
     )
+    # Both paths now fail fast in vertex_pool's build-time scan (the lossless path scans too).
     for precision in (None, 3):
-        # Lossless catches it at index_into; quantized catches it earlier, in vertex_pool's scan.
         with pytest.raises(CityModelError, match="mixed-dimension"):
-            pool = model.vertex_pool(precision=precision)
-            for geometry in model.objects["b"].geometries:
-                geometry.index_into(pool)
+            model.vertex_pool(precision=precision)
 
 
 def test_for_coordinates_rejects_mixed_dimension_stream() -> None:
@@ -277,9 +275,7 @@ def test_lossless_vertex_pool_rejects_mixed_dimension_at_build() -> None:
     three_d = Geometry(type="MultiSurface", lod="2", boundaries=[[[(0.0, 0.0, 0.0)]]])
     two_d = Geometry(type="MultiSurface", lod="2", boundaries=[[[(1.0, 2.0)]]])
     model = CityModel(
-        objects={
-            "b": CityObject(id="b", type="Building", geometries=[three_d, two_d])
-        }
+        objects={"b": CityObject(id="b", type="Building", geometries=[three_d, two_d])}
     )
     with pytest.raises(CityModelError, match="mixed-dimension"):
         model.vertex_pool()
@@ -290,5 +286,6 @@ def test_index_into_requires_nested_boundaries() -> None:
     # rejected with a real exception (not an assert, which -O would strip), so index_into never
     # returns a scalar int in violation of its list[Any] annotation.
     geometry = Geometry(type="MultiSurface", lod="2", boundaries=(1.0, 2.0, 3.0))
+    pool = VertexPool()
     with pytest.raises(TypeError, match="nested list"):
-        geometry.index_into(VertexPool())
+        geometry.index_into(pool)
