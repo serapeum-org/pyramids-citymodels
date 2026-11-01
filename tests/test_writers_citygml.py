@@ -197,7 +197,8 @@ def test_degenerate_surface_emits_no_polygon() -> None:
         }
     )
     names = _local_names(write_citygml(model))
-    assert "Polygon" not in names and "RoofSurface" not in names
+    assert "Polygon" not in names
+    assert "RoofSurface" not in names
 
 
 def test_non_building_part_child_is_still_emitted() -> None:

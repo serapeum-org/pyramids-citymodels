@@ -96,10 +96,12 @@ def test_to_file_selects_the_writer_by_suffix(
 
 
 def test_to_file_rejects_an_unknown_suffix() -> None:
+    model = CityModel.from_file(CITYJSON)
     with pytest.raises(CityModelError, match="cannot infer a city-model writer"):
-        CityModel.from_file(CITYJSON).to_file("out.dwg")
+        model.to_file("out.dwg")
 
 
 def test_to_cityjson_returns_a_dict_without_a_path() -> None:
     document = CityModel.from_file(CITYJSON).to_cityjson()
-    assert isinstance(document, dict) and document["type"] == "CityJSON"
+    assert isinstance(document, dict)
+    assert document["type"] == "CityJSON"
