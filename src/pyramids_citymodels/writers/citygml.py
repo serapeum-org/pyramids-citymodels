@@ -52,13 +52,30 @@ _MATCHED_VERSIONS = frozenset({"1.0", "2.0"})
 #: not read back by this package's semantic reader, so writing one warns rather than losing it silently.
 _READABLE_OBJECT_TYPES = frozenset({"Building", "BuildingPart"})
 
-#: CityGML 2.0 namespace URIs, by the prefix this writer registers for them.
-_NS = {
-    "core": "http://www.opengis.net/citygml/2.0",
-    "bldg": "http://www.opengis.net/citygml/building/2.0",
-    "gen": "http://www.opengis.net/citygml/generics/2.0",
-    "gml": "http://www.opengis.net/gml",
-}
+#: The GML namespace, constant across CityGML versions this writer emits.
+_GML_NS = "http://www.opengis.net/gml"
+
+
+def _namespaces(version: str) -> dict[str, str]:
+    """The ``prefix → URI`` map for a CityGML ``version`` (``core``/``bldg``/``gen`` carry it).
+
+    Returned fresh per call and threaded through element construction, so the writer holds **no**
+    mutable module state — concurrent writes of different-version models cannot corrupt each other.
+    """
+    return {
+        "core": f"http://www.opengis.net/citygml/{version}",
+        "bldg": f"http://www.opengis.net/citygml/building/{version}",
+        "gen": f"http://www.opengis.net/citygml/generics/{version}",
+        "gml": _GML_NS,
+    }
+
+
+#: The default (CityGML 2.0) namespace map. Its prefixes are registered with ElementTree once at
+#: import (never per call), so a 2.0 document serializes with friendly ``core:``/``bldg:``/``gml:``
+#: prefixes; a 1.0 document carries the same (correct) URIs under auto-assigned prefixes.
+_NS = _namespaces("2.0")
+for _prefix, _uri in _NS.items():
+    ElementTree.register_namespace(_prefix, _uri)
 
 #: Known numeric building attributes written as native ``bldg:`` elements (the reader coerces these
 #: back to numbers by name), mirroring the reader's ``_FLOAT``/``_INT_BUILDING_ATTRIBUTES`` sets.
@@ -72,9 +89,9 @@ _NATIVE_BUILDING_ATTRIBUTES = frozenset(
 )
 
 
-def _q(prefix: str, local: str) -> str:
-    """A Clark-notation ``{namespace}local`` tag for an element in one of the known namespaces."""
-    return f"{{{_NS[prefix]}}}{local}"
+def _q(ns: dict[str, str], prefix: str, local: str) -> str:
+    """A Clark-notation ``{namespace}local`` tag, resolving ``prefix`` against the per-call map ``ns``."""
+    return f"{{{ns[prefix]}}}{local}"
 
 
 def _coordinate(point: Any, dimension: int) -> list[float]:
@@ -102,7 +119,9 @@ def _pos_list(ring: list[Any]) -> tuple[str, int]:
     return " ".join(tokens), dimension
 
 
-def _polygon_element(surface: list[Any]) -> ElementTree.Element | None:
+def _polygon_element(
+    ns: dict[str, str], surface: list[Any]
+) -> ElementTree.Element | None:
     """Build a ``gml:Polygon`` (exterior ring first, then interior rings) from an IR surface.
 
     A ring needs at least three distinct positions to bound an area; such a ring is emitted closed
@@ -111,13 +130,13 @@ def _polygon_element(surface: list[Any]) -> ElementTree.Element | None:
     rings = [ring for ring in surface if ring and len(ring) >= 3]
     if not rings:
         return None
-    polygon = ElementTree.Element(_q("gml", "Polygon"))
+    polygon = ElementTree.Element(_q(ns, "gml", "Polygon"))
     for position, ring in enumerate(rings):
         boundary = ElementTree.SubElement(
-            polygon, _q("gml", "exterior" if position == 0 else "interior")
+            polygon, _q(ns, "gml", "exterior" if position == 0 else "interior")
         )
-        linear_ring = ElementTree.SubElement(boundary, _q("gml", "LinearRing"))
-        pos_list = ElementTree.SubElement(linear_ring, _q("gml", "posList"))
+        linear_ring = ElementTree.SubElement(boundary, _q(ns, "gml", "LinearRing"))
+        pos_list = ElementTree.SubElement(linear_ring, _q(ns, "gml", "posList"))
         text, dimension = _pos_list(ring)
         pos_list.set("srsDimension", str(dimension))
         pos_list.text = text
@@ -125,21 +144,23 @@ def _polygon_element(surface: list[Any]) -> ElementTree.Element | None:
 
 
 def _bounded_by(
-    semantic_type: str, surface: list[Any], lod: int
+    ns: dict[str, str], semantic_type: str, surface: list[Any], lod: int
 ) -> ElementTree.Element | None:
     """A ``bldg:boundedBy`` wrapping one boundary surface of ``semantic_type`` and its polygon."""
-    polygon = _polygon_element(surface)
+    polygon = _polygon_element(ns, surface)
     if polygon is None:
         return None
-    bounded_by = ElementTree.Element(_q("bldg", "boundedBy"))
-    boundary_surface = ElementTree.SubElement(bounded_by, _q("bldg", semantic_type))
+    bounded_by = ElementTree.Element(_q(ns, "bldg", "boundedBy"))
+    boundary_surface = ElementTree.SubElement(bounded_by, _q(ns, "bldg", semantic_type))
     multi_surface_property = ElementTree.SubElement(
-        boundary_surface, _q("bldg", f"lod{lod}MultiSurface")
+        boundary_surface, _q(ns, "bldg", f"lod{lod}MultiSurface")
     )
     multi_surface = ElementTree.SubElement(
-        multi_surface_property, _q("gml", "MultiSurface")
+        multi_surface_property, _q(ns, "gml", "MultiSurface")
     )
-    surface_member = ElementTree.SubElement(multi_surface, _q("gml", "surfaceMember"))
+    surface_member = ElementTree.SubElement(
+        multi_surface, _q(ns, "gml", "surfaceMember")
+    )
     surface_member.append(polygon)
     return bounded_by
 
@@ -154,12 +175,14 @@ def _lod_number(geometry: Geometry) -> int:
         return 2
 
 
-def _add_attributes(feature: ElementTree.Element, attributes: dict[str, Any]) -> None:
+def _add_attributes(
+    ns: dict[str, str], feature: ElementTree.Element, attributes: dict[str, Any]
+) -> None:
     """Append an object's attributes: native ``bldg:`` elements for the known numeric ones, else
     a typed ``gen:*Attribute`` that preserves the Python value type on read."""
     for name, value in attributes.items():
         if name in _NATIVE_BUILDING_ATTRIBUTES:
-            element = ElementTree.SubElement(feature, _q("bldg", name))
+            element = ElementTree.SubElement(feature, _q(ns, "bldg", name))
             element.text = repr(value) if isinstance(value, float) else str(value)
             continue
         # bool is an int subclass — keep it as a string, not an intAttribute.
@@ -171,21 +194,21 @@ def _add_attributes(feature: ElementTree.Element, attributes: dict[str, Any]) ->
             kind = "doubleAttribute"
         else:
             kind = "stringAttribute"
-        generic = ElementTree.SubElement(feature, _q("gen", kind))
+        generic = ElementTree.SubElement(feature, _q(ns, "gen", kind))
         generic.set("name", name)
-        value_element = ElementTree.SubElement(generic, _q("gen", "value"))
+        value_element = ElementTree.SubElement(generic, _q(ns, "gen", "value"))
         value_element.text = repr(value) if isinstance(value, float) else str(value)
 
 
 def _feature_element(
-    city_object: CityObject, model: CityModel, visited: set[str]
+    ns: dict[str, str], city_object: CityObject, model: CityModel, visited: set[str]
 ) -> ElementTree.Element:
     """Build one ``bldg:<type>`` feature element: its id, attributes, surfaces and nested children."""
-    feature = ElementTree.Element(_q("bldg", city_object.type))
-    feature.set(_q("gml", "id"), city_object.id)
+    feature = ElementTree.Element(_q(ns, "bldg", city_object.type))
+    feature.set(_q(ns, "gml", "id"), city_object.id)
     visited.add(city_object.id)
 
-    _add_attributes(feature, city_object.attributes)
+    _add_attributes(ns, feature, city_object.attributes)
 
     for geometry in city_object.geometries:
         lod = _lod_number(geometry)
@@ -199,18 +222,20 @@ def _feature_element(
             if surface_object is None:
                 # No semantic type — this package's semantic reader cannot place it; emit it as a
                 # plain building geometry (valid CityGML, documented as not round-tripped here).
-                plain = _polygon_element(surface)
+                plain = _polygon_element(ns, surface)
                 if plain is not None:
                     multi_property = ElementTree.SubElement(
-                        feature, _q("bldg", f"lod{lod}MultiSurface")
+                        feature, _q(ns, "bldg", f"lod{lod}MultiSurface")
                     )
                     multi = ElementTree.SubElement(
-                        multi_property, _q("gml", "MultiSurface")
+                        multi_property, _q(ns, "gml", "MultiSurface")
                     )
-                    member = ElementTree.SubElement(multi, _q("gml", "surfaceMember"))
+                    member = ElementTree.SubElement(
+                        multi, _q(ns, "gml", "surfaceMember")
+                    )
                     member.append(plain)
                 continue
-            bounded_by = _bounded_by(surface_object.type, surface, lod)
+            bounded_by = _bounded_by(ns, surface_object.type, surface, lod)
             if bounded_by is not None:
                 feature.append(bounded_by)
 
@@ -218,10 +243,10 @@ def _feature_element(
         child = model.objects.get(child_id)
         if child is None or child_id in visited:
             continue
-        child_element = _feature_element(child, model, visited)
+        child_element = _feature_element(ns, child, model, visited)
         if child.type == "BuildingPart":
             consists = ElementTree.SubElement(
-                feature, _q("bldg", "consistsOfBuildingPart")
+                feature, _q(ns, "bldg", "consistsOfBuildingPart")
             )
             consists.append(child_element)
         else:
@@ -261,21 +286,23 @@ def _bounds(model: CityModel) -> tuple[list[float], list[float], int] | None:
     return lower, upper, dimension
 
 
-def _add_envelope(root: ElementTree.Element, model: CityModel) -> None:
+def _add_envelope(
+    ns: dict[str, str], root: ElementTree.Element, model: CityModel
+) -> None:
     """Append a ``gml:boundedBy`` envelope carrying the CRS (as ``srsName``) and the bounding box."""
     bounds = _bounds(model)
     if bounds is None and not model.crs:
         return
-    bounded_by = ElementTree.SubElement(root, _q("gml", "boundedBy"))
-    envelope = ElementTree.SubElement(bounded_by, _q("gml", "Envelope"))
+    bounded_by = ElementTree.SubElement(root, _q(ns, "gml", "boundedBy"))
+    envelope = ElementTree.SubElement(bounded_by, _q(ns, "gml", "Envelope"))
     if model.crs:
         envelope.set("srsName", model.crs)
     if bounds is not None:
         lower, upper, dimension = bounds
         envelope.set("srsDimension", str(dimension))
-        lower_corner = ElementTree.SubElement(envelope, _q("gml", "lowerCorner"))
+        lower_corner = ElementTree.SubElement(envelope, _q(ns, "gml", "lowerCorner"))
         lower_corner.text = " ".join(repr(component) for component in lower)
-        upper_corner = ElementTree.SubElement(envelope, _q("gml", "upperCorner"))
+        upper_corner = ElementTree.SubElement(envelope, _q(ns, "gml", "upperCorner"))
         upper_corner.text = " ".join(repr(component) for component in upper)
 
 
@@ -328,13 +355,11 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
             ```
     """
     # Emit the source version's namespaces for a version this writer matches (1.0/2.0), so the
-    # version string round-trips through the reader; a 3.0 or unknown source falls back to 2.0.
+    # version string round-trips through the reader; a 3.0 or unknown source falls back to 2.0. The
+    # map is a per-call local threaded through construction — no module-global is mutated, so
+    # concurrent writes of different-version models cannot corrupt each other.
     version = model.version if model.version in _MATCHED_VERSIONS else "2.0"
-    _NS["core"] = f"http://www.opengis.net/citygml/{version}"
-    _NS["bldg"] = f"http://www.opengis.net/citygml/building/{version}"
-    _NS["gen"] = f"http://www.opengis.net/citygml/generics/{version}"
-    for prefix, uri in _NS.items():
-        ElementTree.register_namespace(prefix, uri)
+    ns = _namespaces(version)
 
     unreadable = sorted(
         {
@@ -351,15 +376,15 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
             stacklevel=2,
         )
 
-    root = ElementTree.Element(_q("core", "CityModel"))
-    _add_envelope(root, model)
+    root = ElementTree.Element(_q(ns, "core", "CityModel"))
+    _add_envelope(ns, root, model)
 
     visited: set[str] = set()
     for city_object in model.objects.values():
         if city_object.parents:
             continue  # emitted inside its parent
-        member = ElementTree.SubElement(root, _q("core", "cityObjectMember"))
-        member.append(_feature_element(city_object, model, visited))
+        member = ElementTree.SubElement(root, _q(ns, "core", "cityObjectMember"))
+        member.append(_feature_element(ns, city_object, model, visited))
 
     ElementTree.indent(root)
     document = ElementTree.tostring(root, encoding="unicode", xml_declaration=True)
