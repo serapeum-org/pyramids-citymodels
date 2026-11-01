@@ -109,6 +109,28 @@ class Geometry:
         geometry type, which is what :meth:`CityModel.vertex_pool` needs to size and quantize a
         rebuilt pool. The same coordinate appearing in two rings is yielded twice; de-duplication is
         the pool's job (:meth:`VertexPool.index_of`), not the walk's.
+
+        Yields:
+            Each coordinate of :attr:`boundaries` as a ``float`` tuple, in document order.
+
+        Examples:
+            - Walk a ``MultiSurface`` (surfaces one level down) to its coordinates:
+                ```python
+                >>> geometry = Geometry(
+                ...     type="MultiSurface", lod="2",
+                ...     boundaries=[[[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]]])
+                >>> list(geometry.coordinates())
+                [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]
+
+                ```
+            - A ``Solid`` (surfaces two levels down) is walked by the same call, repeats included:
+                ```python
+                >>> ring = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]
+                >>> geometry = Geometry(type="Solid", lod="2", boundaries=[[[ring], [ring]]])
+                >>> len(list(geometry.coordinates()))
+                4
+
+                ```
         """
         yield from _iter_coordinates(self.boundaries)
 
@@ -121,6 +143,38 @@ class Geometry:
         not seen), so re-indexing every geometry of a model against one shared pool produces the
         single document-wide ``vertices`` array plus each geometry's indexed ``boundaries`` that a
         CityJSON writer emits (issue #24).
+
+        Args:
+            pool: The shared :class:`VertexPool` to index into; it is mutated, gaining any
+                coordinate of this geometry it does not already hold.
+
+        Returns:
+            The boundaries with each coordinate tuple replaced by its integer index in ``pool``,
+            nesting preserved.
+
+        Examples:
+            - Re-index a one-surface geometry and read back the pool it filled:
+                ```python
+                >>> geometry = Geometry(
+                ...     type="MultiSurface", lod="2",
+                ...     boundaries=[[[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]])
+                >>> pool = VertexPool()
+                >>> geometry.index_into(pool)
+                [[[0, 1, 2]]]
+                >>> pool.vertices
+                [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]
+
+                ```
+            - Indexing is the inverse of :meth:`VertexPool.dereference`, so the round-trip is exact:
+                ```python
+                >>> geometry = Geometry(
+                ...     type="MultiSurface", lod="2",
+                ...     boundaries=[[[(2.0, 3.0, 4.0), (5.0, 6.0, 7.0)]]])
+                >>> pool = VertexPool()
+                >>> pool.dereference(geometry.index_into(pool)) == geometry.boundaries
+                True
+
+                ```
         """
         indexed: list[Any] = _map_coordinates(self.boundaries, pool.index_of)
         return indexed
@@ -184,6 +238,29 @@ class CityModel:
         The flat stream the pool builder consumes to compute a ``transform`` and fill a shared
         :class:`VertexPool`; it visits objects then their geometries in insertion order, so a pool
         rebuilt from it is deterministic.
+
+        Yields:
+            Every coordinate of every geometry as a ``float`` tuple, objects then geometries in
+            insertion order, repeats included.
+
+        Examples:
+            - Stream the coordinates of a one-building model:
+                ```python
+                >>> geometry = Geometry(
+                ...     type="MultiSurface", lod="2",
+                ...     boundaries=[[[(0.0, 0.0, 0.0), (2.0, 0.0, 0.0)]]])
+                >>> model = CityModel(
+                ...     objects={"b": CityObject(id="b", type="Building", geometries=[geometry])})
+                >>> list(model.coordinates())
+                [(0.0, 0.0, 0.0), (2.0, 0.0, 0.0)]
+
+                ```
+            - An empty model yields nothing:
+                ```python
+                >>> list(CityModel().coordinates())
+                []
+
+                ```
         """
         for city_object in self.objects.values():
             for geometry in city_object.geometries:
@@ -248,6 +325,32 @@ class VertexPool:
             is set, float tuples when it is ``None``.
         transform: The CityJSON ``{"scale": [...], "translate": [...]}`` mapping a stored integer
             vertex to a real coordinate, or ``None`` when coordinates are pooled losslessly as-is.
+
+    Examples:
+        - Pool coordinates by hand; a repeat returns its first index without growing the pool:
+            ```python
+            >>> pool = VertexPool()
+            >>> pool.index_of((0.0, 0.0, 0.0))
+            0
+            >>> pool.index_of((1.0, 0.0, 0.0))
+            1
+            >>> pool.index_of((0.0, 0.0, 0.0))
+            0
+            >>> pool.vertices
+            [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]
+
+            ```
+        - A pool with a ``transform`` stores quantized integers but reads back as reals:
+            ```python
+            >>> pool = VertexPool(transform={"scale": [0.5, 0.5], "translate": [10.0, 20.0]})
+            >>> pool.index_of((11.0, 21.0))
+            0
+            >>> pool.vertices
+            [(2, 2)]
+            >>> pool.dereference(0)
+            (11.0, 21.0)
+
+            ```
     """
 
     vertices: list[tuple[float, ...]] = field(default_factory=list)
@@ -276,6 +379,28 @@ class VertexPool:
             coordinates: The coordinate stream the pool will hold, e.g.
                 :meth:`CityModel.coordinates`. Consumed once, only when ``precision`` is given.
             precision: Decimal places to quantize to, or ``None`` for a lossless pool.
+
+        Returns:
+            An empty :class:`VertexPool`: its :attr:`transform` is ``None`` for a lossless pool, or
+            ``{"scale", "translate"}`` sized to the coordinates' extent for a quantizing one.
+
+        Examples:
+            - A lossless pool has no transform and starts empty:
+                ```python
+                >>> pool = VertexPool.for_coordinates([(0.0, 0.0), (1.0, 1.0)])
+                >>> pool.transform is None
+                True
+                >>> pool.vertices
+                []
+
+                ```
+            - A quantizing pool derives ``translate`` from the coordinates' per-axis minimum:
+                ```python
+                >>> pool = VertexPool.for_coordinates([(10.0, 20.0), (11.0, 22.0)], precision=2)
+                >>> pool.transform
+                {'scale': [0.01, 0.01], 'translate': [10.0, 20.0]}
+
+                ```
         """
         if precision is None:
             return cls(transform=None)
@@ -293,7 +418,30 @@ class VertexPool:
         )
 
     def quantize(self, coordinate: Sequence[float]) -> tuple[float, ...]:
-        """Map a real coordinate to its stored form — a quantized integer tuple, or floats as-is."""
+        """Map a real coordinate to its stored form — a quantized integer tuple, or floats as-is.
+
+        Args:
+            coordinate: A real coordinate to convert to the pool's stored representation.
+
+        Returns:
+            Integer steps from the ``transform``'s ``translate`` origin when a transform is set,
+            otherwise the coordinate's components as floats.
+
+        Examples:
+            - Without a transform, components are returned as floats:
+                ```python
+                >>> VertexPool().quantize((1, 2, 3))
+                (1.0, 2.0, 3.0)
+
+                ```
+            - With a transform, the coordinate becomes integer steps from ``translate``:
+                ```python
+                >>> pool = VertexPool(transform={"scale": [0.01, 0.01], "translate": [100.0, 200.0]})
+                >>> pool.quantize((100.5, 200.25))
+                (50, 25)
+
+                ```
+        """
         if self.transform is None:
             return tuple(float(component) for component in coordinate)
         scale = self.transform["scale"]
@@ -304,7 +452,30 @@ class VertexPool:
         )
 
     def dequantize(self, vertex: Sequence[float]) -> tuple[float, ...]:
-        """Map a stored vertex back to a real coordinate — the inverse of :meth:`quantize`."""
+        """Map a stored vertex back to a real coordinate — the inverse of :meth:`quantize`.
+
+        Args:
+            vertex: A stored vertex (an integer tuple when a transform is set, else floats).
+
+        Returns:
+            The real coordinate: ``vertex * scale + translate`` per axis when a transform is set,
+            otherwise the components as floats.
+
+        Examples:
+            - Without a transform, the vertex is returned unchanged as floats:
+                ```python
+                >>> VertexPool().dequantize((1, 2, 3))
+                (1.0, 2.0, 3.0)
+
+                ```
+            - With a transform, integer steps are scaled back to a real coordinate:
+                ```python
+                >>> pool = VertexPool(transform={"scale": [0.01, 0.01], "translate": [100.0, 200.0]})
+                >>> pool.dequantize((50, 25))
+                (100.5, 200.25)
+
+                ```
+        """
         if self.transform is None:
             return tuple(float(component) for component in vertex)
         scale = self.transform["scale"]
@@ -314,7 +485,31 @@ class VertexPool:
         )
 
     def index_of(self, coordinate: Sequence[float]) -> int:
-        """Return ``coordinate``'s index in the pool, appending it (quantized) when first seen."""
+        """Return ``coordinate``'s index in the pool, appending it (quantized) when first seen.
+
+        Args:
+            coordinate: A real coordinate to look up or add; it is quantized by :meth:`quantize`
+                before de-duplication, so two coordinates that quantize alike share one index.
+
+        Returns:
+            The coordinate's integer index in :attr:`vertices` — an existing one when already
+            present, otherwise the index of the freshly appended vertex.
+
+        Examples:
+            - New coordinates are appended; a repeat returns its existing index:
+                ```python
+                >>> pool = VertexPool()
+                >>> pool.index_of((5.0, 6.0))
+                0
+                >>> pool.index_of((7.0, 8.0))
+                1
+                >>> pool.index_of((5.0, 6.0))
+                0
+                >>> len(pool.vertices)
+                2
+
+                ```
+        """
         key = self.quantize(coordinate)
         existing = self._index.get(key)
         if existing is not None:
@@ -330,6 +525,30 @@ class VertexPool:
         Each leaf integer becomes its (dequantized) coordinate; the nesting is preserved, so the
         result equals the geometry's original ``boundaries`` for a lossless pool, and equals them to
         within the quantization step for a pool built with a ``precision``.
+
+        Args:
+            indexed: A vertex index, or an arbitrarily nested list of them (a geometry's indexed
+                boundaries, as :meth:`Geometry.index_into` returns).
+
+        Returns:
+            The same structure with each index replaced by its coordinate tuple — a single tuple
+            when ``indexed`` is one index.
+
+        Examples:
+            - Dereference a geometry's indexed boundaries back to coordinates:
+                ```python
+                >>> pool = VertexPool(
+                ...     vertices=[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)])
+                >>> pool.dereference([[[0, 1, 2]]])
+                [[[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]]
+
+                ```
+            - A lone index dereferences to a single coordinate:
+                ```python
+                >>> VertexPool(vertices=[(2.0, 3.0)]).dereference(0)
+                (2.0, 3.0)
+
+                ```
         """
         if isinstance(indexed, int):
             return self.dequantize(self.vertices[indexed])
