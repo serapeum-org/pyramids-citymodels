@@ -368,11 +368,14 @@ class VertexPool:
     def __post_init__(self) -> None:
         # Index coordinates for O(1) de-duplication in index_of; rebuilt from any preloaded vertices
         # so a pool constructed with vertices already present still dedupes correctly. Track the
-        # pool's single coordinate dimension too, validating that any preloaded vertices are uniform.
+        # pool's single coordinate dimension too: a transform fixes it up front (its scale/translate
+        # length), and any preloaded vertices must agree with it and each other.
         self._index: dict[tuple[float, ...], int] = {
             vertex: position for position, vertex in enumerate(self.vertices)
         }
-        self._dimension: int | None = None
+        self._dimension: int | None = (
+            len(self.transform["scale"]) if self.transform is not None else None
+        )
         for vertex in self.vertices:
             self._dimension = _require_uniform_dimension(self._dimension, len(vertex))
 
@@ -547,8 +550,11 @@ class VertexPool:
 
                 ```
         """
+        # Validate the dimension against the raw coordinate BEFORE quantizing, so a mismatch always
+        # surfaces as CityModelError rather than a raw IndexError (over-dimension indexing the
+        # transform's scale/translate) or a silently stored wrong-dimension vertex (under-dimension).
+        self._dimension = _require_uniform_dimension(self._dimension, len(coordinate))
         key = self.quantize(coordinate)
-        self._dimension = _require_uniform_dimension(self._dimension, len(key))
         existing = self._index.get(key)
         if existing is not None:
             return existing

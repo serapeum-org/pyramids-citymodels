@@ -213,6 +213,21 @@ def test_index_of_rejects_mixed_dimension_coordinates() -> None:
         pool.index_of((1.0, 0.0))
 
 
+def test_index_of_rejects_wrong_dimension_against_a_transform_pool() -> None:
+    # A pool built with a 2D transform knows its dimension before any vertex is stored, so an
+    # over- or under-dimension coordinate raises CityModelError (not a raw IndexError, and never a
+    # silently stored wrong-dimension vertex) — the contract index_of documents.
+    two_d = VertexPool(transform={"scale": [0.01, 0.01], "translate": [0.0, 0.0]})
+    with pytest.raises(CityModelError, match="mixed-dimension"):
+        two_d.index_of((1.0, 2.0, 3.0))
+    three_d = VertexPool(
+        transform={"scale": [0.01, 0.01, 0.01], "translate": [0.0, 0.0, 0.0]}
+    )
+    with pytest.raises(CityModelError, match="mixed-dimension"):
+        three_d.index_of((1.0, 2.0))
+    assert three_d.vertices == []  # nothing stored
+
+
 def test_vertex_pool_rejects_mixed_dimension_model() -> None:
     # Mixed-dimension geometries (reachable from CityGML's per-element srsDimension) are rejected
     # when rebuilding the pool, in both the lossless and the quantized paths.
