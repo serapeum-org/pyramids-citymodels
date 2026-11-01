@@ -71,6 +71,63 @@ limits of this first reader (all documented, none silent):
 - **`pnts` is routed out.** Point-cloud tiles belong to the `pointclouds` package and are skipped
   with a warning, not mis-read as meshes.
 
+## Writing and conversion
+
+The read half turns a file into a `FeatureCollection` (a deliberately lossy, flat projection). The
+**write** half is different: it serializes straight from the `CityModel` intermediate representation
+(IR), never from `FeatureCollection`, so the object hierarchy, multi-LOD geometries, semantics,
+appearances and metadata are preserved. This is the decision recorded in
+[ADR-0005](../adr/0005-city-model-writers.md); the writers live as methods on `CityModel`:
+
+```python
+from pyramids_citymodels.ir import CityModel
+
+# read with the symmetric entry point (reader chosen by content/suffix)
+model = CityModel.from_file("building.gml")
+
+# write — the format is chosen by the output suffix
+model.to_file("building.city.json")  # CityJSON 2.0
+model.to_file("building.city.jsonl")  # CityJSON Text Sequence (one feature per line)
+model.to_file("building.gml")  # CityGML 2.0
+model.to_file("building.fg.json")  # JSON-FG (OGC Features & Geometries JSON)
+
+# or call a format method directly; a None path returns the document instead of writing
+document = model.to_cityjson()  # -> dict
+```
+
+Format conversion is therefore a single IR→IR expression that never touches the flattened form:
+
+```python
+CityModel.from_file("building.gml").to_file("building.city.json")  # CityGML → CityJSON
+```
+
+| Method | Format | Round-trips? |
+|---|---|---|
+| `to_cityjson` | CityJSON 2.0 | Yes — `parse → write → parse` reproduces the model (the vertex pool is rebuilt and re-indexed from the IR). Geometry, semantics, materials, metadata, CRS and version round-trip; texture *coordinates* do not (the reader does not capture the `vertices-texture` UV pool). |
+| `to_cityjsonseq` | CityJSON Text Sequence (`.city.jsonl`) | Yes, via CityJSON — a header line then one `CityJSONFeature` per top-level object. |
+| `to_citygml` | CityGML (2.0; a 1.0/2.0 source keeps its version) | Partially — the surfaces of `MultiSurface` and `Solid`/`MultiSolid` geometry (with their semantic types), object ids/types, the parent/child hierarchy and the CRS round-trip; a `1.0`/`2.0` source also keeps its version, while a `3.0`/unknown source is emitted as `2.0`. A `Solid`/`MultiSolid` keeps its surfaces but comes back as a `MultiSurface` (the reader rebuilds only `MultiSurface`), the `gml:LinearRing` round-trip is exact only for already-closed (spec-conformant) source rings, attribute `uom` units and surface `gml:id`s are lost, and a non-`Building`/`BuildingPart` object is written with a warning but not read back (see the writer's module docs). |
+| `to_jsonfg` | JSON-FG | No — a one-way GIS-exchange projection (3D geometry in each feature's `place`); there is no JSON-FG reader. |
+
+## Writing API
+
+::: pyramids_citymodels.writers.cityjson
+    options:
+        show_root_heading: true
+        heading_level: 3
+        members: ["write_cityjson", "write_cityjsonseq"]
+
+::: pyramids_citymodels.writers.citygml
+    options:
+        show_root_heading: true
+        heading_level: 3
+        members: ["write_citygml"]
+
+::: pyramids_citymodels.writers.jsonfg
+    options:
+        show_root_heading: true
+        heading_level: 3
+        members: ["write_jsonfg"]
+
 ## Driver classes
 
 ::: pyramids_citymodels.drivers.cityjson

@@ -40,6 +40,7 @@ __all__ = [
     "SemanticSurface",
     "VertexPool",
     "crs_from_identifier",
+    "is_coordinate",
     "iter_surfaces",
     "normalize_lod",
 ]
@@ -246,6 +247,247 @@ class CityModel:
     source_format: str | None = None
     appearances: dict[str, Any] = field(default_factory=dict)
     extensions: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_file(cls, path: Any) -> "CityModel":
+        """Parse a city-model file into a :class:`CityModel`, choosing the reader by content.
+
+        The symmetric counterpart of :meth:`to_file`: it dispatches to the CityJSON, CityGML or
+        3D Tiles reader so conversion is a single expression that never touches the lossy
+        ``FeatureCollection`` form (ADR-0005)::
+
+            CityModel.from_file("building.gml").to_file("building.city.json")
+
+        A ``.gml`` / ``.xml`` / ``.citygml`` suffix goes straight to the CityGML reader; any other
+        file (``.json`` is shared by CityJSON, a 3D Tiles tileset and GeoJSON) is content-sniffed —
+        CityJSON, then 3D Tiles, then CityGML.
+
+        Args:
+            path: A path to a CityJSON, CityGML or 3D Tiles file.
+
+        Returns:
+            The parsed city model.
+
+        Raises:
+            CityModelError: If no reader recognizes the file.
+
+        Examples:
+            - Read CityJSON content (chosen by content sniff) and inspect the model:
+                ```python
+                >>> doc = (
+                ...     '{"type": "CityJSON", "version": "2.0", '
+                ...     '"CityObjects": {"b": {"type": "Building"}}, "vertices": []}'
+                ... )
+                >>> model = CityModel.from_file(doc)
+                >>> model.source_format
+                'CityJSON'
+                >>> list(model.objects)
+                ['b']
+
+                ```
+            - CityGML content is recognized by its namespace, not a suffix:
+                ```python
+                >>> xml = '<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0"/>'
+                >>> CityModel.from_file(xml).source_format
+                'CityGML'
+
+                ```
+        """
+        from pyramids_citymodels.errors import CityModelError
+        from pyramids_citymodels.readers.citygml import (
+            looks_like_citygml,
+            parse_citygml,
+        )
+        from pyramids_citymodels.readers.cityjson import (
+            looks_like_cityjson,
+            parse_cityjson,
+        )
+        from pyramids_citymodels.readers.threedtiles import (
+            looks_like_3dtiles,
+            parse_3dtiles,
+        )
+
+        name = str(path).lower()
+        if name.endswith((".gml", ".xml", ".citygml")):
+            return parse_citygml(path)
+        if looks_like_cityjson(path):
+            return parse_cityjson(path)
+        if looks_like_3dtiles(path):
+            return parse_3dtiles(path)
+        if looks_like_citygml(path):
+            return parse_citygml(path)
+        raise CityModelError(
+            f"no city-model reader recognizes {path!r} (not CityJSON, 3D Tiles or CityGML)"
+        )
+
+    def to_cityjson(self, path: Any = None) -> "dict[str, Any] | None":
+        """Serialize this model to CityJSON 2.0 (see :func:`.writers.cityjson.write_cityjson`).
+
+        Returns the CityJSON document ``dict`` when ``path`` is ``None``, else writes it and
+        returns ``None``.
+
+        Examples:
+            - Serialize to a dict and read a city object straight out of it:
+                ```python
+                >>> doc = (
+                ...     '{"type": "CityJSON", "version": "2.0", '
+                ...     '"CityObjects": {"b": {"type": "Building"}}, "vertices": []}'
+                ... )
+                >>> out = CityModel.from_file(doc).to_cityjson()
+                >>> out["type"]
+                'CityJSON'
+                >>> out["CityObjects"]["b"]["type"]
+                'Building'
+
+                ```
+        """
+        from pyramids_citymodels.writers.cityjson import write_cityjson
+
+        return write_cityjson(self, path)
+
+    def to_cityjsonseq(self, path: Any = None) -> str | None:
+        """Serialize this model to a CityJSON Text Sequence (``.city.jsonl``).
+
+        See :func:`.writers.cityjson.write_cityjsonseq`. Returns the sequence as a ``str`` when
+        ``path`` is ``None``, else writes it and returns ``None``.
+
+        Examples:
+            - The first line is a CityJSON header, each following line a ``CityJSONFeature``:
+                ```python
+                >>> import json
+                >>> doc = (
+                ...     '{"type": "CityJSON", "version": "2.0", '
+                ...     '"CityObjects": {"b": {"type": "Building"}}, "vertices": []}'
+                ... )
+                >>> lines = CityModel.from_file(doc).to_cityjsonseq().splitlines()
+                >>> json.loads(lines[0])["type"]
+                'CityJSON'
+                >>> json.loads(lines[1])["id"]
+                'b'
+
+                ```
+        """
+        from pyramids_citymodels.writers.cityjson import write_cityjsonseq
+
+        return write_cityjsonseq(self, path)
+
+    def to_citygml(self, path: Any = None) -> str | None:
+        """Serialize this model to CityGML 2.0 (see :func:`.writers.citygml.write_citygml`).
+
+        Returns the document as a ``str`` when ``path`` is ``None``, else writes it and returns
+        ``None``. See the writer's module docstring for the round-trip fidelity contract.
+
+        Examples:
+            - Each object's id is written as a ``gml:id`` inside a ``cityObjectMember``:
+                ```python
+                >>> doc = (
+                ...     '{"type": "CityJSON", "version": "2.0", '
+                ...     '"CityObjects": {"H1": {"type": "Building"}}, "vertices": []}'
+                ... )
+                >>> xml = CityModel.from_file(doc).to_citygml()
+                >>> "cityObjectMember" in xml
+                True
+                >>> 'gml:id="H1"' in xml
+                True
+
+                ```
+        """
+        from pyramids_citymodels.writers.citygml import write_citygml
+
+        return write_citygml(self, path)
+
+    def to_jsonfg(self, path: Any = None) -> "dict[str, Any] | None":
+        """Serialize this model to OGC Features and Geometries JSON (JSON-FG).
+
+        See :func:`.writers.jsonfg.write_jsonfg`. A one-way GIS-exchange projection, not a
+        round-trip. Returns the document ``dict`` when ``path`` is ``None``, else writes it.
+
+        Examples:
+            - Each city object becomes one JSON-FG feature carrying its type as ``featureType``:
+                ```python
+                >>> doc = (
+                ...     '{"type": "CityJSON", "version": "2.0", '
+                ...     '"CityObjects": {"b": {"type": "Building"}}, "vertices": []}'
+                ... )
+                >>> fg = CityModel.from_file(doc).to_jsonfg()
+                >>> fg["type"]
+                'FeatureCollection'
+                >>> fg["features"][0]["featureType"]
+                'Building'
+
+                ```
+        """
+        from pyramids_citymodels.writers.jsonfg import write_jsonfg
+
+        return write_jsonfg(self, path)
+
+    def to_file(self, path: Any) -> "dict[str, Any] | str | None":
+        """Serialize this model to ``path``, choosing the writer by the path's suffix.
+
+        The symmetric counterpart of :meth:`from_file`:
+
+        - ``.city.json`` / ``.cityjson`` / ``.json`` → CityJSON (:meth:`to_cityjson`)
+        - ``.city.jsonl`` / ``.cityjsonseq`` / ``.jsonl`` → CityJSON Text Sequence
+          (:meth:`to_cityjsonseq`)
+        - ``.gml`` / ``.xml`` / ``.citygml`` → CityGML (:meth:`to_citygml`)
+        - ``.fg.json`` / ``.jsonfg`` → JSON-FG (:meth:`to_jsonfg`)
+
+        The CityJSON and CityGML suffixes are symmetric with :meth:`from_file`. The CityJSON Text
+        Sequence (``.city.jsonl`` / ``.cityjsonseq`` / ``.jsonl``) and JSON-FG (``.fg.json`` /
+        ``.jsonfg``) suffixes are **write-only**: this package ships no reader for either, so
+        :meth:`from_file` cannot read them back.
+
+        Args:
+            path: The output path; its suffix selects the format.
+
+        Returns:
+            ``None`` (the model is written to ``path``).
+
+        Raises:
+            CityModelError: If no writer matches the suffix.
+
+        Examples:
+            - Convert a CityJSON model to CityGML on disk and read it back, all by suffix:
+                ```python
+                >>> import os, tempfile
+                >>> doc = (
+                ...     '{"type": "CityJSON", "version": "2.0", '
+                ...     '"CityObjects": {"b": {"type": "Building"}}, "vertices": []}'
+                ... )
+                >>> path = os.path.join(tempfile.mkdtemp(), "building.gml")
+                >>> CityModel.from_file(doc).to_file(path) is None
+                True
+                >>> CityModel.from_file(path).objects["b"].type
+                'Building'
+
+                ```
+            - An unknown suffix is rejected:
+                ```python
+                >>> from pyramids_citymodels.errors import CityModelError
+                >>> try:
+                ...     CityModel().to_file("model.dwg")
+                ... except CityModelError as error:
+                ...     print("cannot infer" in str(error))
+                True
+
+                ```
+        """
+        from pyramids_citymodels.errors import CityModelError
+
+        name = str(path).lower()
+        if name.endswith((".city.jsonl", ".cityjsonseq", ".jsonl")):
+            return self.to_cityjsonseq(path)
+        if name.endswith((".fg.json", ".jsonfg")):
+            return self.to_jsonfg(path)
+        if name.endswith((".gml", ".xml", ".citygml")):
+            return self.to_citygml(path)
+        if name.endswith((".city.json", ".cityjson", ".json")):
+            return self.to_cityjson(path)
+        raise CityModelError(
+            f"cannot infer a city-model writer from the suffix of {path!r}; expected one of "
+            ".city.json/.cityjson/.json, .city.jsonl/.cityjsonseq/.jsonl, .gml/.xml/.citygml, "
+            ".fg.json/.jsonfg"
+        )
 
     def coordinates(self) -> Iterator[tuple[float, ...]]:
         """Yield every coordinate of every geometry of every object, in document order.
@@ -651,8 +893,22 @@ def normalize_lod(lod: Any) -> str | None:
         return str(lod).strip()
 
 
-def _is_coordinate(value: Any) -> bool:
-    """True when ``value`` is a single coordinate — a short sequence of numbers."""
+def is_coordinate(value: Any) -> bool:
+    """True when ``value`` is a single coordinate — a short (2–4) sequence of numbers.
+
+    The one place the "is this a coordinate leaf, not a nesting level?" test lives, shared by the
+    IR traversal here and by the writers (which both re-index boundaries and walk them for bounds).
+
+    Examples:
+        - A 3-number sequence is a coordinate; a list of coordinates (a ring) is not:
+            ```python
+            >>> is_coordinate((1.0, 2.0, 3.0))
+            True
+            >>> is_coordinate([(1.0, 2.0, 3.0), (4.0, 5.0, 6.0)])
+            False
+
+            ```
+    """
     return (
         isinstance(value, (list, tuple))
         and 2 <= len(value) <= 4
@@ -662,7 +918,7 @@ def _is_coordinate(value: Any) -> bool:
 
 def _is_ring(value: Any) -> bool:
     """True when ``value`` is a ring — a non-empty list whose first element is a coordinate."""
-    return isinstance(value, list) and len(value) > 0 and _is_coordinate(value[0])
+    return isinstance(value, list) and len(value) > 0 and is_coordinate(value[0])
 
 
 def _is_surface(value: Any) -> bool:
@@ -715,14 +971,14 @@ def _require_uniform_dimension(seen: int | None, got: int) -> int:
     return seen if seen is not None else got
 
 
-# Both walks treat a leaf as a coordinate via `_is_coordinate`, whose ``2 <= len <= 4`` bound is a
+# Both walks treat a leaf as a coordinate via `is_coordinate`, whose ``2 <= len <= 4`` bound is a
 # deliberate CityJSON assumption (2-D or 3-D points, optionally with a 4th component): a 1-component or
 # >=5-component leaf is not a coordinate this package produces, so it is walked into / skipped rather
 # than flagged. This also distinguishes a 2-element *ring* (its elements are tuples) from a 2-D
 # *coordinate* (its elements are numbers).
 def _iter_coordinates(element: Any) -> Iterator[tuple[float, ...]]:
     """Walk a boundaries structure to coordinate level, yielding each coordinate tuple."""
-    if _is_coordinate(element):
+    if is_coordinate(element):
         yield tuple(float(component) for component in element)
     elif isinstance(element, list):
         for child in element:
@@ -731,7 +987,7 @@ def _iter_coordinates(element: Any) -> Iterator[tuple[float, ...]]:
 
 def _map_coordinates(element: Any, replace: Any) -> Any:
     """Rebuild a boundaries structure with ``replace`` applied to each coordinate, nesting intact."""
-    if _is_coordinate(element):
+    if is_coordinate(element):
         return replace(element)
     return [_map_coordinates(child, replace) for child in element]
 
