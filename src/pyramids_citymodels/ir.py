@@ -176,6 +176,28 @@ class CityModel:
 
         Raises:
             CityModelError: If no reader recognizes the file.
+
+        Examples:
+            - Read CityJSON content (chosen by content sniff) and inspect the model:
+                ```python
+                >>> doc = (
+                ...     '{"type": "CityJSON", "version": "2.0", '
+                ...     '"CityObjects": {"b": {"type": "Building"}}, "vertices": []}'
+                ... )
+                >>> model = CityModel.from_file(doc)
+                >>> model.source_format
+                'CityJSON'
+                >>> list(model.objects)
+                ['b']
+
+                ```
+            - CityGML content is recognized by its namespace, not a suffix:
+                ```python
+                >>> xml = '<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0"/>'
+                >>> CityModel.from_file(xml).source_format
+                'CityGML'
+
+                ```
         """
         from pyramids_citymodels.errors import CityModelError
         from pyramids_citymodels.readers.citygml import (
@@ -209,6 +231,21 @@ class CityModel:
 
         Returns the CityJSON document ``dict`` when ``path`` is ``None``, else writes it and
         returns ``None``.
+
+        Examples:
+            - Serialize to a dict and read a city object straight out of it:
+                ```python
+                >>> doc = (
+                ...     '{"type": "CityJSON", "version": "2.0", '
+                ...     '"CityObjects": {"b": {"type": "Building"}}, "vertices": []}'
+                ... )
+                >>> out = CityModel.from_file(doc).to_cityjson()
+                >>> out["type"]
+                'CityJSON'
+                >>> out["CityObjects"]["b"]["type"]
+                'Building'
+
+                ```
         """
         from pyramids_citymodels.writers.cityjson import write_cityjson
 
@@ -219,6 +256,22 @@ class CityModel:
 
         See :func:`.writers.cityjson.write_cityjsonseq`. Returns the sequence as a ``str`` when
         ``path`` is ``None``, else writes it and returns ``None``.
+
+        Examples:
+            - The first line is a CityJSON header, each following line a ``CityJSONFeature``:
+                ```python
+                >>> import json
+                >>> doc = (
+                ...     '{"type": "CityJSON", "version": "2.0", '
+                ...     '"CityObjects": {"b": {"type": "Building"}}, "vertices": []}'
+                ... )
+                >>> lines = CityModel.from_file(doc).to_cityjsonseq().splitlines()
+                >>> json.loads(lines[0])["type"]
+                'CityJSON'
+                >>> json.loads(lines[1])["id"]
+                'b'
+
+                ```
         """
         from pyramids_citymodels.writers.cityjson import write_cityjsonseq
 
@@ -229,6 +282,21 @@ class CityModel:
 
         Returns the document as a ``str`` when ``path`` is ``None``, else writes it and returns
         ``None``. See the writer's module docstring for the round-trip fidelity contract.
+
+        Examples:
+            - Each object's id is written as a ``gml:id`` inside a ``cityObjectMember``:
+                ```python
+                >>> doc = (
+                ...     '{"type": "CityJSON", "version": "2.0", '
+                ...     '"CityObjects": {"H1": {"type": "Building"}}, "vertices": []}'
+                ... )
+                >>> xml = CityModel.from_file(doc).to_citygml()
+                >>> "cityObjectMember" in xml
+                True
+                >>> 'gml:id="H1"' in xml
+                True
+
+                ```
         """
         from pyramids_citymodels.writers.citygml import write_citygml
 
@@ -239,6 +307,21 @@ class CityModel:
 
         See :func:`.writers.jsonfg.write_jsonfg`. A one-way GIS-exchange projection, not a
         round-trip. Returns the document ``dict`` when ``path`` is ``None``, else writes it.
+
+        Examples:
+            - Each city object becomes one JSON-FG feature carrying its type as ``featureType``:
+                ```python
+                >>> doc = (
+                ...     '{"type": "CityJSON", "version": "2.0", '
+                ...     '"CityObjects": {"b": {"type": "Building"}}, "vertices": []}'
+                ... )
+                >>> fg = CityModel.from_file(doc).to_jsonfg()
+                >>> fg["type"]
+                'FeatureCollection'
+                >>> fg["features"][0]["featureType"]
+                'Building'
+
+                ```
         """
         from pyramids_citymodels.writers.jsonfg import write_jsonfg
 
@@ -263,6 +346,32 @@ class CityModel:
 
         Raises:
             CityModelError: If no writer matches the suffix.
+
+        Examples:
+            - Convert a CityJSON model to CityGML on disk and read it back, all by suffix:
+                ```python
+                >>> import os, tempfile
+                >>> doc = (
+                ...     '{"type": "CityJSON", "version": "2.0", '
+                ...     '"CityObjects": {"b": {"type": "Building"}}, "vertices": []}'
+                ... )
+                >>> path = os.path.join(tempfile.mkdtemp(), "building.gml")
+                >>> CityModel.from_file(doc).to_file(path) is None
+                True
+                >>> CityModel.from_file(path).objects["b"].type
+                'Building'
+
+                ```
+            - An unknown suffix is rejected:
+                ```python
+                >>> from pyramids_citymodels.errors import CityModelError
+                >>> try:
+                ...     CityModel().to_file("model.dwg")
+                ... except CityModelError as error:
+                ...     print("cannot infer" in str(error))
+                True
+
+                ```
         """
         from pyramids_citymodels.errors import CityModelError
 

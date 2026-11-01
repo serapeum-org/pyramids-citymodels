@@ -224,6 +224,19 @@ def write_cityjson(model: CityModel, path: Any = None) -> dict[str, Any] | None:
             True
 
             ```
+        - The vertex pool is rebuilt from the IR and boundaries re-indexed into it:
+            ```python
+            >>> from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+            >>> model = CityModel(objects={"b": CityObject(id="b", type="Building", geometries=[
+            ...     Geometry(type="MultiSurface", lod="2",
+            ...              boundaries=[[[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]])])})
+            >>> doc = write_cityjson(model)
+            >>> len(doc["vertices"])
+            3
+            >>> doc["CityObjects"]["b"]["geometry"][0]["boundaries"]
+            [[[0, 1, 2]]]
+
+            ```
     """
     return _write_or_return(_build_document(model), path)
 
@@ -285,6 +298,18 @@ def write_cityjsonseq(model: CityModel, path: Any = None) -> str | None:
             >>> import json
             >>> json.loads(lines[0])["type"], json.loads(lines[1])["type"]
             ('CityJSON', 'CityJSONFeature')
+
+            ```
+        - A part is bundled into its root object's feature line, not given its own:
+            ```python
+            >>> import json
+            >>> from pyramids_citymodels.ir import CityModel, CityObject
+            >>> model = CityModel(objects={
+            ...     "b": CityObject(id="b", type="Building", children=["p"]),
+            ...     "p": CityObject(id="p", type="BuildingPart", parents=["b"])})
+            >>> feature = json.loads(write_cityjsonseq(model).splitlines()[1])
+            >>> sorted(feature["CityObjects"])
+            ['b', 'p']
 
             ```
     """

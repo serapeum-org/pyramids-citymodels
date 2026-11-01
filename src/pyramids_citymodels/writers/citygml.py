@@ -294,6 +294,14 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
             'RoofSurface'
 
             ```
+        - An object's id is written as a ``gml:id`` on its ``bldg:Building`` element:
+            ```python
+            >>> from pyramids_citymodels.ir import CityModel, CityObject
+            >>> xml = write_citygml(CityModel(objects={"H1": CityObject(id="H1", type="Building")}))
+            >>> 'gml:id="H1"' in xml
+            True
+
+            ```
     """
     for prefix, uri in _NS.items():
         ElementTree.register_namespace(prefix, uri)

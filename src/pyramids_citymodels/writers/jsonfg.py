@@ -119,6 +119,14 @@ def write_jsonfg(model: CityModel, path: Any = None) -> dict[str, Any] | None:
             'MultiPolygon'
 
             ```
+        - Without a CRS, no ``coordRefSys`` is emitted:
+            ```python
+            >>> from pyramids_citymodels.ir import CityModel, CityObject
+            >>> doc = write_jsonfg(CityModel(objects={"b": CityObject(id="b", type="Building")}))
+            >>> "coordRefSys" in doc
+            False
+
+            ```
     """
     document: dict[str, Any] = {
         "type": "FeatureCollection",
