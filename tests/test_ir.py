@@ -244,7 +244,8 @@ def test_for_coordinates_rejects_negative_precision() -> None:
 
 def test_index_into_requires_nested_boundaries() -> None:
     # A geometry's boundaries are always a nested list; a bare coordinate is out of contract and is
-    # rejected, so index_into never returns a scalar int in violation of its list[Any] annotation.
+    # rejected with a real exception (not an assert, which -O would strip), so index_into never
+    # returns a scalar int in violation of its list[Any] annotation.
     geometry = Geometry(type="MultiSurface", lod="2", boundaries=(1.0, 2.0, 3.0))
-    with pytest.raises(AssertionError):
+    with pytest.raises(TypeError, match="nested list"):
         geometry.index_into(VertexPool())
