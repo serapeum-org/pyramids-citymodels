@@ -271,6 +271,20 @@ def test_for_coordinates_accepts_zero_precision() -> None:
     assert pool.transform == {"scale": [1.0, 1.0], "translate": [10.0, 20.0]}
 
 
+def test_lossless_vertex_pool_rejects_mixed_dimension_at_build() -> None:
+    # The default (lossless) path fails fast on a mixed-dimension model at build time, like the
+    # quantizing path — not only later, during index_into.
+    three_d = Geometry(type="MultiSurface", lod="2", boundaries=[[[(0.0, 0.0, 0.0)]]])
+    two_d = Geometry(type="MultiSurface", lod="2", boundaries=[[[(1.0, 2.0)]]])
+    model = CityModel(
+        objects={
+            "b": CityObject(id="b", type="Building", geometries=[three_d, two_d])
+        }
+    )
+    with pytest.raises(CityModelError, match="mixed-dimension"):
+        model.vertex_pool()
+
+
 def test_index_into_requires_nested_boundaries() -> None:
     # A geometry's boundaries are always a nested list; a bare coordinate is out of contract and is
     # rejected with a real exception (not an assert, which -O would strip), so index_into never

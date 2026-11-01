@@ -388,12 +388,14 @@ class VertexPool:
         With ``precision`` (decimal places) the pool quantizes coordinates to integers via a
         ``transform`` whose ``translate`` is their per-axis minimum and whose ``scale`` is
         ``10 ** -precision`` — the CityJSON storage convention, which keeps the integer vertices
-        small. With ``precision`` ``None`` the pool is lossless: :attr:`transform` is ``None``,
-        coordinates are pooled unchanged, and ``coordinates`` is not consumed (no extent is needed).
+        small. With ``precision`` ``None`` the pool is lossless: :attr:`transform` is ``None`` and
+        coordinates are pooled unchanged. Either way ``coordinates`` is scanned once to validate a
+        single uniform dimension, so a mixed-dimension model fails fast here rather than later.
 
         Args:
             coordinates: The coordinate stream the pool will hold, e.g.
-                :meth:`CityModel.coordinates`. Consumed once, only when ``precision`` is given.
+                :meth:`CityModel.coordinates`. Consumed once (for the dimension check, and to size
+                the ``transform`` when ``precision`` is given).
             precision: Decimal places to quantize to (a non-negative integer), or ``None`` for a
                 lossless pool.
 
@@ -401,8 +403,8 @@ class VertexPool:
             TypeError: If ``precision`` is neither ``None`` nor an ``int`` (a ``bool`` is rejected
                 too, so ``True`` is not read as ``1``).
             ValueError: If ``precision`` is a negative integer.
-            CityModelError: If ``coordinates`` (consumed only when ``precision`` is given) mixes
-                dimensions, since a CityJSON ``vertices`` array must be uniform.
+            CityModelError: If ``coordinates`` mixes dimensions, since a CityJSON ``vertices`` array
+                must be uniform.
 
         Returns:
             An empty :class:`VertexPool`: its :attr:`transform` is ``None`` for a lossless pool (or
@@ -427,31 +429,36 @@ class VertexPool:
 
                 ```
         """
-        if precision is None:
-            return cls(transform=None)
         # bool is an int subclass, so exclude it explicitly: precision=True must not mean 1 decimal.
-        if not isinstance(precision, int) or isinstance(precision, bool):
+        if precision is not None and (
+            not isinstance(precision, int) or isinstance(precision, bool)
+        ):
             raise TypeError(
                 "precision must be an int (decimal places) or None, got "
                 f"{type(precision).__name__}"
             )
-        if precision < 0:
+        if precision is not None and precision < 0:
             raise ValueError(
                 f"precision must be a non-negative integer (decimal places), got {precision}"
             )
+        # Always scan the coordinates for a single uniform dimension, so a mixed-dimension model
+        # fails fast at build time on both the lossless and the quantizing paths (not only later,
+        # in index_of). The per-axis minimum is accumulated only when quantizing needs it.
         minima: list[float] = []
         dimension: int | None = None
         for coordinate in coordinates:
             dimension = _require_uniform_dimension(dimension, len(coordinate))
+            if precision is None:
+                continue
             for axis, component in enumerate(coordinate):
                 value = float(component)
                 if axis < len(minima):
                     minima[axis] = min(minima[axis], value)
                 else:
                     minima.append(value)
-        if not minima:
-            # No coordinates to quantize (an empty or geometry-less model): a transform with empty
-            # scale/translate is invalid CityJSON, so there is nothing to carry — stay lossless.
+        if precision is None or not minima:
+            # Lossless, or no coordinates to quantize (an empty/geometry-less model): a transform
+            # with empty scale/translate is invalid CityJSON, so carry none — stay lossless.
             return cls(transform=None)
         # The scale is the inexact binary double for 10**-precision; that is the CityJSON convention
         # and is exactly what quantize/dequantize invert, so it is not rounded (rounding here was a
