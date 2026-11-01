@@ -5,10 +5,9 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 from pathlib import Path
 from xml.etree import ElementTree
 
-from pyramids_citymodels.writers.citygml import write_citygml
-
 from pyramids_citymodels.ir import CityModel, CityObject, Geometry, SemanticSurface
 from pyramids_citymodels.readers.citygml import parse_citygml
+from pyramids_citymodels.writers.citygml import write_citygml
 
 DATA = Path(__file__).parent / "data"
 CITYGML = DATA / "minimal_building.gml"

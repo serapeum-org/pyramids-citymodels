@@ -9,10 +9,10 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 from xml.etree import ElementTree
 
 import pytest
-from pyramids_citymodels.writers.citygml import write_citygml
 
 from pyramids_citymodels.ir import CityModel, CityObject, Geometry, SemanticSurface
 from pyramids_citymodels.readers.citygml import parse_citygml
+from pyramids_citymodels.writers.citygml import write_citygml
 
 
 def _solid_model() -> CityModel:

@@ -4,10 +4,9 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 
 from xml.etree import ElementTree
 
+from pyramids_citymodels.ir import CityModel, CityObject, Geometry, SemanticSurface
 from pyramids_citymodels.writers.citygml import write_citygml
 from pyramids_citymodels.writers.cityjson import write_cityjson, write_cityjsonseq
-
-from pyramids_citymodels.ir import CityModel, CityObject, Geometry, SemanticSurface
 
 
 def _local_names(xml: str) -> set[str]:

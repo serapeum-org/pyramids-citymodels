@@ -5,8 +5,6 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 import json
 from pathlib import Path
 
-from pyramids_citymodels.writers.cityjson import write_cityjson, write_cityjsonseq
-
 from pyramids_citymodels.ir import (
     CityModel,
     CityObject,
@@ -14,6 +12,7 @@ from pyramids_citymodels.ir import (
     SemanticSurface,
 )
 from pyramids_citymodels.readers.cityjson import parse_cityjson
+from pyramids_citymodels.writers.cityjson import write_cityjson, write_cityjsonseq
 
 DATA = Path(__file__).parent / "data"
 CITYJSON = DATA / "minimal.city.json"
