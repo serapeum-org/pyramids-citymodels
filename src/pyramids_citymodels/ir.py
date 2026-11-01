@@ -432,7 +432,10 @@ class VertexPool:
             # No coordinates to quantize (an empty or geometry-less model): a transform with empty
             # scale/translate is invalid CityJSON, so there is nothing to carry — stay lossless.
             return cls(transform=None)
-        scale = round(10.0**-precision, precision)
+        # The scale is the inexact binary double for 10**-precision; that is the CityJSON convention
+        # and is exactly what quantize/dequantize invert, so it is not rounded (rounding here was a
+        # no-op: round(10.0**-p, p) == 10.0**-p for every p).
+        scale = 10.0**-precision
         return cls(
             transform={"scale": [scale] * len(minima), "translate": list(minima)}
         )
