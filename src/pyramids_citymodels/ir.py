@@ -398,7 +398,9 @@ class VertexPool:
                 lossless pool.
 
         Raises:
-            ValueError: If ``precision`` is negative.
+            TypeError: If ``precision`` is neither ``None`` nor an ``int`` (a ``bool`` is rejected
+                too, so ``True`` is not read as ``1``).
+            ValueError: If ``precision`` is a negative integer.
             CityModelError: If ``coordinates`` (consumed only when ``precision`` is given) mixes
                 dimensions, since a CityJSON ``vertices`` array must be uniform.
 
@@ -427,6 +429,12 @@ class VertexPool:
         """
         if precision is None:
             return cls(transform=None)
+        # bool is an int subclass, so exclude it explicitly: precision=True must not mean 1 decimal.
+        if not isinstance(precision, int) or isinstance(precision, bool):
+            raise TypeError(
+                "precision must be an int (decimal places) or None, got "
+                f"{type(precision).__name__}"
+            )
         if precision < 0:
             raise ValueError(
                 f"precision must be a non-negative integer (decimal places), got {precision}"

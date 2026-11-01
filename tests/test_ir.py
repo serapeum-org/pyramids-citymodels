@@ -257,6 +257,20 @@ def test_for_coordinates_rejects_negative_precision() -> None:
         VertexPool.for_coordinates([(1234.0, 5678.0)], precision=-1)
 
 
+def test_for_coordinates_rejects_non_integer_precision() -> None:
+    # precision must be an int (decimal places); a float, bool, or string would otherwise build a
+    # nonsensical quantization grid (or raise the wrong error), so each is rejected with TypeError.
+    for bad in (1.5, True, "2"):
+        with pytest.raises(TypeError, match="precision"):
+            VertexPool.for_coordinates([(1234.0, 5678.0)], precision=bad)  # type: ignore[arg-type]
+
+
+def test_for_coordinates_accepts_zero_precision() -> None:
+    # precision=0 is valid: quantize to whole units (scale 1.0).
+    pool = VertexPool.for_coordinates([(10.0, 20.0)], precision=0)
+    assert pool.transform == {"scale": [1.0, 1.0], "translate": [10.0, 20.0]}
+
+
 def test_index_into_requires_nested_boundaries() -> None:
     # A geometry's boundaries are always a nested list; a bare coordinate is out of contract and is
     # rejected with a real exception (not an assert, which -O would strip), so index_into never
