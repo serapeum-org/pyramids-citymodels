@@ -16,7 +16,9 @@ Two things are true of the IR and shape everything below:
 ## CityJSON
 
 CityJSON is a JSON encoding of (a subset of) the CityGML data model, and the IR is modelled on it, so
-a CityJSON → IR → CityJSON round-trip is **structurally lossless**. What the IR carries through:
+a CityJSON → IR → CityJSON round-trip is **value-lossless**: the object graph, geometry and coordinate
+*values* survive, but the vertex table and `transform` are rebuilt, not round-tripped verbatim (see
+below). What the IR carries through:
 
 | Carried | Where |
 |---|---|
@@ -48,10 +50,13 @@ for city_object in model.objects.values():
 ```
 
 `CityModel.vertex_pool(precision=None)` returns a lossless pool (`transform` is `None`, coordinates are
-pooled unchanged, so the round-trip is exact). A `precision` quantizes coordinates to integers through a
-CityJSON `transform` — smaller files, a round-trip exact to within the quantization step.
-`VertexPool.dereference` is the exact inverse of `Geometry.index_into`, which is the property the
-round-trip tests assert.
+pooled unchanged). A `precision` quantizes coordinates to integers through a CityJSON `transform` —
+smaller files, coordinates preserved to within the quantization step. Either way the *vertex encoding*
+is not round-tripped: a document read with a `transform` and integer `vertices` re-serialises, by
+default, with float `vertices` and no `transform` (coordinate values unchanged). The one *exact* claim
+is the in-memory inverse — `VertexPool.dereference` is the exact inverse of `Geometry.index_into` for a
+lossless pool, `dereference(index_into(pool)) == boundaries`, which is the property the round-trip tests
+assert.
 
 ## CityGML
 

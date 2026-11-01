@@ -666,6 +666,11 @@ def _require_uniform_dimension(seen: int | None, got: int) -> int:
     return seen if seen is not None else got
 
 
+# Both walks treat a leaf as a coordinate via `_is_coordinate`, whose ``2 <= len <= 4`` bound is a
+# deliberate CityJSON assumption (2-D or 3-D points, optionally with a 4th component): a 1-component or
+# >=5-component leaf is not a coordinate this package produces, so it is walked into / skipped rather
+# than flagged. This also distinguishes a 2-element *ring* (its elements are tuples) from a 2-D
+# *coordinate* (its elements are numbers).
 def _iter_coordinates(element: Any) -> Iterator[tuple[float, ...]]:
     """Walk a boundaries structure to coordinate level, yielding each coordinate tuple."""
     if _is_coordinate(element):
