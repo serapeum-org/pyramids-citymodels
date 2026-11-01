@@ -394,10 +394,13 @@ class VertexPool:
 
         Raises:
             ValueError: If ``precision`` is negative.
+            CityModelError: If ``coordinates`` (consumed only when ``precision`` is given) mixes
+                dimensions, since a CityJSON ``vertices`` array must be uniform.
 
         Returns:
-            An empty :class:`VertexPool`: its :attr:`transform` is ``None`` for a lossless pool, or
-            ``{"scale", "translate"}`` sized to the coordinates' extent for a quantizing one.
+            An empty :class:`VertexPool`: its :attr:`transform` is ``None`` for a lossless pool (or
+            for a model with no coordinates), or ``{"scale", "translate"}`` sized to the
+            coordinates' extent for a quantizing one.
 
         Examples:
             - A lossless pool has no transform and starts empty:
@@ -522,6 +525,10 @@ class VertexPool:
         Returns:
             The coordinate's integer index in :attr:`vertices` — an existing one when already
             present, otherwise the index of the freshly appended vertex.
+
+        Raises:
+            CityModelError: If ``coordinate`` has a different dimension than vertices already in the
+                pool; a CityJSON ``vertices`` array must be uniform.
 
         Examples:
             - New coordinates are appended; a repeat returns its existing index:
