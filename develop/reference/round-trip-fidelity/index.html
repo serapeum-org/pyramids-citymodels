@@ -64,7 +64,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -1431,11 +1431,13 @@ an optional source pool + transform on the model:</p>
 <li>the IR stays format-neutral and minimal (the <a href="../../adr/0003-file-format-drivers/">ADR-0003</a> boundary).</li>
 </ul>
 <p>The rebuild lives on the types that own the data:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">pool</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">vertex_pool</span><span class="p">(</span><span class="n">precision</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>          <span class="c1"># empty pool, transform sized to the model's extent</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="k">for</span> <span class="n">city_object</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="k">for</span> <span class="n">geometry</span> <span class="ow">in</span> <span class="n">city_object</span><span class="o">.</span><span class="n">geometries</span><span class="p">:</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>        <span class="n">indexed</span> <span class="o">=</span> <span class="n">geometry</span><span class="o">.</span><span class="n">index_into</span><span class="p">(</span><span class="n">pool</span><span class="p">)</span>    <span class="c1"># boundaries as vertex indices; fills the shared pool</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># -&gt; pool.vertices and pool.transform are the document-wide `vertices` + `transform` to write</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># An empty pool whose transform is sized to the model's coordinate extent.</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">pool</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">vertex_pool</span><span class="p">(</span><span class="n">precision</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="k">for</span> <span class="n">city_object</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="k">for</span> <span class="n">geometry</span> <span class="ow">in</span> <span class="n">city_object</span><span class="o">.</span><span class="n">geometries</span><span class="p">:</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>        <span class="c1"># Each geometry's boundaries become vertex indices; the shared pool fills.</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>        <span class="n">indexed</span> <span class="o">=</span> <span class="n">geometry</span><span class="o">.</span><span class="n">index_into</span><span class="p">(</span><span class="n">pool</span><span class="p">)</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># pool.vertices and pool.transform are the document-wide `vertices` + `transform` to write.</span>
 </code></pre></div>
 <p><code>CityModel.vertex_pool(precision=None)</code> returns a lossless pool (<code>transform</code> is <code>None</code>, coordinates are
 pooled unchanged). A <code>precision</code> quantizes coordinates to integers through a CityJSON <code>transform</code> —
