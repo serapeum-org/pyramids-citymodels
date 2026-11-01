@@ -42,11 +42,13 @@ an optional source pool + transform on the model:
 The rebuild lives on the types that own the data:
 
 ```python
-pool = model.vertex_pool(precision=3)          # empty pool, transform sized to the model's extent
+# An empty pool whose transform is sized to the model's coordinate extent.
+pool = model.vertex_pool(precision=3)
 for city_object in model.objects.values():
     for geometry in city_object.geometries:
-        indexed = geometry.index_into(pool)    # boundaries as vertex indices; fills the shared pool
-# -> pool.vertices and pool.transform are the document-wide `vertices` + `transform` to write
+        # Each geometry's boundaries become vertex indices; the shared pool fills.
+        indexed = geometry.index_into(pool)
+# pool.vertices and pool.transform are the document-wide `vertices` + `transform` to write.
 ```
 
 `CityModel.vertex_pool(precision=None)` returns a lossless pool (`transform` is `None`, coordinates are
