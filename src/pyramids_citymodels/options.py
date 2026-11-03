@@ -73,6 +73,37 @@ def _as_str_set(value: Any) -> "frozenset[str] | None":
     return members or None
 
 
+def _as_bbox(value: Any) -> "tuple[float, float, float, float] | None":
+    """Coerce a bbox criterion to a normalized ``(xmin, ymin, xmax, ymax)``, or ``None`` when empty.
+
+    Accepts any 4-number sequence and orders the corners, so a caller may pass them in either
+    order. An empty value becomes ``None`` — "do not filter by bbox".
+
+    Raises:
+        ValueError: If ``value`` is not a sequence of exactly four numbers.
+
+    Examples:
+        >>> _as_bbox((10, 0, 0, 10))
+        (0.0, 0.0, 10.0, 10.0)
+        >>> _as_bbox(None) is None
+        True
+    """
+    if value is None:
+        return None
+    try:
+        coords = tuple(float(component) for component in value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            "bbox must be a sequence of four numbers (xmin, ymin, xmax, ymax)"
+        ) from error
+    if len(coords) != 4:
+        raise ValueError(
+            f"bbox must be (xmin, ymin, xmax, ymax) — four numbers, got {len(coords)}"
+        )
+    xmin, ymin, xmax, ymax = coords
+    return (min(xmin, xmax), min(ymin, ymax), max(xmin, xmax), max(ymin, ymax))
+
+
 @dataclass(frozen=True)
 class ObjectFilter:
     """A read-time subset: which city objects a reader keeps, decided *before* geometry is built.
@@ -81,8 +112,17 @@ class ObjectFilter:
     and discard rows afterwards (filtering a ``FeatureCollection`` is a GIS operation that belongs
     upstream in ``pyramids-core``), a reader consults this to **skip non-matching objects as it
     parses**, so their geometry is never decoded. An object is kept only when it satisfies *every*
-    criterion that is set — ``ids`` AND ``types`` AND each entry of ``attributes``; a criterion
-    left unset (``None``/empty) is not tested, so an empty filter keeps everything.
+    criterion that is set — ``ids`` AND ``types`` AND each entry of ``attributes`` AND ``bbox``; a
+    criterion left unset (``None``/empty) is not tested, so an empty filter keeps everything.
+
+    ``ids``/``types``/``attributes`` are **metadata** tests, decided from an object's header before
+    any geometry is touched. ``bbox`` is a **conservative prefilter**: an object is skipped only
+    when a *declared extent the file already carries* (a CityJSON ``geographicalExtent`` or a
+    CityGML ``gml:Envelope``) proves it lies wholly outside the box. An object with no declared
+    extent is **kept**, because proving it is outside would require decoding the very geometry this
+    is meant to skip; the bbox result is thus a superset of the exact selection, which a caller
+    refines downstream with ``FeatureCollection.clip_by_rect``. The bbox is read in the file's own
+    CRS (no reprojection here — that is ``pyramids-core``'s job).
 
     Filtering is per object and does not pull in relatives: keeping a ``BuildingPart`` whose
     ``Building`` was filtered out leaves a dangling ``parents`` id (the flattener resolves a missing
@@ -94,11 +134,14 @@ class ObjectFilter:
         types: Keep only objects whose type is in this set, or ``None`` to not filter by type.
         attributes: Keep only objects whose attributes equal each of these key/value pairs; an
             empty mapping does not filter by attribute.
+        bbox: Keep only objects whose declared extent overlaps this ``(xmin, ymin, xmax, ymax)``
+            (objects with no declared extent are kept), or ``None`` to not filter by bbox.
     """
 
     ids: "frozenset[str] | None" = None
     types: "frozenset[str] | None" = None
     attributes: dict[str, Any] = field(default_factory=dict)
+    bbox: "tuple[float, float, float, float] | None" = None
 
     @classmethod
     def coerce(
@@ -106,27 +149,33 @@ class ObjectFilter:
         ids: "str | Iterable[str] | None" = None,
         types: "str | Iterable[str] | None" = None,
         attributes: "Mapping[str, Any] | None" = None,
+        bbox: "Iterable[float] | None" = None,
     ) -> "ObjectFilter | None":
         """Build an :class:`ObjectFilter`, or ``None`` when no criterion is given.
 
-        Accepts a lone ``str`` or any iterable of strings for ``ids``/``types`` and a mapping for
-        ``attributes``. Returns ``None`` when every criterion is empty, so a reader can treat "no
+        Accepts a lone ``str`` or any iterable of strings for ``ids``/``types``, a mapping for
+        ``attributes``, and a 4-number ``(xmin, ymin, xmax, ymax)`` sequence for ``bbox`` (corners
+        in either order). Returns ``None`` when every criterion is empty, so a reader can treat "no
         filter" as a cheap ``is None`` check and skip the per-object test entirely.
+
+        Raises:
+            ValueError: If ``bbox`` is given but is not four numbers.
 
         Examples:
             >>> ObjectFilter.coerce() is None
             True
             >>> ObjectFilter.coerce(types="Building").types
             frozenset({'Building'})
-            >>> ObjectFilter.coerce(attributes={"storeys": 3}).attributes
-            {'storeys': 3}
+            >>> ObjectFilter.coerce(bbox=(0, 0, 10, 10)).bbox
+            (0.0, 0.0, 10.0, 10.0)
         """
         id_set = _as_str_set(ids)
         type_set = _as_str_set(types)
         attribute_map = dict(attributes) if attributes else {}
-        if id_set is None and type_set is None and not attribute_map:
+        box = _as_bbox(bbox)
+        if id_set is None and type_set is None and not attribute_map and box is None:
             return None
-        return cls(ids=id_set, types=type_set, attributes=attribute_map)
+        return cls(ids=id_set, types=type_set, attributes=attribute_map, bbox=box)
 
     def matches(
         self, object_id: str, object_type: str, attributes: "Mapping[str, Any]"
@@ -158,6 +207,40 @@ class ObjectFilter:
             if attributes.get(key) != value:
                 return False
         return True
+
+    def rejects_extent(
+        self, extent: "tuple[float, float, float, float] | None"
+    ) -> bool:
+        """True when a declared ``extent`` proves the object lies wholly outside :attr:`bbox`.
+
+        The conservative bbox prefilter: it returns ``True`` (skip the object) only when there is a
+        bbox *and* a known 2D ``extent`` *and* the two are disjoint. With no bbox, or an unknown
+        extent (``None``), or any overlap, it returns ``False`` (keep the object) — so an object is
+        never dropped on a bbox the reader cannot prove it misses.
+
+        Args:
+            extent: The object's declared extent as ``(xmin, ymin, xmax, ymax)``, or ``None`` when
+                the file declares none for it.
+
+        Returns:
+            ``True`` to skip the object, ``False`` to keep it.
+
+        Examples:
+            >>> box = ObjectFilter.coerce(bbox=(0, 0, 10, 10))
+            >>> box.rejects_extent((20, 20, 30, 30))  # disjoint -> skip
+            True
+            >>> box.rejects_extent((5, 5, 15, 15))  # overlaps -> keep
+            False
+            >>> box.rejects_extent(None)  # unknown extent -> keep
+            False
+            >>> ObjectFilter.coerce(ids="a").rejects_extent((20, 20, 30, 30))  # no bbox -> keep
+            False
+        """
+        if self.bbox is None or extent is None:
+            return False
+        exmin, eymin, exmax, eymax = extent
+        bxmin, bymin, bxmax, bymax = self.bbox
+        return exmax < bxmin or exmin > bxmax or eymax < bymin or eymin > bymax
 
 
 @dataclass(frozen=True)

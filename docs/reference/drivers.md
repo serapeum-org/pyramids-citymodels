@@ -52,6 +52,13 @@ Subset (parse-time), bundled as an
 - `ids` — keep only objects with these ids (a string, or an iterable of strings).
 - `types` — keep only objects of these types (e.g. `"Building"`, `"BuildingPart"`).
 - `attributes` — keep only objects whose attributes equal each of these key/value pairs.
+- `bbox` — `(xmin, ymin, xmax, ymax)` in the **file's own CRS** (no reprojection here). A
+  *conservative prefilter*: an object is skipped only when a **declared extent the file already
+  carries** — a CityJSON per-object `geographicalExtent`, or a CityGML feature's own
+  `gml:Envelope` — proves it lies wholly outside. An object with **no declared extent is kept**
+  (proving it outside would mean decoding the geometry this is meant to skip), so the bbox result
+  is a *superset* of the exact selection. Refine it with `FeatureCollection.clip_by_rect(...)`
+  downstream for an exact clip.
 
 An object is kept only when it satisfies **every** criterion set; filtering is per object and does
 not pull in relatives (a kept `BuildingPart` whose `Building` was dropped keeps a dangling

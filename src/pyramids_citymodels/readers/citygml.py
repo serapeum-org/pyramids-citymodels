@@ -102,6 +102,53 @@ def _gml_id(element: ElementTree.Element) -> str | None:
     return None
 
 
+def _envelope_corners(
+    envelope: ElementTree.Element,
+) -> "tuple[float, float, float, float] | None":
+    """Read a ``gml:Envelope``'s ``lowerCorner``/``upperCorner`` as 2D ``(xmin, ymin, xmax, ymax)``.
+
+    Returns ``None`` when either corner is missing or unparseable, so the bbox prefilter keeps the
+    feature rather than acting on a half-read extent.
+    """
+    lower: str | None = None
+    upper: str | None = None
+    for node in envelope.iter():
+        name = _local(node.tag)
+        if name == "lowerCorner":
+            lower = node.text
+        elif name == "upperCorner":
+            upper = node.text
+    if not lower or not upper:
+        return None
+    try:
+        low = [float(value) for value in lower.split()]
+        high = [float(value) for value in upper.split()]
+    except ValueError:
+        return None
+    if len(low) < 2 or len(high) < 2:
+        return None
+    return (low[0], low[1], high[0], high[1])
+
+
+def _feature_envelope(
+    element: ElementTree.Element,
+) -> "tuple[float, float, float, float] | None":
+    """The feature's *own* declared extent from a direct ``gml:boundedBy/gml:Envelope``, or ``None``.
+
+    Only a ``boundedBy`` that is a direct child of ``element`` is consulted, so a nested
+    ``BuildingPart``'s envelope is never mistaken for its parent's (which would be smaller and could
+    wrongly exclude the parent). A ``bldg:boundedBy`` carrying boundary *surfaces* rather than an
+    ``Envelope`` is skipped, since it contains no ``Envelope``.
+    """
+    for child in element:
+        if _local(child.tag) != "boundedBy":
+            continue
+        for node in child.iter():
+            if _local(node.tag) == "Envelope":
+                return _envelope_corners(node)
+    return None
+
+
 def _href(element: ElementTree.Element) -> str | None:
     """The ``xlink:href`` of an element, matched by local name, with any leading ``#`` stripped."""
     for key, value in element.attrib.items():
@@ -308,10 +355,10 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
     Args:
         source: A path to a ``.gml``/``.xml`` file, an open file, or an XML string/bytes.
         selector: An optional :class:`~pyramids_citymodels.options.ObjectFilter`. When given, only
-            matching ``Building``/``BuildingPart`` features (by id/type/attributes) are read; a
-            dropped feature's boundary surfaces are not parsed, and — per the filter's contract —
-            any surfaces under it roll up to the nearest *kept* ancestor feature. ``None`` reads
-            every feature.
+            matching ``Building``/``BuildingPart`` features (by id/type/attributes, and — for a
+            feature with a ``gml:Envelope`` — a bbox prefilter) are read; a dropped feature's
+            boundary surfaces are not parsed, and — per the filter's contract — any surfaces under
+            it roll up to the nearest *kept* ancestor feature. ``None`` reads every feature.
 
     Returns:
         A city model with one :class:`~pyramids_citymodels.ir.CityObject` per ``Building`` and per
@@ -374,12 +421,17 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
         # gml:id) is matched on an empty id, so an id filter naturally excludes it; the anonymous
         # counter only advances for kept features, keeping their synthesized ids stable.
         gml_identifier = _gml_id(element)
-        if selector is not None and not selector.matches(
-            gml_identifier or "",
-            _local(element.tag),
-            _collect_building_attributes(element),
-        ):
-            continue
+        if selector is not None:
+            if not selector.matches(
+                gml_identifier or "",
+                _local(element.tag),
+                _collect_building_attributes(element),
+            ):
+                continue
+            # bbox prefilter (#32): skip only when the feature's own gml:Envelope proves it is
+            # outside; a feature with no declared envelope is kept and refined downstream.
+            if selector.rejects_extent(_feature_envelope(element)):
+                continue
         identifier = gml_identifier
         if not identifier:
             identifier = f"{_local(element.tag)}_{anonymous}"

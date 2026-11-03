@@ -58,6 +58,9 @@ class CityJsonDriver:
                 parse time, before geometry is decoded.
             types: Read only objects of these types (e.g. ``"Building"``).
             attributes: Read only objects whose attributes equal these key/value pairs.
+            bbox: ``(xmin, ymin, xmax, ymax)`` in the file's CRS — a conservative prefilter that
+                skips an object whose declared ``geographicalExtent`` is outside; objects without
+                one are kept (refine with ``FeatureCollection.clip_by_rect`` for an exact result).
             strategy: ``"footprint"`` or ``"semantic_surfaces"`` (default).
             lod: Level of detail to select; ``None`` takes the highest present.
             geometry_dimension: ``"xyz"`` (default) keeps Z, ``"xy"`` drops it.
@@ -93,6 +96,7 @@ class CityJsonDriver:
             ids=kwargs.pop("ids", None),
             types=kwargs.pop("types", None),
             attributes=kwargs.pop("attributes", None),
+            bbox=kwargs.pop("bbox", None),
         )
         model = parse_cityjson(source, selector)
         return to_feature_collection(model, **kwargs)

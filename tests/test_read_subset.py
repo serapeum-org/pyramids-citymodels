@@ -157,3 +157,90 @@ def test_from_file_applies_selector() -> None:
 def test_from_file_without_selector_reads_everything() -> None:
     model = CityModel.from_file(CITYJSON)
     assert set(model.objects) == {"bldg1", "bldg1_part"}
+
+
+# --- bbox prefilter (#32) -----------------------------------------------------------------------
+
+# A CityJSON doc with three objects: one whose declared extent is inside the query bbox, one far
+# outside, and one with no declared extent at all.
+_BBOX_CITYJSON = {
+    "type": "CityJSON",
+    "version": "2.0",
+    "vertices": [],
+    "CityObjects": {
+        "near": {"type": "Building", "geographicalExtent": [0, 0, 0, 10, 10, 5]},
+        "far": {
+            "type": "Building",
+            "geographicalExtent": [1000, 1000, 0, 1010, 1010, 5],
+        },
+        "noext": {"type": "Building"},
+    },
+}
+
+# The CityGML counterpart: each feature declares its own gml:Envelope.
+_BBOX_CITYGML = """<core:CityModel
+  xmlns:core="http://www.opengis.net/citygml/2.0"
+  xmlns:bldg="http://www.opengis.net/citygml/building/2.0"
+  xmlns:gml="http://www.opengis.net/gml">
+  <core:cityObjectMember><bldg:Building gml:id="near">
+    <gml:boundedBy><gml:Envelope srsDimension="3">
+      <gml:lowerCorner>0 0 0</gml:lowerCorner>
+      <gml:upperCorner>10 10 5</gml:upperCorner>
+    </gml:Envelope></gml:boundedBy>
+  </bldg:Building></core:cityObjectMember>
+  <core:cityObjectMember><bldg:Building gml:id="far">
+    <gml:boundedBy><gml:Envelope srsDimension="3">
+      <gml:lowerCorner>1000 1000 0</gml:lowerCorner>
+      <gml:upperCorner>1010 1010 5</gml:upperCorner>
+    </gml:Envelope></gml:boundedBy>
+  </bldg:Building></core:cityObjectMember>
+</core:CityModel>"""
+
+
+def test_coerce_normalizes_bbox_corner_order() -> None:
+    assert ObjectFilter.coerce(bbox=(10, 10, 0, 0)).bbox == (0.0, 0.0, 10.0, 10.0)
+
+
+def test_coerce_rejects_a_non_four_number_bbox() -> None:
+    with pytest.raises(ValueError):
+        ObjectFilter.coerce(bbox=(0, 0, 10))
+
+
+def test_rejects_extent_only_on_a_proven_miss() -> None:
+    box = ObjectFilter.coerce(bbox=(0, 0, 10, 10))
+    assert box.rejects_extent((20, 20, 30, 30))  # disjoint
+    assert not box.rejects_extent((5, 5, 15, 15))  # overlaps
+    assert not box.rejects_extent((-5, -5, 1, 1))  # touches/overlaps corner
+    assert not box.rejects_extent(None)  # unknown extent kept
+    assert not ObjectFilter.coerce(ids="a").rejects_extent(
+        (99, 99, 100, 100)
+    )  # no bbox
+
+
+def test_cityjson_bbox_skips_only_proven_outside_objects() -> None:
+    model = parse_cityjson(_BBOX_CITYJSON, ObjectFilter.coerce(bbox=(0, 0, 20, 20)))
+    # 'far' is skipped (its extent is disjoint); 'noext' is kept (no declared extent).
+    assert set(model.objects) == {"near", "noext"}
+
+
+def test_cityjson_bbox_combines_with_type() -> None:
+    model = parse_cityjson(
+        _BBOX_CITYJSON, ObjectFilter.coerce(types="Building", bbox=(0, 0, 20, 20))
+    )
+    assert set(model.objects) == {"near", "noext"}
+
+
+def test_citygml_bbox_skips_proven_outside_features() -> None:
+    model = parse_citygml(_BBOX_CITYGML, ObjectFilter.coerce(bbox=(0, 0, 20, 20)))
+    assert set(model.objects) == {"near"}  # 'far' envelope is disjoint
+
+
+def test_cityjson_driver_bbox_keyword() -> None:
+    # 'near'/'noext' have no geometry, so the frame is empty, but the subset itself must not error.
+    frame = CityJsonDriver().read(_BBOX_CITYJSON, bbox=(0, 0, 20, 20))
+    assert len(frame) == 0
+
+
+def test_bbox_none_selector_reads_all_three() -> None:
+    model = parse_cityjson(_BBOX_CITYJSON, None)
+    assert set(model.objects) == {"near", "far", "noext"}

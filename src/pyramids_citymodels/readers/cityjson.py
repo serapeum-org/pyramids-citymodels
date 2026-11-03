@@ -33,6 +33,24 @@ from pyramids_citymodels.options import ObjectFilter
 __all__ = ["looks_like_cityjson", "parse_cityjson"]
 
 
+def _extent_2d(extent: Any) -> "tuple[float, float, float, float] | None":
+    """Normalize a CityJSON ``geographicalExtent`` to 2D ``(xmin, ymin, xmax, ymax)``, or ``None``.
+
+    CityJSON declares an extent as ``[minx, miny, minz, maxx, maxy, maxz]`` (6 values); a 4-value
+    ``[minx, miny, maxx, maxy]`` is accepted too. Anything shorter, or non-numeric, is treated as
+    "no declared extent" so the bbox prefilter keeps the object rather than guessing.
+    """
+    if not isinstance(extent, (list, tuple)) or len(extent) < 4:
+        return None
+    try:
+        values = [float(component) for component in extent]
+    except (TypeError, ValueError):
+        return None
+    if len(values) >= 6:
+        return (values[0], values[1], values[3], values[4])
+    return (values[0], values[1], values[2], values[3])
+
+
 def _load(source: Any) -> Any:
     """Return the decoded JSON from a path, an open file, a JSON string or a decoded dict.
 
@@ -151,9 +169,10 @@ def parse_cityjson(source: Any, selector: "ObjectFilter | None" = None) -> CityM
         source: A path to a ``.city.json``/``.json`` file, an open text file, a JSON string, or
             an already-decoded CityJSON ``dict``.
         selector: An optional :class:`~pyramids_citymodels.options.ObjectFilter`. When given, a
-            city object is read only if it matches (by id/type/attributes); non-matching objects
-            are skipped **before their geometry is dereferenced**, so a large file can be subset
-            without paying to decode the objects it discards. ``None`` reads every object.
+            city object is read only if it matches (by id/type/attributes, and — for an object that
+            declares a ``geographicalExtent`` — a bbox prefilter); non-matching objects are skipped
+            **before their geometry is dereferenced**, so a large file can be subset without paying
+            to decode the objects it discards. ``None`` reads every object.
 
     Returns:
         The city model with every (kept) boundary dereferenced to transformed coordinate tuples.
@@ -205,11 +224,16 @@ def parse_cityjson(source: Any, selector: "ObjectFilter | None" = None) -> CityM
 
     for object_id, raw in document.get("CityObjects", {}).items():
         # Read-time subset: skip a non-matching object before its geometry is dereferenced, so a
-        # subset of a city-scale file costs nothing for the objects it discards (feature #5).
-        if selector is not None and not selector.matches(
-            object_id, raw.get("type", "Unknown"), raw.get("attributes") or {}
-        ):
-            continue
+        # subset of a city-scale file costs nothing for the objects it discards (feature #5). The
+        # bbox prefilter (#32) skips an object only when its declared geographicalExtent proves it
+        # is outside; an object without one is kept and refined downstream.
+        if selector is not None:
+            if not selector.matches(
+                object_id, raw.get("type", "Unknown"), raw.get("attributes") or {}
+            ):
+                continue
+            if selector.rejects_extent(_extent_2d(raw.get("geographicalExtent"))):
+                continue
         geometries = []
         for raw_geometry in raw.get("geometry", []):
             surfaces, values = _parse_semantics(raw_geometry.get("semantics"))
