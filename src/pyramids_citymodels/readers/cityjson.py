@@ -28,6 +28,7 @@ from pyramids_citymodels.ir import (
     SemanticSurface,
     crs_from_identifier,
 )
+from pyramids_citymodels.options import ObjectFilter
 
 __all__ = ["looks_like_cityjson", "parse_cityjson"]
 
@@ -143,15 +144,19 @@ def _parse_semantics(
     return surfaces, semantics.get("values")
 
 
-def parse_cityjson(source: Any) -> CityModel:
+def parse_cityjson(source: Any, selector: "ObjectFilter | None" = None) -> CityModel:
     """Parse a CityJSON document into a :class:`~pyramids_citymodels.ir.CityModel`.
 
     Args:
         source: A path to a ``.city.json``/``.json`` file, an open text file, a JSON string, or
             an already-decoded CityJSON ``dict``.
+        selector: An optional :class:`~pyramids_citymodels.options.ObjectFilter`. When given, a
+            city object is read only if it matches (by id/type/attributes); non-matching objects
+            are skipped **before their geometry is dereferenced**, so a large file can be subset
+            without paying to decode the objects it discards. ``None`` reads every object.
 
     Returns:
-        The city model with every boundary dereferenced to transformed coordinate tuples.
+        The city model with every (kept) boundary dereferenced to transformed coordinate tuples.
 
     Raises:
         ValueError: If the document is not a CityJSON object.
@@ -199,6 +204,12 @@ def parse_cityjson(source: Any) -> CityModel:
     )
 
     for object_id, raw in document.get("CityObjects", {}).items():
+        # Read-time subset: skip a non-matching object before its geometry is dereferenced, so a
+        # subset of a city-scale file costs nothing for the objects it discards (feature #5).
+        if selector is not None and not selector.matches(
+            object_id, raw.get("type", "Unknown"), raw.get("attributes") or {}
+        ):
+            continue
         geometries = []
         for raw_geometry in raw.get("geometry", []):
             surfaces, values = _parse_semantics(raw_geometry.get("semantics"))

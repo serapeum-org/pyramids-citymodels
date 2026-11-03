@@ -49,6 +49,10 @@ class CityGmlDriver:
         """Parse ``source``'s LOD2 buildings into a :class:`pyramids.feature.FeatureCollection`.
 
         Keyword Args:
+            ids: Read only features with these ``gml:id``\\ s (a str or iterable of strings);
+                subset applied at parse time, before polygons are parsed.
+            types: Read only features of these types (``"Building"`` / ``"BuildingPart"``).
+            attributes: Read only features whose attributes equal these key/value pairs.
             strategy: ``"footprint"`` or ``"semantic_surfaces"`` (default).
             lod: Level of detail to select; ``None`` takes the highest present.
             geometry_dimension: ``"xyz"`` (default) keeps Z, ``"xy"`` drops it.
@@ -78,7 +82,13 @@ class CityGmlDriver:
                 ```
         """
         from pyramids_citymodels.flatten import to_feature_collection
+        from pyramids_citymodels.options import ObjectFilter
         from pyramids_citymodels.readers.citygml import parse_citygml
 
-        model = parse_citygml(source)
+        selector = ObjectFilter.coerce(
+            ids=kwargs.pop("ids", None),
+            types=kwargs.pop("types", None),
+            attributes=kwargs.pop("attributes", None),
+        )
+        model = parse_citygml(source, selector)
         return to_feature_collection(model, **kwargs)

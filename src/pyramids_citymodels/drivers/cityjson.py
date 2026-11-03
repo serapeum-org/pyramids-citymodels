@@ -54,6 +54,10 @@ class CityJsonDriver:
         """Parse ``source`` and flatten it into a :class:`pyramids.feature.FeatureCollection`.
 
         Keyword Args:
+            ids: Read only objects with these ids (a str or iterable of strings); subset applied at
+                parse time, before geometry is decoded.
+            types: Read only objects of these types (e.g. ``"Building"``).
+            attributes: Read only objects whose attributes equal these key/value pairs.
             strategy: ``"footprint"`` or ``"semantic_surfaces"`` (default).
             lod: Level of detail to select; ``None`` takes the highest present.
             geometry_dimension: ``"xyz"`` (default) keeps Z, ``"xy"`` drops it.
@@ -72,9 +76,23 @@ class CityJsonDriver:
                 1
 
                 ```
+            - Subset to one type at read time with the ``types`` keyword:
+                ```python
+                >>> len(CityJsonDriver().read(doc, types="Building"))
+                1
+                >>> len(CityJsonDriver().read(doc, types="Bridge"))
+                0
+
+                ```
         """
         from pyramids_citymodels.flatten import to_feature_collection
+        from pyramids_citymodels.options import ObjectFilter
         from pyramids_citymodels.readers.cityjson import parse_cityjson
 
-        model = parse_cityjson(source)
+        selector = ObjectFilter.coerce(
+            ids=kwargs.pop("ids", None),
+            types=kwargs.pop("types", None),
+            attributes=kwargs.pop("attributes", None),
+        )
+        model = parse_cityjson(source, selector)
         return to_feature_collection(model, **kwargs)

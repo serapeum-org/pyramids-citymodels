@@ -29,6 +29,7 @@ from pyramids_citymodels.ir import (
     SemanticSurface,
     crs_from_identifier,
 )
+from pyramids_citymodels.options import ObjectFilter
 
 __all__ = ["looks_like_citygml", "parse_citygml"]
 
@@ -301,11 +302,16 @@ def _nearest_feature_id(
     return None
 
 
-def parse_citygml(source: Any) -> CityModel:
+def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityModel:
     """Parse a CityGML document's LOD2 buildings into a :class:`~pyramids_citymodels.ir.CityModel`.
 
     Args:
         source: A path to a ``.gml``/``.xml`` file, an open file, or an XML string/bytes.
+        selector: An optional :class:`~pyramids_citymodels.options.ObjectFilter`. When given, only
+            matching ``Building``/``BuildingPart`` features (by id/type/attributes) are read; a
+            dropped feature's boundary surfaces are not parsed, and — per the filter's contract —
+            any surfaces under it roll up to the nearest *kept* ancestor feature. ``None`` reads
+            every feature.
 
     Returns:
         A city model with one :class:`~pyramids_citymodels.ir.CityObject` per ``Building`` and per
@@ -361,12 +367,24 @@ def parse_citygml(source: Any) -> CityModel:
     feature_ids: dict[ElementTree.Element, str] = {}
     anonymous = 0
     for element in root.iter():
-        if _local(element.tag) in ("Building", "BuildingPart"):
-            identifier = _gml_id(element)
-            if not identifier:
-                identifier = f"{_local(element.tag)}_{anonymous}"
-                anonymous += 1
-            feature_ids[element] = identifier
+        if _local(element.tag) not in ("Building", "BuildingPart"):
+            continue
+        # Read-time subset: test the feature by id/type/attributes before it participates, so a
+        # dropped feature's polygons are never parsed (feature #5). An anonymous feature (no
+        # gml:id) is matched on an empty id, so an id filter naturally excludes it; the anonymous
+        # counter only advances for kept features, keeping their synthesized ids stable.
+        gml_identifier = _gml_id(element)
+        if selector is not None and not selector.matches(
+            gml_identifier or "",
+            _local(element.tag),
+            _collect_building_attributes(element),
+        ):
+            continue
+        identifier = gml_identifier
+        if not identifier:
+            identifier = f"{_local(element.tag)}_{anonymous}"
+            anonymous += 1
+        feature_ids[element] = identifier
 
     model = CityModel(crs=crs, source_format="CityGML", version=_detect_version(root))
 

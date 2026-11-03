@@ -41,7 +41,26 @@ features = CityJsonDriver().read("building.city.json", strategy="semantic_surfac
 
 ### Read options
 
-Both drivers' `read` forward the same keyword options to the flattener:
+Both drivers' `read` accept the same keyword options. The first group is a **read-time subset**
+applied by the reader (non-matching objects are skipped *before* their geometry is decoded, so a
+city-scale file can be sliced without paying to parse what it discards); the rest are forwarded to
+the flattener.
+
+Subset (parse-time), bundled as an
+[`ObjectFilter`][pyramids_citymodels.options.ObjectFilter]:
+
+- `ids` — keep only objects with these ids (a string, or an iterable of strings).
+- `types` — keep only objects of these types (e.g. `"Building"`, `"BuildingPart"`).
+- `attributes` — keep only objects whose attributes equal each of these key/value pairs.
+
+An object is kept only when it satisfies **every** criterion set; filtering is per object and does
+not pull in relatives (a kept `BuildingPart` whose `Building` was dropped keeps a dangling
+`parent_id`, and in CityGML a dropped feature's surfaces roll up to the nearest kept ancestor).
+Filtering a `FeatureCollection` *after* reading is a GIS operation and stays in `pyramids-core`;
+these keywords are only the parse-time skip. The same subset is available on the IR entry point as
+`CityModel.from_file(path, ObjectFilter.coerce(...))`.
+
+Projection (flatten-time):
 
 - `strategy` — `"semantic_surfaces"` (default; one row per boundary surface) or `"footprint"`
   (one plan-view row per object).
@@ -49,6 +68,11 @@ Both drivers' `read` forward the same keyword options to the flattener:
 - `geometry_dimension` — `"xyz"` (default, keeps Z) or `"xy"` (drops Z). Ignored for a footprint.
 - `child_inherits_parent_attributes` — when `True`, a `BuildingPart` row also carries its
   `Building`'s attributes.
+
+```python
+# Read only two buildings, as footprints, straight into a FeatureCollection:
+features = CityJsonDriver().read("city.city.json", ids=["B1", "B2"], strategy="footprint")
+```
 
 A surface geometry is a planar polygon in 3D: a **vertical wall is non-areal in the XY plane** by
 design, so it is valid-but-zero-area in `semantic_surfaces` and excluded from a `footprint`. An
