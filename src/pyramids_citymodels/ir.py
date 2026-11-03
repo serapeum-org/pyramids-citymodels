@@ -271,8 +271,9 @@ class CityModel:
             path: A path to a CityJSON, CityGML or 3D Tiles file.
             selector: An optional :class:`~pyramids_citymodels.options.ObjectFilter` read-time
                 subset. The CityJSON and CityGML readers apply it while parsing (skipping an
-                object's geometry when it does not match); a 3D Tiles model is filtered after
-                decoding, since its objects are synthesized from tiles. ``None`` reads everything.
+                object's geometry when it does not match); the 3D Tiles reader prunes tile subtrees
+                by bbox and filters the decoded features, since its objects are synthesized from
+                tiles. ``None`` reads everything.
 
         Returns:
             The parsed city model, containing only the objects the ``selector`` keeps.
@@ -335,18 +336,10 @@ class CityModel:
         if looks_like_cityjson(path):
             return parse_cityjson(path, selector)
         if looks_like_3dtiles(path):
-            model = parse_3dtiles(path)
-            if selector is not None:
-                # 3D Tiles objects are synthesized from decoded tiles rather than read from named
-                # features, so there is no parse-time skip to make; apply the subset afterwards.
-                model.objects = {
-                    object_id: city_object
-                    for object_id, city_object in model.objects.items()
-                    if selector.matches(
-                        object_id, city_object.type, city_object.attributes
-                    )
-                }
-            return model
+            # 3D Tiles objects are synthesized from decoded tiles rather than read from named
+            # features, so the reader prunes tile subtrees by bbox and applies the rest of the
+            # subset to the decoded features itself (see parse_3dtiles).
+            return parse_3dtiles(path, selector)
         if looks_like_citygml(path):
             return parse_citygml(path, selector)
         raise CityModelError(

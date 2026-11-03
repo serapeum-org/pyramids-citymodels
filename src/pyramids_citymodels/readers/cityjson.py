@@ -222,18 +222,28 @@ def parse_cityjson(source: Any, selector: "ObjectFilter | None" = None) -> CityM
         extensions=dict(document.get("extensions", {}) or {}),
     )
 
-    for object_id, raw in document.get("CityObjects", {}).items():
-        # Read-time subset: skip a non-matching object before its geometry is dereferenced, so a
-        # subset of a city-scale file costs nothing for the objects it discards (feature #5). The
-        # bbox prefilter (#32) skips an object only when its declared geographicalExtent proves it
-        # is outside; an object without one is kept and refined downstream.
-        if selector is not None:
-            if not selector.matches(
+    raw_objects = document.get("CityObjects", {}) or {}
+    # Read-time subset: decide which objects to keep from their headers alone — id/type/attribute
+    # and the bbox prefilter (an object is dropped only when its declared geographicalExtent proves
+    # it outside; one without an extent is kept and refined downstream) — then thin that set by any
+    # random sample. All of this happens before a single boundary is dereferenced, so a subset of a
+    # city-scale file costs nothing for the objects it discards (feature #5, bbox #32).
+    if selector is None:
+        kept_ids = set(raw_objects)
+    else:
+        candidates = [
+            object_id
+            for object_id, raw in raw_objects.items()
+            if selector.matches(
                 object_id, raw.get("type", "Unknown"), raw.get("attributes") or {}
-            ):
-                continue
-            if selector.rejects_extent(_extent_2d(raw.get("geographicalExtent"))):
-                continue
+            )
+            and not selector.rejects_extent(_extent_2d(raw.get("geographicalExtent")))
+        ]
+        kept_ids = selector.sample_ids(candidates)
+
+    for object_id, raw in raw_objects.items():
+        if object_id not in kept_ids:
+            continue
         geometries = []
         for raw_geometry in raw.get("geometry", []):
             surfaces, values = _parse_semantics(raw_geometry.get("semantics"))

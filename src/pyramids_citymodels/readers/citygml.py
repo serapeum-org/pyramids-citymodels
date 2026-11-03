@@ -413,13 +413,14 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
     # attributed to the nearest one by walking ancestors.
     feature_ids: dict[ElementTree.Element, str] = {}
     anonymous = 0
+    # Read-time subset: gather the features that pass the metadata test (id/type/attributes) and the
+    # bbox prefilter (dropped only when the feature's own gml:Envelope proves it outside; one with
+    # no envelope is kept and refined downstream) before any polygon is parsed (feature #5, #32). An
+    # anonymous feature (no gml:id) is matched on an empty id, so an id filter naturally excludes it.
+    candidates: list[tuple[ElementTree.Element, str | None]] = []
     for element in root.iter():
         if _local(element.tag) not in ("Building", "BuildingPart"):
             continue
-        # Read-time subset: test the feature by id/type/attributes before it participates, so a
-        # dropped feature's polygons are never parsed (feature #5). An anonymous feature (no
-        # gml:id) is matched on an empty id, so an id filter naturally excludes it; the anonymous
-        # counter only advances for kept features, keeping their synthesized ids stable.
         gml_identifier = _gml_id(element)
         if selector is not None:
             if not selector.matches(
@@ -428,10 +429,20 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
                 _collect_building_attributes(element),
             ):
                 continue
-            # bbox prefilter (#32): skip only when the feature's own gml:Envelope proves it is
-            # outside; a feature with no declared envelope is kept and refined downstream.
             if selector.rejects_extent(_feature_envelope(element)):
                 continue
+        candidates.append((element, gml_identifier))
+
+    # Thin the survivors by any random sample, keyed on document position so an anonymous feature
+    # participates too; the anonymous counter then advances only for kept features (in document
+    # order), keeping their synthesized ids stable.
+    if selector is None:
+        kept_positions = set(range(len(candidates)))
+    else:
+        kept_positions = selector.sample_ids(range(len(candidates)))
+    for position, (element, gml_identifier) in enumerate(candidates):
+        if position not in kept_positions:
+            continue
         identifier = gml_identifier
         if not identifier:
             identifier = f"{_local(element.tag)}_{anonymous}"

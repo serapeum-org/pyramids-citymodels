@@ -61,6 +61,10 @@ class CityJsonDriver:
             bbox: ``(xmin, ymin, xmax, ymax)`` in the file's CRS — a conservative prefilter that
                 skips an object whose declared ``geographicalExtent`` is outside; objects without
                 one are kept (refine with ``FeatureCollection.clip_by_rect`` for an exact result).
+            exclude: ids/types/attributes to drop (a mapping, an ``ObjectFilter``, or ids) — the
+                negation of the keep criteria.
+            sample: Keep a random subset — a ``float`` fraction or an ``int`` count — of the matches.
+            seed: Seed for ``sample``, for a reproducible subset.
             strategy: ``"footprint"`` or ``"semantic_surfaces"`` (default).
             lod: Level of detail to select; ``None`` takes the highest present.
             geometry_dimension: ``"xyz"`` (default) keeps Z, ``"xy"`` drops it.
@@ -97,6 +101,9 @@ class CityJsonDriver:
             types=kwargs.pop("types", None),
             attributes=kwargs.pop("attributes", None),
             bbox=kwargs.pop("bbox", None),
+            exclude=kwargs.pop("exclude", None),
+            sample=kwargs.pop("sample", None),
+            seed=kwargs.pop("seed", None),
         )
         model = parse_cityjson(source, selector)
         return to_feature_collection(model, **kwargs)

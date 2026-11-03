@@ -8,22 +8,40 @@ rows afterwards. These tests cover the value object itself, both readers applyin
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 
+import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from pyramids_citymodels.drivers.citygml import CityGmlDriver
 from pyramids_citymodels.drivers.cityjson import CityJsonDriver
-from pyramids_citymodels.ir import CityModel
-from pyramids_citymodels.options import ObjectFilter
+from pyramids_citymodels.drivers.threedtiles import ThreeDTilesDriver
+from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+from pyramids_citymodels.options import (
+    ObjectFilter,
+    _apply_operator,
+    _attribute_matches,
+)
+from pyramids_citymodels.readers import threedtiles as td
 from pyramids_citymodels.readers.citygml import parse_citygml
 from pyramids_citymodels.readers.cityjson import parse_cityjson
+from pyramids_citymodels.readers.threedtiles import (
+    _bounding_volume_extent,
+    _geometry_extent_2d,
+    _subtree_outside_bbox,
+    parse_3dtiles,
+)
 
 DATA = Path(__file__).parent / "data"
-# minimal.city.json objects: bldg1 (Building), bldg1_part (BuildingPart).
+# minimal.city.json objects: bldg1 (Building, attrs measuredHeight=10.0, function=residential),
+# bldg1_part (BuildingPart).
 CITYJSON = DATA / "minimal.city.json"
 # minimal_building.gml: one Building, gml:id="B1".
 CITYGML = DATA / "minimal_building.gml"
+# tileset.json -> building.b3dm: features b0 (Building, height 10.0, footprint (0,0)-(2,2)) and
+# b1 (Building, height 20.0, footprint (5,5)-(7,7)).
+TILESET = DATA / "tileset.json"
 
 
 # --- ObjectFilter value object ------------------------------------------------------------------
@@ -244,3 +262,309 @@ def test_cityjson_driver_bbox_keyword() -> None:
 def test_bbox_none_selector_reads_all_three() -> None:
     model = parse_cityjson(_BBOX_CITYJSON, None)
     assert set(model.objects) == {"near", "far", "noext"}
+
+
+# --- exclude / negation -------------------------------------------------------------------------
+
+
+def test_coerce_exclude_from_mapping_builds_nested_filter() -> None:
+    selector = ObjectFilter.coerce(exclude={"types": "Bridge"})
+    assert selector is not None
+    assert selector.exclude is not None
+    assert selector.exclude.types == frozenset({"Bridge"})
+
+
+def test_coerce_exclude_from_lone_id() -> None:
+    selector = ObjectFilter.coerce(exclude="b1")
+    assert selector.exclude.ids == frozenset({"b1"})
+
+
+def test_coerce_exclude_accepts_an_existing_filter() -> None:
+    inner = ObjectFilter.coerce(ids="x")
+    selector = ObjectFilter.coerce(exclude=inner)
+    assert selector.exclude is inner
+
+
+def test_matches_rejects_an_excluded_object() -> None:
+    selector = ObjectFilter.coerce(exclude={"types": "Bridge"})
+    assert selector.matches("b", "Building", {})
+    assert not selector.matches("x", "Bridge", {})
+
+
+def test_exclude_combines_with_keep_criteria() -> None:
+    # Keep Buildings, but drop the one with function=utility.
+    selector = ObjectFilter.coerce(
+        types="Building", exclude={"attributes": {"function": "utility"}}
+    )
+    assert selector.matches("a", "Building", {"function": "residential"})
+    assert not selector.matches("b", "Building", {"function": "utility"})
+    assert not selector.matches("c", "Bridge", {})  # still fails the keep-type test
+
+
+def test_cityjson_exclude_drops_matching_objects() -> None:
+    model = parse_cityjson(CITYJSON, ObjectFilter.coerce(exclude={"types": "Building"}))
+    assert set(model.objects) == {"bldg1_part"}
+
+
+def test_cityjson_driver_exclude_keyword() -> None:
+    full = len(CityJsonDriver().read(CITYJSON))
+    excluded = len(CityJsonDriver().read(CITYJSON, exclude={"types": "Building"}))
+    assert 0 <= excluded < full  # dropping the Building reduces the frame
+
+
+# --- CQL2-style attribute predicates ------------------------------------------------------------
+
+
+def test_attribute_predicate_comparisons() -> None:
+    assert _attribute_matches(12.0, {"ge": 10})
+    assert _attribute_matches(12.0, {"gt": 10, "lt": 20})
+    assert not _attribute_matches(8, {"ge": 10})
+    assert not _attribute_matches(25, {"gt": 10, "lt": 20})
+
+
+def test_attribute_predicate_in_and_not_in() -> None:
+    assert _attribute_matches("residential", {"in": ["residential", "commercial"]})
+    assert not _attribute_matches("industrial", {"in": ["residential", "commercial"]})
+    assert _attribute_matches("industrial", {"nin": ["residential", "commercial"]})
+
+
+def test_attribute_predicate_like() -> None:
+    assert _attribute_matches("residential", {"like": "resid%"})
+    assert _attribute_matches("B1", {"like": "B_"})
+    assert not _attribute_matches("commercial", {"like": "resid%"})
+
+
+def test_attribute_predicate_between_and_ne() -> None:
+    assert _attribute_matches(15, {"between": [10, 20]})
+    assert not _attribute_matches(25, {"between": [10, 20]})
+    assert _attribute_matches("a", {"ne": "b"})
+    assert not _attribute_matches("a", {"ne": "a"})
+
+
+def test_attribute_comparison_on_missing_value_is_a_non_match_not_error() -> None:
+    # A predicate must never raise on heterogeneous/absent data — it just fails to match.
+    assert not _attribute_matches(None, {"ge": 10})
+    assert not _attribute_matches("text", {"gt": 10})
+
+
+def test_attribute_literal_dict_is_still_matched_by_equality() -> None:
+    # A mapping whose keys are not all operators is a literal value, compared with ==.
+    assert _attribute_matches({"a": 1}, {"a": 1})
+    assert not _attribute_matches({"a": 1}, {"a": 2})
+
+
+def test_attribute_mapping_with_a_non_operator_key_is_a_literal_not_a_predicate() -> (
+    None
+):
+    # A typo'd / unknown operator key makes the whole mapping a literal value (==), never a
+    # predicate — so it does not raise, it simply only matches an identical mapping.
+    assert not _attribute_matches(5, {"approx": 5})
+    assert _attribute_matches({"approx": 5}, {"approx": 5})
+
+
+def test_apply_operator_rejects_an_unknown_operator() -> None:
+    # The operator dispatch itself guards against an unknown op (defensive; the predicate gate
+    # only ever hands it known operators).
+    with pytest.raises(ValueError, match="unknown attribute predicate operator"):
+        _apply_operator("approx", 5, 5)
+
+
+def test_cityjson_attribute_predicate_filters_by_height() -> None:
+    assert set(
+        parse_cityjson(
+            CITYJSON, ObjectFilter.coerce(attributes={"measuredHeight": {"ge": 10}})
+        ).objects
+    ) == {"bldg1"}
+    assert (
+        parse_cityjson(
+            CITYJSON, ObjectFilter.coerce(attributes={"measuredHeight": {"gt": 10}})
+        ).objects
+        == {}
+    )
+
+
+def test_cityjson_driver_attribute_predicate_keyword() -> None:
+    frame = CityJsonDriver().read(
+        CITYJSON, attributes={"function": {"in": ["residential", "commercial"]}}
+    )
+    assert len(frame) >= 1
+
+
+# --- random sampling ----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", [True, -1, 1.5, -0.5, "half"])
+def test_coerce_rejects_an_invalid_sample(bad: object) -> None:
+    with pytest.raises(ValueError):
+        ObjectFilter.coerce(sample=bad)
+
+
+def test_sample_ids_count_is_capped_at_the_population() -> None:
+    selector = ObjectFilter.coerce(sample=10, seed=0)
+    assert selector.sample_ids(["a", "b", "c"]) == {"a", "b", "c"}
+
+
+def test_sample_ids_count_draws_exactly_n() -> None:
+    kept = ObjectFilter.coerce(sample=2, seed=1).sample_ids(["a", "b", "c", "d"])
+    assert len(kept) == 2
+    assert kept <= {"a", "b", "c", "d"}
+
+
+def test_sample_ids_fraction_rounds() -> None:
+    kept = ObjectFilter.coerce(sample=0.5, seed=1).sample_ids(["a", "b", "c", "d"])
+    assert len(kept) == 2
+
+
+def test_sample_ids_is_reproducible_for_a_seed() -> None:
+    ids = [str(n) for n in range(20)]
+    first = ObjectFilter.coerce(sample=5, seed=42).sample_ids(ids)
+    second = ObjectFilter.coerce(sample=5, seed=42).sample_ids(ids)
+    assert first == second
+
+
+def test_sample_ids_without_sample_keeps_all() -> None:
+    assert ObjectFilter.coerce(ids="a").sample_ids(["a", "b", "c"]) == {"a", "b", "c"}
+
+
+def test_cityjson_sample_thins_the_model() -> None:
+    model = parse_cityjson(CITYJSON, ObjectFilter.coerce(sample=1, seed=0))
+    assert len(model.objects) == 1
+    assert set(model.objects) <= {"bldg1", "bldg1_part"}
+
+
+def test_cityjson_sample_combines_with_type() -> None:
+    # Two Buildings but sample=1 -> exactly one kept.
+    doc = {
+        "type": "CityJSON",
+        "version": "2.0",
+        "vertices": [],
+        "CityObjects": {
+            "a": {"type": "Building"},
+            "b": {"type": "Building"},
+            "r": {"type": "Road"},
+        },
+    }
+    model = parse_cityjson(doc, ObjectFilter.coerce(types="Building", sample=1, seed=0))
+    assert len(model.objects) == 1
+    assert set(model.objects) <= {"a", "b"}
+
+
+def test_citygml_sample_thins_features() -> None:
+    model = parse_citygml(CITYGML, ObjectFilter.coerce(sample=0.0))
+    assert model.objects == {}  # fraction 0 keeps none
+
+
+# --- 3D Tiles subset (metadata, exact footprint bbox, prefilter prune) --------------------------
+
+
+def test_threedtiles_bbox_keeps_only_overlapping_features() -> None:
+    model = parse_3dtiles(TILESET, ObjectFilter.coerce(bbox=(0, 0, 3, 3)))
+    assert set(model.objects) == {"b0"}  # b1 footprint (5,5)-(7,7) is disjoint
+
+
+def test_threedtiles_exclude_and_attribute_predicate() -> None:
+    assert set(
+        parse_3dtiles(TILESET, ObjectFilter.coerce(exclude={"ids": "b1"})).objects
+    ) == {"b0"}
+    assert set(
+        parse_3dtiles(
+            TILESET, ObjectFilter.coerce(attributes={"height": {"ge": 15}})
+        ).objects
+    ) == {"b1"}
+
+
+def test_threedtiles_driver_bbox_keyword() -> None:
+    frame = ThreeDTilesDriver().read(TILESET, bbox=(0, 0, 3, 3))
+    assert len(frame) == 1
+
+
+def test_threedtiles_from_file_applies_selector() -> None:
+    model = CityModel.from_file(TILESET, ObjectFilter.coerce(types="Building"))
+    assert set(model.objects) == {"b0", "b1"}
+
+
+def test_geometry_extent_2d_of_a_footprint() -> None:
+    obj = CityObject(
+        id="x",
+        type="Building",
+        geometries=[
+            Geometry(
+                type="MultiSurface",
+                lod=None,
+                boundaries=[[[(0.0, 0.0), (4.0, 1.0), (2.0, 5.0), (0.0, 0.0)]]],
+            )
+        ],
+    )
+    assert _geometry_extent_2d(obj) == (0.0, 0.0, 4.0, 5.0)
+
+
+def test_bounding_volume_extent_of_a_box() -> None:
+    tile = {"boundingVolume": {"box": [0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 10]}}
+    assert _bounding_volume_extent(tile, np.eye(4)) == (-10.0, -10.0, 10.0, 10.0)
+
+
+def test_bounding_volume_extent_is_none_for_region_or_sphere() -> None:
+    assert (
+        _bounding_volume_extent({"boundingVolume": {"region": [0] * 6}}, np.eye(4))
+        is None
+    )
+    assert _bounding_volume_extent({"boundingVolume": {}}, np.eye(4)) is None
+
+
+def test_subtree_pruned_only_for_zup_box_proven_outside() -> None:
+    tile = {"boundingVolume": {"box": [0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 10]}}
+    far = ObjectFilter.coerce(bbox=(100, 100, 110, 110))
+    near = ObjectFilter.coerce(bbox=(0, 0, 5, 5))
+    assert _subtree_outside_bbox(tile, np.eye(4), "Z", far)  # z-up + disjoint -> prune
+    assert not _subtree_outside_bbox(tile, np.eye(4), "Y", far)  # y-up -> never prune
+    assert not _subtree_outside_bbox(tile, np.eye(4), "Z", near)  # overlaps -> keep
+    assert not _subtree_outside_bbox(tile, np.eye(4), "Z", None)  # no selector -> keep
+
+
+def test_bbox_prunes_subtree_before_decoding_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Prove the bbox is a real prefilter: a disjoint subtree's b3dm is never decoded. Stub the
+    # tile decode so a feature is produced regardless of geometry, then assert the stub is not
+    # called when the subtree is pruned, and is called when it is not.
+    calls: list[str] = []
+
+    def fake_parse(
+        data: bytes, transform: object, up_axis: object = "Y", source_id: str = ""
+    ) -> list[CityObject]:
+        calls.append(source_id)
+        return [
+            CityObject(
+                id="f",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod=None,
+                        boundaries=[[[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0)]]],
+                    )
+                ],
+            )
+        ]
+
+    monkeypatch.setattr(td, "_parse_b3dm_tile", fake_parse)
+    (tmp_path / "tile.b3dm").write_bytes(b"b3dm" + b"\x00" * 8)
+    tileset = {
+        "asset": {"version": "1.0", "gltfUpAxis": "Z"},
+        "geometricError": 1.0,
+        "root": {
+            "boundingVolume": {"box": [0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 10]},
+            "geometricError": 0.0,
+            "content": {"uri": "tile.b3dm"},
+        },
+    }
+    path = tmp_path / "tileset.json"
+    path.write_text(json.dumps(tileset), encoding="utf-8")
+
+    pruned = parse_3dtiles(path, ObjectFilter.coerce(bbox=(100, 100, 110, 110)))
+    assert calls == []  # subtree bounding volume is disjoint -> never decoded
+    assert pruned.objects == {}
+
+    kept = parse_3dtiles(path)  # no bbox -> content is decoded
+    assert calls  # the stub ran this time
+    assert set(kept.objects) == {"f"}
