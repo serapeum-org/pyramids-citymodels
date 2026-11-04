@@ -219,7 +219,9 @@ def _apply_operator(op: str, actual: Any, operand: Any) -> bool:
         try:
             present = actual in members
         except TypeError:
-            return False
+            # A non-iterable operand (a typo) leaves membership indeterminate: ``in`` cannot be
+            # satisfied, but ``nin`` keeps conservatively rather than silently emptying the result.
+            return op != "in"
         return present if op == "in" else not present
     if op == "between":
         try:

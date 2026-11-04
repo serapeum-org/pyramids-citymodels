@@ -472,10 +472,13 @@ def test_attribute_eq_operator_explicitly() -> None:
     assert not _attribute_matches("commercial", {"eq": "residential"})
 
 
-def test_attribute_membership_on_a_non_iterable_operand_is_a_non_match() -> None:
-    # `in` / `nin` against a non-iterable operand must not raise — it is simply no match.
-    assert not _apply_operator("in", "x", 5)
-    assert not _apply_operator("nin", "x", 5)
+def test_attribute_membership_on_a_non_iterable_operand_conserves() -> None:
+    # A non-iterable operand (a typo like {"nin": 5}) must not raise. Membership is indeterminate,
+    # so the conservative default applies per operator (review R2-L2): `in` cannot be satisfied
+    # (drop), but `nin` keeps — never silently empty a `nin` result on a malformed operand.
+    assert not _apply_operator("in", "x", 5)  # nothing is a member of 5 -> drop
+    assert _apply_operator("nin", "x", 5)  # membership unknown -> keep (conservative)
+    assert _apply_operator("not_in", "x", 5)
 
 
 def test_attribute_between_on_a_malformed_operand_is_a_non_match() -> None:
