@@ -380,6 +380,14 @@ def test_attribute_predicate_like() -> None:
     assert not _attribute_matches("commercial", {"like": "resid%"})
 
 
+def test_attribute_like_on_a_missing_value_is_a_non_match() -> None:
+    # A missing attribute must not be stringified to "None" and matched — a `like` on an absent
+    # value is a non-match, like every other operator (review M2).
+    assert not _attribute_matches(None, {"like": "%"})
+    assert not _attribute_matches(None, {"like": "N%"})
+    assert not _apply_operator("like", None, "%")
+
+
 def test_attribute_predicate_between_and_ne() -> None:
     assert _attribute_matches(15, {"between": [10, 20]})
     assert not _attribute_matches(25, {"between": [10, 20]})

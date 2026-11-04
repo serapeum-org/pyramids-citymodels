@@ -218,6 +218,10 @@ def _apply_operator(op: str, actual: Any, operand: Any) -> bool:
         except (TypeError, ValueError):
             return False
     if op == "like":
+        # A missing attribute is a non-match, consistent with every other operator — never
+        # stringify ``None`` to ``"None"`` and pattern-match that.
+        if actual is None:
+            return False
         return _like_to_regex(str(operand)).fullmatch(str(actual)) is not None
     raise ValueError(
         f"unknown attribute predicate operator {op!r}; expected one of "
