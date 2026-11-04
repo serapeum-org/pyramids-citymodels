@@ -589,26 +589,31 @@ def test_bounding_volume_extent_is_none_for_a_non_numeric_box() -> None:
     assert _bounding_volume_extent(tile, np.eye(4)) is None
 
 
-def test_subtree_pruned_only_for_zup_box_proven_outside() -> None:
+def test_subtree_pruned_when_box_proven_outside() -> None:
+    # The box bounding volume is z-up in tile space regardless of gltfUpAxis, and footprints reach
+    # the same z-up world frame, so pruning is valid for any up-axis — not gated on z-up (review M1).
     tile = {"boundingVolume": {"box": [0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 10]}}
     far = ObjectFilter.coerce(bbox=(100, 100, 110, 110))
     near = ObjectFilter.coerce(bbox=(0, 0, 5, 5))
-    assert _subtree_outside_bbox(tile, np.eye(4), "Z", far)  # z-up + disjoint -> prune
-    assert not _subtree_outside_bbox(tile, np.eye(4), "Y", far)  # y-up -> never prune
-    assert not _subtree_outside_bbox(tile, np.eye(4), "Z", near)  # overlaps -> keep
-    assert not _subtree_outside_bbox(tile, np.eye(4), "Z", None)  # no selector -> keep
+    assert _subtree_outside_bbox(tile, np.eye(4), far)  # disjoint -> prune
+    assert not _subtree_outside_bbox(tile, np.eye(4), near)  # overlaps -> keep
+    assert not _subtree_outside_bbox(tile, np.eye(4), None)  # no selector -> keep
+    assert not _subtree_outside_bbox(
+        {"boundingVolume": {"region": [0] * 6}}, np.eye(4), far
+    )  # non-box volume -> cannot place -> keep
 
 
+@pytest.mark.parametrize("up_axis", ["Y", "Z", "X"])
 def test_bbox_prunes_subtree_before_decoding_content(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    up_axis: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Prove the bbox is a real prefilter: a disjoint subtree's b3dm is never decoded. Stub the
-    # tile decode so a feature is produced regardless of geometry, then assert the stub is not
-    # called when the subtree is pruned, and is called when it is not.
+    # Prove the bbox is a real prefilter for ANY up-axis (including the Y-up default — review M1): a
+    # disjoint subtree's b3dm is never decoded. Stub the tile decode so a feature is produced
+    # regardless of geometry, then assert the stub is not called when the subtree is pruned.
     calls: list[str] = []
 
     def fake_parse(
-        data: bytes, transform: object, up_axis: object = "Y", source_id: str = ""
+        data: bytes, transform: object, axis: object = "Y", source_id: str = ""
     ) -> list[CityObject]:
         calls.append(source_id)
         return [
@@ -628,7 +633,7 @@ def test_bbox_prunes_subtree_before_decoding_content(
     monkeypatch.setattr(td, "_parse_b3dm_tile", fake_parse)
     (tmp_path / "tile.b3dm").write_bytes(b"b3dm" + b"\x00" * 8)
     tileset = {
-        "asset": {"version": "1.0", "gltfUpAxis": "Z"},
+        "asset": {"version": "1.0", "gltfUpAxis": up_axis},
         "geometricError": 1.0,
         "root": {
             "boundingVolume": {"box": [0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 10]},

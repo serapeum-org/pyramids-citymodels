@@ -128,22 +128,22 @@ def _bounding_volume_extent(
 def _subtree_outside_bbox(
     tile: dict[str, Any],
     transform: np.ndarray,
-    up_axis: Any,
     selector: "ObjectFilter | None",
 ) -> bool:
     """Whether a whole tile subtree can be pruned because its bounding volume misses the bbox.
 
     The genuine 3D Tiles bbox *prefilter*: a tile's bounding volume encloses all of its descendants,
     so if it is disjoint from the query bbox the entire subtree can be skipped without decoding a
-    single ``b3dm``. Pruning is deliberately conservative — it happens only when there is a bbox,
-    the tile carries a ``box`` bounding volume this reader can place, and the glTF up-axis is already
-    ``Z`` (so the bounding volume and the footprints share the same XY plane). In every other case
-    this returns ``False`` and the subtree is walked, with the exact per-feature footprint bbox test
-    catching anything outside; a subtree is never pruned on a volume the reader cannot place.
+    single ``b3dm``. This fires for **any** ``gltfUpAxis``: a ``box`` bounding volume is defined in
+    the tile's (z-up) coordinate frame regardless of the up-axis — the up-axis rotation applies only
+    to glTF *content* — and the decoded footprints are brought to that same z-up world frame via
+    ``tile_transform @ _up_axis_to_zup(up_axis)``, so the transformed box extent and the footprints
+    share the XY plane. Pruning is conservative only in that it requires a bbox and a ``box`` volume
+    this reader can place: a ``region``/``sphere`` volume yields no extent, so the subtree is walked
+    and the exact per-feature footprint test catches anything outside. A subtree is never pruned on
+    a volume the reader cannot place.
     """
     if selector is None or selector.bbox is None:
-        return False
-    if str(up_axis).upper() != "Z":
         return False
     extent = _bounding_volume_extent(tile, transform)
     return extent is not None and selector.rejects_extent(extent)
@@ -744,7 +744,7 @@ def _walk_tileset(
     :func:`_subtree_outside_bbox`).
     """
     here = _tile_transform(tile, transform)
-    if _subtree_outside_bbox(tile, here, up_axis, selector):
+    if _subtree_outside_bbox(tile, here, selector):
         return
     content = tile.get("content") or {}
     uri = content.get("uri") or content.get("url")
