@@ -300,6 +300,18 @@ def _citygml_with_envelope(corners: str) -> str:
     </core:CityModel>"""
 
 
+def _citygml_with_measured_height(height: float) -> str:
+    """One Building gml:id='M' carrying a bldg:measuredHeight of ``height``."""
+    return f"""<core:CityModel
+      xmlns:core="http://www.opengis.net/citygml/2.0"
+      xmlns:bldg="http://www.opengis.net/citygml/building/2.0"
+      xmlns:gml="http://www.opengis.net/gml">
+      <core:cityObjectMember><bldg:Building gml:id="M">
+        <bldg:measuredHeight>{height}</bldg:measuredHeight>
+      </bldg:Building></core:cityObjectMember>
+    </core:CityModel>"""
+
+
 @pytest.mark.parametrize(
     "corners",
     [
@@ -348,6 +360,17 @@ def test_coerce_exclude_accepts_an_existing_filter() -> None:
     inner = ObjectFilter.coerce(ids="x")
     selector = ObjectFilter.coerce(exclude=inner)
     assert selector.exclude is inner
+
+
+def test_coerce_exclude_ignores_its_own_bbox_and_sample() -> None:
+    # exclude is a metadata-only test; a bbox/sample inside the exclude mapping is dropped.
+    selector = ObjectFilter.coerce(
+        exclude={"types": "Bridge", "bbox": (0, 0, 1, 1), "sample": 1}
+    )
+    assert selector.exclude is not None
+    assert selector.exclude.types == frozenset({"Bridge"})
+    assert selector.exclude.bbox is None
+    assert selector.exclude.sample is None
 
 
 def test_matches_rejects_an_excluded_object() -> None:
@@ -564,6 +587,22 @@ def test_citygml_sample_thins_features() -> None:
     assert model.objects == {}  # fraction 0 keeps none
 
 
+def test_citygml_attribute_predicate_filters_by_height() -> None:
+    # The CityGML reader honours CQL2-style predicates too (B1 carries measuredHeight).
+    xml = _citygml_with_measured_height(12.0)
+    assert set(
+        parse_citygml(
+            xml, ObjectFilter.coerce(attributes={"measuredHeight": {"ge": 10}})
+        ).objects
+    ) == {"M"}
+    assert (
+        parse_citygml(
+            xml, ObjectFilter.coerce(attributes={"measuredHeight": {"gt": 20}})
+        ).objects
+        == {}
+    )
+
+
 # --- 3D Tiles subset (metadata, exact footprint bbox, prefilter prune) --------------------------
 
 
@@ -586,6 +625,15 @@ def test_threedtiles_exclude_and_attribute_predicate() -> None:
 def test_threedtiles_driver_bbox_keyword() -> None:
     frame = ThreeDTilesDriver().read(TILESET, bbox=(0, 0, 3, 3))
     assert len(frame) == 1
+
+
+def test_threedtiles_sample_thins_decoded_features_reproducibly() -> None:
+    # The tileset has two features (b0, b1); a seeded sample=1 keeps exactly one, the same each run.
+    first = parse_3dtiles(TILESET, ObjectFilter.coerce(sample=1, seed=7))
+    second = parse_3dtiles(TILESET, ObjectFilter.coerce(sample=1, seed=7))
+    assert len(first.objects) == 1
+    assert set(first.objects) <= {"b0", "b1"}
+    assert set(first.objects) == set(second.objects)  # reproducible for a seed
 
 
 def test_threedtiles_from_file_applies_selector() -> None:
