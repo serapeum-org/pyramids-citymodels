@@ -75,6 +75,16 @@ def test_coerce_treats_empty_iterables_as_no_filter() -> None:
     assert ObjectFilter.coerce(ids=[], types=[], attributes={}) is None
 
 
+def test_coerce_treats_a_blank_lone_string_as_no_filter() -> None:
+    # A blank/whitespace lone id/type is "do not filter", like an empty list — not a filter that
+    # keeps only the empty-id object (review R2-N1).
+    assert ObjectFilter.coerce(ids="") is None
+    assert ObjectFilter.coerce(types="   ") is None
+    assert ObjectFilter.coerce(ids="B1").ids == frozenset(
+        {"B1"}
+    )  # real id still filters
+
+
 def test_coerce_rejects_a_non_iterable_ids_or_types() -> None:
     # A non-iterable, non-string ids/types gives a curated ValueError, like bbox/sample — not a
     # bare TypeError (review N1).

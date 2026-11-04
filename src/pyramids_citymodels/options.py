@@ -57,8 +57,8 @@ def _as_str_set(value: Any) -> "frozenset[str] | None":
     """Coerce an id/type criterion to a ``frozenset[str]``, or ``None`` when empty.
 
     A lone ``str`` is one member (not a set of its characters); any other iterable is taken
-    member-wise. An empty value (``None``, ``[]``) becomes ``None`` — "do not filter on this" — so
-    an empty criterion never silently rejects every object.
+    member-wise. An empty value (``None``, ``""``, a blank string, ``[]``) becomes ``None`` — "do
+    not filter on this" — so an empty criterion never silently rejects every object.
 
     Raises:
         ValueError: If ``value`` is neither ``None``, a string, nor an iterable of items — mirroring
@@ -75,7 +75,9 @@ def _as_str_set(value: Any) -> "frozenset[str] | None":
     if value is None:
         return None
     if isinstance(value, str):
-        return frozenset({value}) or None
+        # A blank/whitespace-only lone string is "do not filter", matching the empty-collection
+        # case, rather than a filter that keeps only the (unlikely) empty-id object.
+        return frozenset({value}) if value.strip() else None
     try:
         members = frozenset(str(item) for item in value)
     except TypeError as error:
