@@ -19,9 +19,10 @@ their plain-string values so a driver can pass user kwargs straight through.
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
+import hashlib
 import operator
-import random
 import re
+import secrets
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -576,10 +577,14 @@ class ObjectFilter:
         Applies :attr:`sample` to the keys of the objects that already passed :meth:`matches` and
         :meth:`rejects_extent` — a reader gathers those (cheap, metadata-only) *before* decoding any
         geometry and asks this which to actually build. With no :attr:`sample` every key is kept; a
-        ``float`` keeps ``round(fraction * n)`` of them and an ``int`` keeps at most that many,
-        chosen with a :class:`random.Random` seeded by :attr:`seed` (so a given ``seed`` and input
-        order reproduce the same subset). The keys are opaque — real object ids for CityJSON/3D
-        Tiles, positional indices for anonymous CityGML features — and only membership is used.
+        ``float`` keeps ``round(fraction * n)`` of them and an ``int`` keeps at most that many.
+
+        The subset is drawn by ranking each position by a SHA-256 of ``(salt, position)`` and taking
+        the first ``count`` — a uniform selection that needs no pseudo-random number generator. The
+        salt is :attr:`seed` when given, so a ``seed`` and a fixed input order reproduce the same
+        subset; with no ``seed`` the salt is a fresh value from :mod:`secrets`, so the draw varies
+        between runs. The keys are opaque — real object ids for CityJSON/3D Tiles, positional indices
+        for anonymous CityGML features — and only membership is used.
 
         Args:
             ids: The keys of the objects that passed the metadata and bbox tests, in document order.
@@ -594,6 +599,8 @@ class ObjectFilter:
             2
             >>> kept <= {"a", "b", "c", "d"}
             True
+            >>> f.sample_ids(["a", "b", "c", "d"]) == kept  # a seed reproduces the same subset
+            True
             >>> sorted(ObjectFilter.coerce(ids="a").sample_ids(["a", "b"]))  # no sample -> keep all
             ['a', 'b']
         """
@@ -606,7 +613,12 @@ class ObjectFilter:
             else self.sample
         )
         count = max(0, min(count, len(items)))
-        return set(random.Random(self.seed).sample(items, count))
+        salt = str(self.seed) if self.seed is not None else secrets.token_hex(8)
+        ranked = sorted(
+            range(len(items)),
+            key=lambda position: hashlib.sha256(f"{salt}:{position}".encode()).digest(),
+        )
+        return {items[position] for position in ranked[:count]}
 
 
 @dataclass(frozen=True)
