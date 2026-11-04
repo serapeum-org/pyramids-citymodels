@@ -162,6 +162,49 @@ def _parse_semantics(
     return surfaces, semantics.get("values")
 
 
+def _select_cityjson_ids(
+    raw_objects: dict[str, Any], selector: "ObjectFilter | None"
+) -> set[str]:
+    """The object ids to read, applied to object *headers* before any geometry is dereferenced.
+
+    With no selector every id is kept. Otherwise an object survives when it matches by
+    id/type/attribute and is not proven outside the bbox by its declared ``geographicalExtent`` (one
+    without an extent is kept and refined downstream); the survivors are then thinned by any random
+    sample. This is the parse-time win: a city-scale file is subset without decoding what it
+    discards (feature #5, bbox #32).
+    """
+    if selector is None:
+        return set(raw_objects)
+    candidates = [
+        object_id
+        for object_id, raw in raw_objects.items()
+        if selector.matches(
+            object_id, raw.get("type", "Unknown"), raw.get("attributes") or {}
+        )
+        and not selector.rejects_extent(_extent_2d(raw.get("geographicalExtent")))
+    ]
+    return selector.sample_ids(candidates)
+
+
+def _build_geometry(
+    raw_geometry: dict[str, Any], vertices: list[tuple[float, ...]]
+) -> Geometry:
+    """Build one IR :class:`Geometry` from a CityJSON geometry, dereferencing its boundaries."""
+    surfaces, values = _parse_semantics(raw_geometry.get("semantics"))
+    lod = raw_geometry.get("lod")
+    appearance: dict[str, Any] = {
+        key: raw_geometry[key] for key in ("material", "texture") if key in raw_geometry
+    }
+    return Geometry(
+        type=raw_geometry.get("type", "Unknown"),
+        lod=None if lod is None else str(lod),
+        boundaries=_dereference(raw_geometry.get("boundaries", []), vertices),
+        semantics=surfaces,
+        semantic_values=values,
+        appearance=appearance or None,
+    )
+
+
 def parse_cityjson(source: Any, selector: "ObjectFilter | None" = None) -> CityModel:
     """Parse a CityJSON document into a :class:`~pyramids_citymodels.ir.CityModel`.
 
@@ -223,53 +266,18 @@ def parse_cityjson(source: Any, selector: "ObjectFilter | None" = None) -> CityM
     )
 
     raw_objects = document.get("CityObjects", {}) or {}
-    # Read-time subset: decide which objects to keep from their headers alone — id/type/attribute
-    # and the bbox prefilter (an object is dropped only when its declared geographicalExtent proves
-    # it outside; one without an extent is kept and refined downstream) — then thin that set by any
-    # random sample. All of this happens before a single boundary is dereferenced, so a subset of a
-    # city-scale file costs nothing for the objects it discards (feature #5, bbox #32).
-    if selector is None:
-        kept_ids = set(raw_objects)
-    else:
-        candidates = [
-            object_id
-            for object_id, raw in raw_objects.items()
-            if selector.matches(
-                object_id, raw.get("type", "Unknown"), raw.get("attributes") or {}
-            )
-            and not selector.rejects_extent(_extent_2d(raw.get("geographicalExtent")))
-        ]
-        kept_ids = selector.sample_ids(candidates)
-
+    kept_ids = _select_cityjson_ids(raw_objects, selector)
     for object_id, raw in raw_objects.items():
         if object_id not in kept_ids:
             continue
-        geometries = []
-        for raw_geometry in raw.get("geometry", []):
-            surfaces, values = _parse_semantics(raw_geometry.get("semantics"))
-            lod = raw_geometry.get("lod")
-            appearance = {
-                key: raw_geometry[key]
-                for key in ("material", "texture")
-                if key in raw_geometry
-            }
-            geometries.append(
-                Geometry(
-                    type=raw_geometry.get("type", "Unknown"),
-                    lod=None if lod is None else str(lod),
-                    boundaries=_dereference(
-                        raw_geometry.get("boundaries", []), vertices
-                    ),
-                    semantics=surfaces,
-                    semantic_values=values,
-                    appearance=appearance or None,
-                )
-            )
         model.objects[object_id] = CityObject(
             id=object_id,
             type=raw.get("type", "Unknown"),
             attributes=dict(raw.get("attributes", {}) or {}),
-            geometries=geometries,
+            geometries=[
+                _build_geometry(raw_geometry, vertices)
+                for raw_geometry in raw.get("geometry", [])
+            ],
             parents=list(raw.get("parents", []) or []),
             children=list(raw.get("children", []) or []),
         )
