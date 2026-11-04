@@ -433,10 +433,24 @@ def test_attribute_predicate_like() -> None:
 
 def test_attribute_like_on_a_missing_value_is_a_non_match() -> None:
     # A missing attribute must not be stringified to "None" and matched — a `like` on an absent
-    # value is a non-match, like every other operator (review M2).
+    # value is a non-match (review R1-M2). `like` would otherwise match str(None).
     assert not _attribute_matches(None, {"like": "%"})
     assert not _attribute_matches(None, {"like": "N%"})
     assert not _apply_operator("like", None, "%")
+
+
+def test_missing_attribute_semantics_per_operator() -> None:
+    # Missing-value handling follows natural Python truth semantics per operator, NOT a uniform
+    # "non-match" (review R2-L1). The user-facing doc scopes the non-match claim to comparisons.
+    # Non-matches (object dropped) on an absent attribute:
+    assert not _attribute_matches(None, {"eq": "b"})  # None == "b" -> False
+    assert not _attribute_matches(None, {"ge": 10})  # not orderable -> False
+    assert not _attribute_matches(None, {"in": ["a", "b"]})  # None in [...] -> False
+    assert not _attribute_matches(None, {"between": [1, 2]})  # not orderable -> False
+    # Matches (object KEPT) on an absent attribute — a missing value is "not equal"/"not in":
+    assert _attribute_matches(None, {"ne": "b"})  # None != "b" -> True
+    assert _attribute_matches(None, {"nin": ["a", "b"]})  # None not in [...] -> True
+    assert _attribute_matches(None, {"eq": None})  # None == None -> True
 
 
 def test_attribute_predicate_between_and_ne() -> None:
