@@ -33,6 +33,9 @@ from pyramids_citymodels.options import ObjectFilter
 
 __all__ = ["looks_like_citygml", "parse_citygml"]
 
+#: Default coordinate dimension assumed when a geometry declares no ``srsDimension``.
+_DEFAULT_SRS_DIMENSION = 3
+
 #: Local names of ``bldg`` boundary-surface elements that carry a semantic surface type.
 _BOUNDARY_SURFACE_NAMES = frozenset(
     {
@@ -349,6 +352,135 @@ def _nearest_feature_id(
     return None
 
 
+def _detect_crs(root: ElementTree.Element) -> Any:
+    """The CRS from the first ``srsName`` attribute seen anywhere (envelope or geometry), or ``None``."""
+    for element in root.iter():
+        for key, value in element.attrib.items():
+            if _local(key) == "srsName":
+                return crs_from_identifier(value)
+    return None
+
+
+def _assign_feature_ids(
+    root: ElementTree.Element, selector: "ObjectFilter | None"
+) -> "tuple[dict[ElementTree.Element, str], dict[ElementTree.Element, dict[str, Any]]]":
+    """Assign a stable id to every *kept* Building/BuildingPart, applying the read-time subset.
+
+    Gathers the features that pass the metadata test (id/type/attributes) and the bbox prefilter
+    (dropped only when the feature's own ``gml:Envelope`` proves it outside; one with no envelope is
+    kept and refined downstream), before any polygon is parsed (feature #5, #32). An anonymous
+    feature (no ``gml:id``) is matched on an empty id, so an id filter naturally excludes it. Each
+    feature's attributes are collected **once** here and returned for reuse when the ``CityObject``
+    is built, so a kept feature is never scanned twice.
+
+    The survivors are thinned by any random sample, keyed on document position so an anonymous
+    feature participates too; the anonymous counter then advances only for kept features (in
+    document order). Synthesized ids are therefore stable for a *given* selector, not across
+    selectors — a different sample/bbox can renumber an anonymous feature (which has no source
+    identity).
+
+    Returns:
+        ``(feature_ids, attributes_by_element)`` — the kept elements mapped to their assigned id,
+        and every candidate element mapped to its collected attributes.
+    """
+    candidates: list[tuple[ElementTree.Element, str | None]] = []
+    attributes_by_element: dict[ElementTree.Element, dict[str, Any]] = {}
+    for element in root.iter():
+        if _local(element.tag) not in ("Building", "BuildingPart"):
+            continue
+        gml_identifier = _gml_id(element)
+        attributes = _collect_building_attributes(element)
+        if selector is not None:
+            if not selector.matches(
+                gml_identifier or "", _local(element.tag), attributes
+            ):
+                continue
+            if selector.rejects_extent(_feature_envelope(element)):
+                continue
+        candidates.append((element, gml_identifier))
+        attributes_by_element[element] = attributes
+
+    if selector is None:
+        kept_positions = set(range(len(candidates)))
+    else:
+        kept_positions = selector.sample_ids(range(len(candidates)))
+    feature_ids: dict[ElementTree.Element, str] = {}
+    anonymous = 0
+    for position, (element, gml_identifier) in enumerate(candidates):
+        if position not in kept_positions:
+            continue
+        identifier = gml_identifier
+        if not identifier:
+            identifier = f"{_local(element.tag)}_{anonymous}"
+            anonymous += 1
+        feature_ids[element] = identifier
+    return feature_ids, attributes_by_element
+
+
+def _index_polygons(
+    root: ElementTree.Element,
+) -> dict[str, ElementTree.Element]:
+    """Index every ``gml:Polygon`` by its ``gml:id``, so an ``xlink:href`` boundary surface can resolve it."""
+    polygons_by_id: dict[str, ElementTree.Element] = {}
+    for node in root.iter():
+        if _local(node.tag) == "Polygon":
+            polygon_id = _gml_id(node)
+            if polygon_id:
+                polygons_by_id[polygon_id] = node
+    return polygons_by_id
+
+
+def _resolve_polygon(
+    node: ElementTree.Element, polygons_by_id: dict[str, ElementTree.Element]
+) -> "ElementTree.Element | None":
+    """The ``gml:Polygon`` a node *is*, or the one it references via ``xlink:href``, or ``None``."""
+    if _local(node.tag) == "Polygon":
+        return node
+    referenced = _href(node)
+    return polygons_by_id.get(referenced) if referenced else None
+
+
+def _gather_boundary_surfaces(
+    root: ElementTree.Element,
+    parent_of: dict[ElementTree.Element, ElementTree.Element],
+    feature_ids: dict[ElementTree.Element, str],
+    polygons_by_id: dict[str, ElementTree.Element],
+) -> "dict[str, tuple[list[Any], list[SemanticSurface], list[int]]]":
+    """Collect each feature's boundary polygons (resolving ``xlink:href``), tagged by semantic type.
+
+    A polygon reachable from two boundary surfaces of one feature (inline in one, referenced by
+    ``xlink:href`` from another) is collected **once**, keeping the first (document-order) surface's
+    semantic type — so the seen-set is scoped to the feature, not reset per boundary surface (SF1).
+    """
+    surfaces_by_feature: dict[
+        str, tuple[list[Any], list[SemanticSurface], list[int]]
+    ] = {identifier: ([], [], []) for identifier in feature_ids.values()}
+    seen_by_feature: dict[str, set[int]] = {
+        identifier: set() for identifier in feature_ids.values()
+    }
+    for element in root.iter():
+        local = _local(element.tag)
+        if local not in _BOUNDARY_SURFACE_NAMES:
+            continue
+        feature_id = _nearest_feature_id(element, parent_of, feature_ids)
+        if feature_id is None:
+            continue
+        boundaries, semantics, values = surfaces_by_feature[feature_id]
+        seen = seen_by_feature[feature_id]
+        for node in element.iter():
+            polygon = _resolve_polygon(node, polygons_by_id)
+            if polygon is None or id(polygon) in seen:
+                continue
+            seen.add(id(polygon))
+            surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
+            if not surface or len(surface[0]) < 3:
+                continue
+            values.append(len(semantics))
+            semantics.append(SemanticSurface(type=local))
+            boundaries.append(surface)
+    return surfaces_by_feature
+
+
 def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityModel:
     """Parse a CityGML document's LOD2 buildings into a :class:`~pyramids_citymodels.ir.CityModel`.
 
@@ -396,125 +528,27 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
     """
     root = _read_tree(source)
     parent_of = {child: parent for parent in root.iter() for child in parent}
+    feature_ids, attributes_by_element = _assign_feature_ids(root, selector)
 
-    # CRS: the first srsName seen anywhere (envelope or geometry).
-    crs = None
-    for element in root.iter():
-        for key, value in element.attrib.items():
-            if _local(key) == "srsName":
-                crs = crs_from_identifier(value)
-                break
-        if crs:
-            break
-
-    default_dimension = 3
-
-    # Assign a stable id to every Building / BuildingPart up front, so boundary surfaces can be
-    # attributed to the nearest one by walking ancestors.
-    feature_ids: dict[ElementTree.Element, str] = {}
-    anonymous = 0
-    # Read-time subset: gather the features that pass the metadata test (id/type/attributes) and the
-    # bbox prefilter (dropped only when the feature's own gml:Envelope proves it outside; one with
-    # no envelope is kept and refined downstream) before any polygon is parsed (feature #5, #32). An
-    # anonymous feature (no gml:id) is matched on an empty id, so an id filter naturally excludes it.
-    # Each feature's attributes are collected once here and reused both for the selector's
-    # attribute test and when building the CityObject below, so a kept feature is never scanned
-    # twice.
-    candidates: list[tuple[ElementTree.Element, str | None]] = []
-    attributes_by_element: dict[ElementTree.Element, dict[str, Any]] = {}
-    for element in root.iter():
-        if _local(element.tag) not in ("Building", "BuildingPart"):
-            continue
-        gml_identifier = _gml_id(element)
-        attributes = _collect_building_attributes(element)
-        if selector is not None:
-            if not selector.matches(
-                gml_identifier or "", _local(element.tag), attributes
-            ):
-                continue
-            if selector.rejects_extent(_feature_envelope(element)):
-                continue
-        candidates.append((element, gml_identifier))
-        attributes_by_element[element] = attributes
-
-    # Thin the survivors by any random sample, keyed on document position so an anonymous feature
-    # participates too; the anonymous counter then advances only for kept features (in document
-    # order). Synthesized ids are therefore stable for a *given* selector, but not across selectors
-    # — a different sample/bbox can renumber an anonymous feature (which has no source identity).
-    if selector is None:
-        kept_positions = set(range(len(candidates)))
-    else:
-        kept_positions = selector.sample_ids(range(len(candidates)))
-    for position, (element, gml_identifier) in enumerate(candidates):
-        if position not in kept_positions:
-            continue
-        identifier = gml_identifier
-        if not identifier:
-            identifier = f"{_local(element.tag)}_{anonymous}"
-            anonymous += 1
-        feature_ids[element] = identifier
-
-    model = CityModel(crs=crs, source_format="CityGML", version=_detect_version(root))
+    model = CityModel(
+        crs=_detect_crs(root), source_format="CityGML", version=_detect_version(root)
+    )
 
     # Create a city object per feature, with parent/child links between a part and its building.
     for element, identifier in feature_ids.items():
         parent_feature_id = _nearest_feature_id(element, parent_of, feature_ids)
-        city_object = CityObject(
+        model.objects[identifier] = CityObject(
             id=identifier,
             type=_local(element.tag),
             attributes=attributes_by_element[element],
             parents=[parent_feature_id] if parent_feature_id else [],
         )
-        model.objects[identifier] = city_object
         if parent_feature_id:
             model.objects[parent_feature_id].children.append(identifier)
 
-    # Index every polygon by its gml:id so a boundary surface that references its geometry by
-    # xlink:href (shared-geometry / XLink graph) can resolve it instead of silently dropping it.
-    polygons_by_id: dict[str, ElementTree.Element] = {}
-    for node in root.iter():
-        if _local(node.tag) == "Polygon":
-            polygon_id = _gml_id(node)
-            if polygon_id:
-                polygons_by_id[polygon_id] = node
-
-    # Gather boundary surfaces, attributing each to its nearest feature and tagging its semantics.
-    surfaces_by_feature: dict[
-        str, tuple[list[Any], list[SemanticSurface], list[int]]
-    ] = {identifier: ([], [], []) for identifier in feature_ids.values()}
-    # One polygon reachable from two boundary surfaces of a feature (inline in one, referenced by
-    # xlink:href from another) must be collected ONCE, keeping the first (document-order) surface's
-    # semantic type — so the seen-set is scoped to the feature, not reset per boundary surface (SF1).
-    seen_by_feature: dict[str, set[int]] = {
-        identifier: set() for identifier in feature_ids.values()
-    }
-    for element in root.iter():
-        local = _local(element.tag)
-        if local not in _BOUNDARY_SURFACE_NAMES:
-            continue
-        feature_id = _nearest_feature_id(element, parent_of, feature_ids)
-        if feature_id is None:
-            continue
-        boundaries, semantics, values = surfaces_by_feature[feature_id]
-        seen = seen_by_feature[feature_id]
-        for node in element.iter():
-            polygon: ElementTree.Element | None = None
-            if _local(node.tag) == "Polygon":
-                polygon = node
-            else:
-                referenced = _href(node)
-                if referenced:
-                    polygon = polygons_by_id.get(referenced)
-            if polygon is None or id(polygon) in seen:
-                continue
-            seen.add(id(polygon))
-            surface = _surfaces_from_polygon(polygon, default_dimension)
-            if not surface or len(surface[0]) < 3:
-                continue
-            values.append(len(semantics))
-            semantics.append(SemanticSurface(type=local))
-            boundaries.append(surface)
-
+    surfaces_by_feature = _gather_boundary_surfaces(
+        root, parent_of, feature_ids, _index_polygons(root)
+    )
     for identifier, (boundaries, semantics, values) in surfaces_by_feature.items():
         if boundaries:
             model.objects[identifier].geometries.append(
