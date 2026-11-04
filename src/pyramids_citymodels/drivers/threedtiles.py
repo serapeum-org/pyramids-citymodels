@@ -67,9 +67,12 @@ class ThreeDTilesDriver:
             types: Read only features of these types.
             attributes: Read only features whose attributes satisfy these criteria (scalar equality
                 or a predicate mapping such as ``{"ge": 10}`` / ``{"like": "resid%"}``).
-            bbox: ``(xmin, ymin, xmax, ymax)`` in the tileset's stored coordinate system — prunes
-                whole tile subtrees whose bounding volume misses it (skipping their decode) and then
-                exactly filters the decoded features by their footprint extent.
+            bbox: ``(xmin, ymin, xmax, ymax)`` in the tileset's **stored coordinate system** —
+                commonly ECEF metres, since this reader does not reproject (``crs`` is ``None``).
+                This is unlike the CityJSON/CityGML ``bbox``, which is in the file's own CRS; a
+                lon/lat or projected bbox will silently select nothing here. It prunes whole tile
+                subtrees whose bounding volume misses it (skipping their decode) and then exactly
+                filters the decoded features by their footprint extent.
             exclude: ids/types/attributes to drop (a mapping, an ``ObjectFilter``, or ids).
             sample: Keep a random subset — a ``float`` fraction or an ``int`` count — of the matches.
             seed: Seed for ``sample``, for a reproducible subset.

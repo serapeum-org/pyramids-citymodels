@@ -64,7 +64,10 @@ Subset (parse-time), bundled as an
   (proving it outside would mean decoding the geometry this is meant to skip), so the bbox result
   is a *superset* of the exact selection. Refine it with `FeatureCollection.clip_by_rect(...)`
   downstream for an exact clip. (3D Tiles instead prunes whole tile subtrees whose bounding volume
-  misses the bbox, then filters the decoded features by their exact footprint extent.)
+  misses the bbox, then filters the decoded features by their exact footprint extent. Its bbox is
+  in the tileset's **stored** coordinate system — commonly ECEF metres, since the 3D Tiles reader
+  does not reproject — not a lon/lat or projected CRS, so a wrong-frame bbox silently selects
+  nothing.)
 - `exclude` — the **negation**: ids/types/attributes whose match *drops* an object (a mapping of
   `ids`/`types`/`attributes`, an `ObjectFilter`, or a lone id / iterable of ids). "Keep X but not
   Y." Metadata only — a `bbox`/`sample` inside an `exclude` is ignored.
