@@ -95,7 +95,9 @@ Projection (flatten-time):
 
 ```python
 # Read only two buildings, as footprints, straight into a FeatureCollection:
-features = CityJsonDriver().read("city.city.json", ids=["B1", "B2"], strategy="footprint")
+features = CityJsonDriver().read(
+    "city.city.json", ids=["B1", "B2"], strategy="footprint"
+)
 ```
 
 A surface geometry is a planar polygon in 3D: a **vertical wall is non-areal in the XY plane** by
