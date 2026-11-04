@@ -298,6 +298,31 @@ class ObjectFilter:
         sample: Thin the surviving objects to a random subset — a ``float`` fraction of them or an
             ``int`` maximum count — or ``None`` to keep them all.
         seed: Seed for the ``sample`` draw, for a reproducible subset; ``None`` draws freshly.
+
+    Examples:
+        - Keep only tall Buildings — a type test plus a CQL2-style attribute predicate:
+            >>> keep = ObjectFilter.coerce(
+            ...     types="Building", attributes={"measuredHeight": {"ge": 10}}
+            ... )
+            >>> keep.matches("b1", "Building", {"measuredHeight": 12.0})
+            True
+            >>> keep.matches("b2", "Building", {"measuredHeight": 4.0})
+            False
+
+        - Keep two types but drop one of them again with ``exclude`` (negation):
+            >>> f = ObjectFilter.coerce(
+            ...     types=["Building", "Bridge"], exclude={"types": "Bridge"}
+            ... )
+            >>> sorted(f.types)
+            ['Bridge', 'Building']
+            >>> f.matches("x", "Building", {})
+            True
+            >>> f.matches("y", "Bridge", {})
+            False
+
+        - An empty filter coerces to ``None`` (nothing to test, so the reader keeps everything):
+            >>> ObjectFilter.coerce() is None
+            True
     """
 
     ids: "frozenset[str] | None" = None
