@@ -457,7 +457,9 @@ def test_attribute_all_operator_key_dict_is_a_predicate_with_an_escape_hatch() -
     # The documented footgun (review L2): a literal value whose keys are ALL operator names is read
     # as a predicate, so it is not matched by a bare ==; wrap it to match such a value literally.
     assert not _attribute_matches({"eq": 1}, {"eq": 1})  # read as a predicate, not ==
-    assert _attribute_matches({"eq": 1}, {"eq": {"eq": 1}})  # escape hatch matches the literal
+    assert _attribute_matches(
+        {"eq": 1}, {"eq": {"eq": 1}}
+    )  # escape hatch matches the literal
     assert not _attribute_matches({"eq": 2}, {"eq": {"eq": 1}})
 
 
