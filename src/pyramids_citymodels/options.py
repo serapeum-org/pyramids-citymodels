@@ -355,13 +355,14 @@ class ObjectFilter:
         ``frozen=True`` advertises hashability, but the auto-generated hash would raise on the
         ``attributes`` ``dict``. Equal filters carry equal ``attributes`` (hence equal keys), so
         hashing the *sorted keys* (not the values, which may themselves be predicate mappings) keeps
-        the ``a == b implies hash(a) == hash(b)`` contract while staying safe to compute.
+        the ``a == b implies hash(a) == hash(b)`` contract while staying safe to compute. Keys are
+        stringified before sorting so a caller's mixed-type keys never raise on the ``<`` comparison.
         """
         return hash(
             (
                 self.ids,
                 self.types,
-                tuple(sorted(self.attributes)),
+                tuple(sorted(map(str, self.attributes))),
                 self.bbox,
                 self.exclude,
                 self.sample,

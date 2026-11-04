@@ -57,6 +57,14 @@ def test_object_filter_is_hashable_and_consistent_with_equality() -> None:
     assert len({a, ObjectFilter.coerce(ids="x")}) == 2  # distinct filters coexist
 
 
+def test_object_filter_hash_tolerates_mixed_type_attribute_keys() -> None:
+    # Attribute keys are documented str, but a caller may pass mixed/non-sortable keys; hashing must
+    # not raise on sorting them (review R2-L3).
+    f = ObjectFilter.coerce(attributes={1: "x", "a": "y"})
+    assert isinstance(hash(f), int)
+    assert hash(f) == hash(ObjectFilter.coerce(attributes={1: "x", "a": "y"}))
+
+
 def test_coerce_returns_none_when_no_criterion() -> None:
     assert ObjectFilter.coerce() is None
     assert ObjectFilter.coerce(ids=None, types=None, attributes=None) is None
