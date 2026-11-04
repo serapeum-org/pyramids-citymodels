@@ -22,7 +22,7 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored 
 import operator
 import random
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -161,14 +161,6 @@ _COMPARISON_OPERATORS = {
     "lt": operator.lt,
     "le": operator.le,
 }
-#: Every operator key a predicate mapping may use. A mapping whose keys are *all* in this set is
-#: read as a predicate; any other mapping is compared for literal equality — so a city object whose
-#: attribute value is itself a JSON object is matchable by ``==`` *unless every one of its keys is an
-#: operator name* (e.g. a literal ``{"eq": 1}`` is read as a predicate, not matched by equality; wrap
-#: it as ``{"eq": {"eq": 1}}`` to match such a value literally).
-_PREDICATE_OPERATORS = frozenset(
-    {"eq", "ne", "in", "nin", "not_in", "like", "between", *_COMPARISON_OPERATORS}
-)
 
 
 def _like_to_regex(pattern: str) -> "re.Pattern[str]":
@@ -196,51 +188,94 @@ def _like_to_regex(pattern: str) -> "re.Pattern[str]":
     return re.compile("".join(out), re.IGNORECASE | re.DOTALL)
 
 
+def _guarded_comparison(
+    func: "Callable[[Any, Any], bool]",
+) -> "Callable[[Any, Any], bool]":
+    """Wrap an ordering comparison so an unorderable pair (e.g. a missing value) is a non-match."""
+
+    def apply(actual: Any, operand: Any) -> bool:
+        try:
+            return bool(func(actual, operand))
+        except TypeError:
+            return False
+
+    return apply
+
+
+def _members(operand: Any) -> Any:
+    """A lone string operand is one member (not its characters); other operands are taken as given."""
+    return [operand] if isinstance(operand, str) else operand
+
+
+def _op_in(actual: Any, operand: Any) -> bool:
+    """Membership: ``actual`` is one of ``operand``; a non-iterable operand cannot be satisfied."""
+    try:
+        return actual in _members(operand)
+    except TypeError:
+        return False
+
+
+def _op_nin(actual: Any, operand: Any) -> bool:
+    """Non-membership; a non-iterable operand leaves membership indeterminate, so keep conservatively."""
+    try:
+        return actual not in _members(operand)
+    except TypeError:
+        return True
+
+
+def _op_between(actual: Any, operand: Any) -> bool:
+    """Inclusive range ``low <= actual <= high``; a malformed/unorderable operand is a non-match."""
+    try:
+        low, high = operand
+        return bool(low <= actual <= high)
+    except (TypeError, ValueError):
+        return False
+
+
+def _op_like(actual: Any, operand: Any) -> bool:
+    """SQL/CQL2 ``LIKE``; a missing (``None``) value is a non-match, never ``str(None)``."""
+    if actual is None:
+        return False
+    return _like_to_regex(str(operand)).fullmatch(str(actual)) is not None
+
+
+#: Each predicate operator mapped to a ``(actual, operand) -> bool`` handler. ``_apply_operator``
+#: is a thin dispatch over this, so adding an operator is adding one entry.
+_OPERATOR_HANDLERS: "dict[str, Callable[[Any, Any], bool]]" = {
+    "eq": lambda actual, operand: bool(actual == operand),
+    "ne": lambda actual, operand: bool(actual != operand),
+    "in": _op_in,
+    "nin": _op_nin,
+    "not_in": _op_nin,
+    "between": _op_between,
+    "like": _op_like,
+    **{name: _guarded_comparison(func) for name, func in _COMPARISON_OPERATORS.items()},
+}
+#: Every operator key a predicate mapping may use. A mapping whose keys are *all* in this set is
+#: read as a predicate; any other mapping is compared for literal equality — so a city object whose
+#: attribute value is itself a JSON object is matchable by ``==`` *unless every one of its keys is an
+#: operator name* (e.g. a literal ``{"eq": 1}`` is read as a predicate, not matched by equality; wrap
+#: it as ``{"eq": {"eq": 1}}`` to match such a value literally).
+_PREDICATE_OPERATORS = frozenset(_OPERATOR_HANDLERS)
+
+
 def _apply_operator(op: str, actual: Any, operand: Any) -> bool:
     """Evaluate one predicate operator against an object's actual attribute value.
 
-    A comparison whose operands are not orderable (e.g. a missing attribute, ``None``, compared with
-    ``>``) is a non-match rather than an error, so a predicate never raises on heterogeneous data.
+    Dispatches to the operator's handler in :data:`_OPERATOR_HANDLERS`. A comparison whose operands
+    are not orderable (e.g. a missing attribute, ``None``, compared with ``>``) is a non-match rather
+    than an error, so a predicate never raises on heterogeneous data.
 
     Raises:
         ValueError: If ``op`` is not a recognized operator.
     """
-    if op == "eq":
-        return bool(actual == operand)
-    if op == "ne":
-        return bool(actual != operand)
-    if op in _COMPARISON_OPERATORS:
-        try:
-            return bool(_COMPARISON_OPERATORS[op](actual, operand))
-        except TypeError:
-            return False
-    if op in ("in", "nin", "not_in"):
-        # A lone string operand is one member, not a sequence of characters, so membership is an
-        # equality test against it — never a substring match (``"res" in "residential"``).
-        members = [operand] if isinstance(operand, str) else operand
-        try:
-            present = actual in members
-        except TypeError:
-            # A non-iterable operand (a typo) leaves membership indeterminate: ``in`` cannot be
-            # satisfied, but ``nin`` keeps conservatively rather than silently emptying the result.
-            return op != "in"
-        return present if op == "in" else not present
-    if op == "between":
-        try:
-            low, high = operand
-            return bool(low <= actual <= high)
-        except (TypeError, ValueError):
-            return False
-    if op == "like":
-        # A missing attribute is a non-match, consistent with every other operator — never
-        # stringify ``None`` to ``"None"`` and pattern-match that.
-        if actual is None:
-            return False
-        return _like_to_regex(str(operand)).fullmatch(str(actual)) is not None
-    raise ValueError(
-        f"unknown attribute predicate operator {op!r}; expected one of "
-        f"{', '.join(sorted(_PREDICATE_OPERATORS))}"
-    )
+    handler = _OPERATOR_HANDLERS.get(op)
+    if handler is None:
+        raise ValueError(
+            f"unknown attribute predicate operator {op!r}; expected one of "
+            f"{', '.join(sorted(_PREDICATE_OPERATORS))}"
+        )
+    return handler(actual, operand)
 
 
 def _attribute_matches(actual: Any, expected: Any) -> bool:
