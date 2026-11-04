@@ -25,7 +25,7 @@ from pyramids_citymodels.options import (
 )
 from pyramids_citymodels.readers import threedtiles as td
 from pyramids_citymodels.readers.citygml import parse_citygml
-from pyramids_citymodels.readers.cityjson import parse_cityjson
+from pyramids_citymodels.readers.cityjson import _extent_2d, parse_cityjson
 from pyramids_citymodels.readers.threedtiles import (
     _bounding_volume_extent,
     _geometry_extent_2d,
@@ -224,6 +224,11 @@ def test_coerce_rejects_a_non_four_number_bbox() -> None:
         ObjectFilter.coerce(bbox=(0, 0, 10))
 
 
+def test_coerce_rejects_a_non_numeric_bbox() -> None:
+    with pytest.raises(ValueError, match="four numbers"):
+        ObjectFilter.coerce(bbox=("a", "b", "c", "d"))
+
+
 def test_rejects_extent_only_on_a_proven_miss() -> None:
     box = ObjectFilter.coerce(bbox=(0, 0, 10, 10))
     assert box.rejects_extent((20, 20, 30, 30))  # disjoint
@@ -233,6 +238,17 @@ def test_rejects_extent_only_on_a_proven_miss() -> None:
     assert not ObjectFilter.coerce(ids="a").rejects_extent(
         (99, 99, 100, 100)
     )  # no bbox
+
+
+def test_extent_2d_normalizes_6_and_4_value_extents() -> None:
+    assert _extent_2d([0, 1, 2, 10, 11, 12]) == (0.0, 1.0, 10.0, 11.0)  # 6-value
+    assert _extent_2d([0, 1, 10, 11]) == (0.0, 1.0, 10.0, 11.0)  # 4-value
+
+
+def test_extent_2d_is_none_for_short_or_non_numeric() -> None:
+    assert _extent_2d([0, 1, 2]) is None  # too short
+    assert _extent_2d("not a list") is None
+    assert _extent_2d(["a", "b", "c", "d"]) is None  # non-numeric
 
 
 def test_cityjson_bbox_skips_only_proven_outside_objects() -> None:
@@ -251,6 +267,36 @@ def test_cityjson_bbox_combines_with_type() -> None:
 def test_citygml_bbox_skips_proven_outside_features() -> None:
     model = parse_citygml(_BBOX_CITYGML, ObjectFilter.coerce(bbox=(0, 0, 20, 20)))
     assert set(model.objects) == {"near"}  # 'far' envelope is disjoint
+
+
+def _citygml_with_envelope(corners: str) -> str:
+    """One Building gml:id='M' whose gml:Envelope body is ``corners`` (possibly malformed)."""
+    return f"""<core:CityModel
+      xmlns:core="http://www.opengis.net/citygml/2.0"
+      xmlns:bldg="http://www.opengis.net/citygml/building/2.0"
+      xmlns:gml="http://www.opengis.net/gml">
+      <core:cityObjectMember><bldg:Building gml:id="M">
+        <gml:boundedBy><gml:Envelope srsDimension="3">{corners}</gml:Envelope></gml:boundedBy>
+      </bldg:Building></core:cityObjectMember>
+    </core:CityModel>"""
+
+
+@pytest.mark.parametrize(
+    "corners",
+    [
+        "<gml:lowerCorner>0 0 0</gml:lowerCorner>",  # upperCorner missing
+        "<gml:lowerCorner>a b c</gml:lowerCorner><gml:upperCorner>d e f</gml:upperCorner>",  # non-numeric
+        "<gml:lowerCorner>0</gml:lowerCorner><gml:upperCorner>1</gml:upperCorner>",  # 1-D corners
+    ],
+)
+def test_citygml_malformed_envelope_keeps_the_feature(corners: str) -> None:
+    # A half-read / non-numeric / 1-D envelope yields no usable extent, so the conservative
+    # prefilter keeps the feature rather than pruning it on a bbox it cannot prove it misses.
+    model = parse_citygml(
+        _citygml_with_envelope(corners),
+        ObjectFilter.coerce(bbox=(1000, 1000, 1010, 1010)),
+    )
+    assert set(model.objects) == {"M"}
 
 
 def test_cityjson_driver_bbox_keyword() -> None:
@@ -345,6 +391,24 @@ def test_attribute_comparison_on_missing_value_is_a_non_match_not_error() -> Non
     # A predicate must never raise on heterogeneous/absent data — it just fails to match.
     assert not _attribute_matches(None, {"ge": 10})
     assert not _attribute_matches("text", {"gt": 10})
+
+
+def test_attribute_eq_operator_explicitly() -> None:
+    # The explicit {"eq": ...} spelling is equivalent to a bare scalar.
+    assert _attribute_matches("residential", {"eq": "residential"})
+    assert not _attribute_matches("commercial", {"eq": "residential"})
+
+
+def test_attribute_membership_on_a_non_iterable_operand_is_a_non_match() -> None:
+    # `in` / `nin` against a non-iterable operand must not raise — it is simply no match.
+    assert not _apply_operator("in", "x", 5)
+    assert not _apply_operator("nin", "x", 5)
+
+
+def test_attribute_between_on_a_malformed_operand_is_a_non_match() -> None:
+    # A `between` whose operand is not a [low, high] pair, or is incomparable, never raises.
+    assert not _apply_operator("between", 5, [1, 2, 3])  # not unpackable to two
+    assert not _apply_operator("between", "x", [None, None])  # incomparable
 
 
 def test_attribute_literal_dict_is_still_matched_by_equality() -> None:
@@ -509,6 +573,12 @@ def test_bounding_volume_extent_is_none_for_region_or_sphere() -> None:
         is None
     )
     assert _bounding_volume_extent({"boundingVolume": {}}, np.eye(4)) is None
+
+
+def test_bounding_volume_extent_is_none_for_a_non_numeric_box() -> None:
+    # A malformed box (12 entries but not numbers) is treated as "no placeable volume", not an error.
+    tile = {"boundingVolume": {"box": ["x"] * 12}}
+    assert _bounding_volume_extent(tile, np.eye(4)) is None
 
 
 def test_subtree_pruned_only_for_zup_box_proven_outside() -> None:
