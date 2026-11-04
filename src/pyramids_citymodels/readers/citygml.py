@@ -417,21 +417,25 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
     # bbox prefilter (dropped only when the feature's own gml:Envelope proves it outside; one with
     # no envelope is kept and refined downstream) before any polygon is parsed (feature #5, #32). An
     # anonymous feature (no gml:id) is matched on an empty id, so an id filter naturally excludes it.
+    # Each feature's attributes are collected once here and reused both for the selector's
+    # attribute test and when building the CityObject below, so a kept feature is never scanned
+    # twice.
     candidates: list[tuple[ElementTree.Element, str | None]] = []
+    attributes_by_element: dict[ElementTree.Element, dict[str, Any]] = {}
     for element in root.iter():
         if _local(element.tag) not in ("Building", "BuildingPart"):
             continue
         gml_identifier = _gml_id(element)
+        attributes = _collect_building_attributes(element)
         if selector is not None:
             if not selector.matches(
-                gml_identifier or "",
-                _local(element.tag),
-                _collect_building_attributes(element),
+                gml_identifier or "", _local(element.tag), attributes
             ):
                 continue
             if selector.rejects_extent(_feature_envelope(element)):
                 continue
         candidates.append((element, gml_identifier))
+        attributes_by_element[element] = attributes
 
     # Thin the survivors by any random sample, keyed on document position so an anonymous feature
     # participates too; the anonymous counter then advances only for kept features (in document
@@ -457,7 +461,7 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
         city_object = CityObject(
             id=identifier,
             type=_local(element.tag),
-            attributes=_collect_building_attributes(element),
+            attributes=attributes_by_element[element],
             parents=[parent_feature_id] if parent_feature_id else [],
         )
         model.objects[identifier] = city_object
