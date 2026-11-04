@@ -535,7 +535,7 @@ class ObjectFilter:
         bxmin, bymin, bxmax, bymax = self.bbox
         return exmax < bxmin or exmin > bxmax or eymax < bymin or eymin > bymax
 
-    def sample_ids(self, ids: "Sequence[Any] | Iterable[Any]") -> set:
+    def sample_ids(self, ids: "Sequence[Any] | Iterable[Any]") -> "set[Any]":
         """Draw the random subset of already-matched object keys this filter keeps.
 
         Applies :attr:`sample` to the keys of the objects that already passed :meth:`matches` and
