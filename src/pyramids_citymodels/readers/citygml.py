@@ -439,7 +439,8 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
 
     # Thin the survivors by any random sample, keyed on document position so an anonymous feature
     # participates too; the anonymous counter then advances only for kept features (in document
-    # order), keeping their synthesized ids stable.
+    # order). Synthesized ids are therefore stable for a *given* selector, but not across selectors
+    # — a different sample/bbox can renumber an anonymous feature (which has no source identity).
     if selector is None:
         kept_positions = set(range(len(candidates)))
     else:
