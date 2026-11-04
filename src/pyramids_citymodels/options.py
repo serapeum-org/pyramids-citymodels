@@ -160,8 +160,10 @@ _COMPARISON_OPERATORS = {
     "le": operator.le,
 }
 #: Every operator key a predicate mapping may use. A mapping whose keys are *all* in this set is
-#: read as a predicate; any other mapping is compared for literal equality (so a city object whose
-#: attribute value is itself a JSON object is still matchable by ``==``).
+#: read as a predicate; any other mapping is compared for literal equality — so a city object whose
+#: attribute value is itself a JSON object is matchable by ``==`` *unless every one of its keys is an
+#: operator name* (e.g. a literal ``{"eq": 1}`` is read as a predicate, not matched by equality; wrap
+#: it as ``{"eq": {"eq": 1}}`` to match such a value literally).
 _PREDICATE_OPERATORS = frozenset(
     {"eq", "ne", "in", "nin", "not_in", "like", "between", *_COMPARISON_OPERATORS}
 )
