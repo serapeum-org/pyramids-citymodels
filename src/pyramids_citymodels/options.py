@@ -57,8 +57,12 @@ def _as_str_set(value: Any) -> "frozenset[str] | None":
     """Coerce an id/type criterion to a ``frozenset[str]``, or ``None`` when empty.
 
     A lone ``str`` is one member (not a set of its characters); any other iterable is taken
-    member-wise. An empty value (``None``, ``""``, ``[]``) becomes ``None`` — "do not filter on
-    this" — so an empty criterion never silently rejects every object.
+    member-wise. An empty value (``None``, ``[]``) becomes ``None`` — "do not filter on this" — so
+    an empty criterion never silently rejects every object.
+
+    Raises:
+        ValueError: If ``value`` is neither ``None``, a string, nor an iterable of items — mirroring
+            the curated errors ``bbox``/``sample`` raise, rather than a bare ``TypeError``.
 
     Examples:
         >>> _as_str_set("Building")
@@ -70,9 +74,14 @@ def _as_str_set(value: Any) -> "frozenset[str] | None":
     """
     if value is None:
         return None
-    members = frozenset(
-        {value} if isinstance(value, str) else (str(item) for item in value)
-    )
+    if isinstance(value, str):
+        return frozenset({value}) or None
+    try:
+        members = frozenset(str(item) for item in value)
+    except TypeError as error:
+        raise ValueError(
+            f"ids/types must be a string or an iterable of strings, got {value!r}"
+        ) from error
     return members or None
 
 

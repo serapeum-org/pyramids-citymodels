@@ -67,6 +67,15 @@ def test_coerce_treats_empty_iterables_as_no_filter() -> None:
     assert ObjectFilter.coerce(ids=[], types=[], attributes={}) is None
 
 
+def test_coerce_rejects_a_non_iterable_ids_or_types() -> None:
+    # A non-iterable, non-string ids/types gives a curated ValueError, like bbox/sample — not a
+    # bare TypeError (review N1).
+    with pytest.raises(ValueError, match="iterable of strings"):
+        ObjectFilter.coerce(ids=0)
+    with pytest.raises(ValueError, match="iterable of strings"):
+        ObjectFilter.coerce(types=5)
+
+
 def test_coerce_accepts_a_lone_string_as_one_member() -> None:
     selector = ObjectFilter.coerce(types="Building")
     assert selector is not None
