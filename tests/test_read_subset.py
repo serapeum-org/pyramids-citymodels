@@ -47,6 +47,16 @@ TILESET = DATA / "tileset.json"
 # --- ObjectFilter value object ------------------------------------------------------------------
 
 
+def test_object_filter_is_hashable_and_consistent_with_equality() -> None:
+    # frozen=True advertises hashability; a dict field must not make hash() raise (review L1).
+    a = ObjectFilter.coerce(types="Building", attributes={"h": {"ge": 10}})
+    b = ObjectFilter.coerce(types="Building", attributes={"h": {"ge": 10}})
+    assert a == b
+    assert hash(a) == hash(b)  # equal objects hash equal
+    assert len({a, b}) == 1  # usable as a set member / dict key
+    assert len({a, ObjectFilter.coerce(ids="x")}) == 2  # distinct filters coexist
+
+
 def test_coerce_returns_none_when_no_criterion() -> None:
     assert ObjectFilter.coerce() is None
     assert ObjectFilter.coerce(ids=None, types=None, attributes=None) is None

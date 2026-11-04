@@ -336,6 +336,26 @@ class ObjectFilter:
     sample: "int | float | None" = None
     seed: int | None = None
 
+    def __hash__(self) -> int:
+        """Hash the filter by its hashable projection, consistent with equality.
+
+        ``frozen=True`` advertises hashability, but the auto-generated hash would raise on the
+        ``attributes`` ``dict``. Equal filters carry equal ``attributes`` (hence equal keys), so
+        hashing the *sorted keys* (not the values, which may themselves be predicate mappings) keeps
+        the ``a == b implies hash(a) == hash(b)`` contract while staying safe to compute.
+        """
+        return hash(
+            (
+                self.ids,
+                self.types,
+                tuple(sorted(self.attributes)),
+                self.bbox,
+                self.exclude,
+                self.sample,
+                self.seed,
+            )
+        )
+
     @classmethod
     def coerce(
         cls,
