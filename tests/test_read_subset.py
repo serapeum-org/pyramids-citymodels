@@ -374,6 +374,15 @@ def test_attribute_predicate_in_and_not_in() -> None:
     assert _attribute_matches("industrial", {"nin": ["residential", "commercial"]})
 
 
+def test_attribute_in_with_a_string_operand_is_membership_not_substring() -> None:
+    # A lone string operand is one member, not a substring test: "res" is NOT in ["residential"]
+    # (review L3 — otherwise a typo'd {"in": "residential"} silently substring-matches).
+    assert not _apply_operator("in", "res", "residential")
+    assert _apply_operator("in", "residential", "residential")
+    assert _apply_operator("nin", "res", "residential")
+    assert not _apply_operator("nin", "residential", "residential")
+
+
 def test_attribute_predicate_like() -> None:
     assert _attribute_matches("residential", {"like": "resid%"})
     assert _attribute_matches("B1", {"like": "B_"})

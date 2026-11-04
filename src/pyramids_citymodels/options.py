@@ -201,16 +201,15 @@ def _apply_operator(op: str, actual: Any, operand: Any) -> bool:
             return bool(_COMPARISON_OPERATORS[op](actual, operand))
         except TypeError:
             return False
-    if op == "in":
+    if op in ("in", "nin", "not_in"):
+        # A lone string operand is one member, not a sequence of characters, so membership is an
+        # equality test against it — never a substring match (``"res" in "residential"``).
+        members = [operand] if isinstance(operand, str) else operand
         try:
-            return actual in operand
+            present = actual in members
         except TypeError:
             return False
-    if op in ("nin", "not_in"):
-        try:
-            return actual not in operand
-        except TypeError:
-            return False
+        return present if op == "in" else not present
     if op == "between":
         try:
             low, high = operand
