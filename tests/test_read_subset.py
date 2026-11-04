@@ -29,7 +29,7 @@ from pyramids_citymodels.readers.cityjson import _extent_2d, parse_cityjson
 from pyramids_citymodels.readers.threedtiles import (
     _bounding_volume_extent,
     _geometry_extent_2d,
-    _subtree_outside_bbox,
+    _tile_content_outside_bbox,
     parse_3dtiles,
 )
 
@@ -675,46 +675,50 @@ def test_bounding_volume_extent_is_none_for_a_non_numeric_box() -> None:
     assert _bounding_volume_extent(tile, np.eye(4)) is None
 
 
-def test_subtree_pruned_when_box_proven_outside() -> None:
+def test_tile_content_skipped_when_box_proven_outside() -> None:
     # The box bounding volume is z-up in tile space regardless of gltfUpAxis, and footprints reach
-    # the same z-up world frame, so pruning is valid for any up-axis — not gated on z-up (review M1).
+    # the same z-up world frame, so the tile's own content decode is skipped for any up-axis — not
+    # gated on z-up (review R1-M1). It gates only this tile's content, never its children (R2-M1).
     tile = {"boundingVolume": {"box": [0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 10]}}
     far = ObjectFilter.coerce(bbox=(100, 100, 110, 110))
     near = ObjectFilter.coerce(bbox=(0, 0, 5, 5))
-    assert _subtree_outside_bbox(tile, np.eye(4), far)  # disjoint -> prune
-    assert not _subtree_outside_bbox(tile, np.eye(4), near)  # overlaps -> keep
-    assert not _subtree_outside_bbox(tile, np.eye(4), None)  # no selector -> keep
-    assert not _subtree_outside_bbox(
+    assert _tile_content_outside_bbox(tile, np.eye(4), far)  # disjoint -> skip content
+    assert not _tile_content_outside_bbox(tile, np.eye(4), near)  # overlaps -> decode
+    assert not _tile_content_outside_bbox(
+        tile, np.eye(4), None
+    )  # no selector -> decode
+    assert not _tile_content_outside_bbox(
         {"boundingVolume": {"region": [0] * 6}}, np.eye(4), far
-    )  # non-box volume -> cannot place -> keep
+    )  # non-box volume -> cannot place -> decode
+
+
+def _stub_feature(footprint: list[tuple[float, float]]) -> "list[CityObject]":
+    """A one-feature decode result with the given footprint ring (geometry otherwise irrelevant)."""
+    return [
+        CityObject(
+            id="f",
+            type="Building",
+            geometries=[
+                Geometry(type="MultiSurface", lod=None, boundaries=[[footprint]])
+            ],
+        )
+    ]
 
 
 @pytest.mark.parametrize("up_axis", ["Y", "Z", "X"])
-def test_bbox_prunes_subtree_before_decoding_content(
+def test_bbox_skips_disjoint_tile_content_before_decoding(
     up_axis: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Prove the bbox is a real prefilter for ANY up-axis (including the Y-up default — review M1): a
-    # disjoint subtree's b3dm is never decoded. Stub the tile decode so a feature is produced
-    # regardless of geometry, then assert the stub is not called when the subtree is pruned.
+    # Prove the bbox is a real prefilter for ANY up-axis (including the Y-up default — review R1-M1):
+    # a disjoint tile's b3dm is never decoded. Stub the decode so a feature is produced regardless of
+    # geometry, then assert the stub is not called when the tile's content is skipped.
     calls: list[str] = []
 
     def fake_parse(
         data: bytes, transform: object, axis: object = "Y", source_id: str = ""
     ) -> list[CityObject]:
         calls.append(source_id)
-        return [
-            CityObject(
-                id="f",
-                type="Building",
-                geometries=[
-                    Geometry(
-                        type="MultiSurface",
-                        lod=None,
-                        boundaries=[[[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0)]]],
-                    )
-                ],
-            )
-        ]
+        return _stub_feature([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0)])
 
     monkeypatch.setattr(td, "_parse_b3dm_tile", fake_parse)
     (tmp_path / "tile.b3dm").write_bytes(b"b3dm" + b"\x00" * 8)
@@ -731,9 +735,56 @@ def test_bbox_prunes_subtree_before_decoding_content(
     path.write_text(json.dumps(tileset), encoding="utf-8")
 
     pruned = parse_3dtiles(path, ObjectFilter.coerce(bbox=(100, 100, 110, 110)))
-    assert calls == []  # subtree bounding volume is disjoint -> never decoded
+    assert calls == []  # the tile's bounding volume is disjoint -> never decoded
     assert pruned.objects == {}
 
     kept = parse_3dtiles(path)  # no bbox -> content is decoded
     assert calls  # the stub ran this time
     assert set(kept.objects) == {"f"}
+
+
+def test_bbox_keeps_a_child_whose_box_escapes_a_disjoint_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 3D Tiles does not require a child's bounding volume to nest inside its parent's (notably under
+    # REPLACE refinement), so the prefilter must gate only each TILE's own content — never skip a
+    # whole subtree on an ancestor box. Here the parent box is disjoint from the bbox but the child's
+    # box and content are inside it; the child must still be decoded and kept (review R2-M1).
+    calls: list[str] = []
+
+    def fake_parse(
+        data: bytes, transform: object, axis: object = "Y", source_id: str = ""
+    ) -> list[CityObject]:
+        calls.append(source_id)
+        return _stub_feature([(1.0, 1.0), (2.0, 1.0), (2.0, 2.0), (1.0, 1.0)])
+
+    monkeypatch.setattr(td, "_parse_b3dm_tile", fake_parse)
+    (tmp_path / "child.b3dm").write_bytes(b"b3dm" + b"\x00" * 8)
+    tileset = {
+        "asset": {"version": "1.0"},
+        "geometricError": 1.0,
+        "root": {
+            "boundingVolume": {
+                "box": [1000, 1000, 0, 10, 0, 0, 0, 10, 0, 0, 0, 10]
+            },  # far
+            "geometricError": 1.0,
+            "refine": "REPLACE",
+            "children": [
+                {
+                    "boundingVolume": {
+                        "box": [0, 0, 0, 10, 0, 0, 0, 10, 0, 0, 0, 10]
+                    },  # near
+                    "geometricError": 0.0,
+                    "content": {"uri": "child.b3dm"},
+                }
+            ],
+        },
+    }
+    path = tmp_path / "tileset.json"
+    path.write_text(json.dumps(tileset), encoding="utf-8")
+
+    model = parse_3dtiles(path, ObjectFilter.coerce(bbox=(0, 0, 5, 5)))
+    assert (
+        calls
+    )  # the child was decoded even though the parent box is disjoint from the bbox
+    assert set(model.objects) == {"f"}  # its footprint (1,1)-(2,2) is inside the bbox

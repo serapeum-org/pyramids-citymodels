@@ -125,23 +125,29 @@ def _bounding_volume_extent(
     )
 
 
-def _subtree_outside_bbox(
+def _tile_content_outside_bbox(
     tile: dict[str, Any],
     transform: np.ndarray,
     selector: "ObjectFilter | None",
 ) -> bool:
-    """Whether a whole tile subtree can be pruned because its bounding volume misses the bbox.
+    """Whether a tile's *own* content decode can be skipped because its bounding volume misses the bbox.
 
-    The genuine 3D Tiles bbox *prefilter*: a tile's bounding volume encloses all of its descendants,
-    so if it is disjoint from the query bbox the entire subtree can be skipped without decoding a
-    single ``b3dm``. This fires for **any** ``gltfUpAxis``: a ``box`` bounding volume is defined in
-    the tile's (z-up) coordinate frame regardless of the up-axis — the up-axis rotation applies only
-    to glTF *content* — and the decoded footprints are brought to that same z-up world frame via
+    The 3D Tiles bbox *prefilter*: a tile's bounding volume encloses the tile's own content, so if it
+    is disjoint from the query bbox this tile's ``b3dm`` need not be decoded — its footprints are all
+    outside. This gates **only the tile's own content**, never its children: 3D Tiles does not require
+    a child's bounding volume to nest inside its parent's (notably under ``"refine": "REPLACE"``), so
+    the walker still recurses into children, each judged on its own box. Skipping a whole subtree on
+    an ancestor box could silently drop an in-bbox descendant, breaking the conservative-superset
+    contract.
+
+    It fires for **any** ``gltfUpAxis``: a ``box`` bounding volume is defined in the tile's (z-up)
+    coordinate frame regardless of the up-axis — the up-axis rotation applies only to glTF *content* —
+    and the decoded footprints are brought to that same z-up world frame via
     ``tile_transform @ _up_axis_to_zup(up_axis)``, so the transformed box extent and the footprints
-    share the XY plane. Pruning is conservative only in that it requires a bbox and a ``box`` volume
-    this reader can place: a ``region``/``sphere`` volume yields no extent, so the subtree is walked
-    and the exact per-feature footprint test catches anything outside. A subtree is never pruned on
-    a volume the reader cannot place.
+    share the XY plane. It is conservative in that it requires a bbox and a ``box`` volume this reader
+    can place: a ``region``/``sphere`` volume yields no extent, so the content is decoded and the exact
+    per-feature footprint test catches anything outside. Content is never skipped on a volume the
+    reader cannot place.
     """
     if selector is None or selector.bbox is None:
         return False
@@ -739,16 +745,19 @@ def _walk_tileset(
 
     ``counter`` is a single-element list used as a running tile index, so each decoded content file
     gets a distinct ``source_id`` for its generated feature ids across the whole walk. When
-    ``selector`` carries a bbox, a subtree whose bounding volume is disjoint from it is pruned —
-    not decoded or recursed into — as the read-time bbox prefilter (see
-    :func:`_subtree_outside_bbox`).
+    ``selector`` carries a bbox, a tile whose bounding volume is disjoint from it has its own content
+    decode skipped (the read-time bbox prefilter, see :func:`_tile_content_outside_bbox`); the walk
+    still recurses into that tile's children, since a child's bounding volume need not nest inside
+    its parent's, so skipping a whole subtree could drop an in-bbox descendant.
     """
     here = _tile_transform(tile, transform)
-    if _subtree_outside_bbox(tile, here, selector):
-        return
     content = tile.get("content") or {}
     uri = content.get("uri") or content.get("url")
-    if uri and base is not None:
+    if (
+        uri
+        and base is not None
+        and not _tile_content_outside_bbox(tile, here, selector)
+    ):
         if "://" in str(uri):
             # A content.uri may be an absolute URL; this reader resolves only local, relative
             # paths. Skip it loudly rather than turning it into a bogus local path read as empty.
