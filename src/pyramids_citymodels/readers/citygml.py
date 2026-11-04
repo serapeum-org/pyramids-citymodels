@@ -361,27 +361,20 @@ def _detect_crs(root: ElementTree.Element) -> Any:
     return None
 
 
-def _assign_feature_ids(
+def _citygml_candidate_features(
     root: ElementTree.Element, selector: "ObjectFilter | None"
-) -> "tuple[dict[ElementTree.Element, str], dict[ElementTree.Element, dict[str, Any]]]":
-    """Assign a stable id to every *kept* Building/BuildingPart, applying the read-time subset.
+) -> "tuple[list[tuple[ElementTree.Element, str | None]], dict[ElementTree.Element, dict[str, Any]]]":
+    """The Building/BuildingPart features passing the metadata + bbox subset, with their attributes.
 
-    Gathers the features that pass the metadata test (id/type/attributes) and the bbox prefilter
-    (dropped only when the feature's own ``gml:Envelope`` proves it outside; one with no envelope is
-    kept and refined downstream), before any polygon is parsed (feature #5, #32). An anonymous
-    feature (no ``gml:id``) is matched on an empty id, so an id filter naturally excludes it. Each
-    feature's attributes are collected **once** here and returned for reuse when the ``CityObject``
-    is built, so a kept feature is never scanned twice.
-
-    The survivors are thinned by any random sample, keyed on document position so an anonymous
-    feature participates too; the anonymous counter then advances only for kept features (in
-    document order). Synthesized ids are therefore stable for a *given* selector, not across
-    selectors — a different sample/bbox can renumber an anonymous feature (which has no source
-    identity).
+    A feature passes when it matches by id/type/attributes and is not proven outside the bbox by its
+    own ``gml:Envelope`` (one with no envelope is kept and refined downstream), before any polygon
+    is parsed (feature #5, #32). An anonymous feature (no ``gml:id``) is matched on an empty id, so
+    an id filter naturally excludes it. Each feature's attributes are collected **once** here and
+    returned for reuse when the ``CityObject`` is built, so a kept feature is never scanned twice.
 
     Returns:
-        ``(feature_ids, attributes_by_element)`` — the kept elements mapped to their assigned id,
-        and every candidate element mapped to its collected attributes.
+        ``(candidates, attributes_by_element)`` — the surviving ``(element, gml_id)`` pairs in
+        document order, and every candidate element mapped to its collected attributes.
     """
     candidates: list[tuple[ElementTree.Element, str | None]] = []
     attributes_by_element: dict[ElementTree.Element, dict[str, Any]] = {}
@@ -390,16 +383,32 @@ def _assign_feature_ids(
             continue
         gml_identifier = _gml_id(element)
         attributes = _collect_building_attributes(element)
-        if selector is not None:
-            if not selector.matches(
-                gml_identifier or "", _local(element.tag), attributes
-            ):
-                continue
-            if selector.rejects_extent(_feature_envelope(element)):
-                continue
+        if selector is not None and (
+            not selector.matches(gml_identifier or "", _local(element.tag), attributes)
+            or selector.rejects_extent(_feature_envelope(element))
+        ):
+            continue
         candidates.append((element, gml_identifier))
         attributes_by_element[element] = attributes
+    return candidates, attributes_by_element
 
+
+def _assign_feature_ids(
+    root: ElementTree.Element, selector: "ObjectFilter | None"
+) -> "tuple[dict[ElementTree.Element, str], dict[ElementTree.Element, dict[str, Any]]]":
+    """Assign a stable id to every *kept* Building/BuildingPart, applying the read-time subset.
+
+    Gathers the candidate features (:func:`_citygml_candidate_features`), thins them by any random
+    sample keyed on document position so an anonymous feature participates too, then assigns ids to
+    the survivors in document order. The anonymous counter advances only for kept features, so
+    synthesized ids are stable for a *given* selector, not across selectors — a different
+    sample/bbox can renumber an anonymous feature (which has no source identity).
+
+    Returns:
+        ``(feature_ids, attributes_by_element)`` — the kept elements mapped to their assigned id,
+        and every candidate element mapped to its collected attributes.
+    """
+    candidates, attributes_by_element = _citygml_candidate_features(root, selector)
     if selector is None:
         kept_positions = set(range(len(candidates)))
     else:
