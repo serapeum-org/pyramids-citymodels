@@ -495,8 +495,14 @@ def _index_polygons(
 def _resolve_polygon(
     node: ElementTree.Element, polygons_by_id: dict[str, ElementTree.Element]
 ) -> "ElementTree.Element | None":
-    """The ``gml:Polygon`` a node *is*, or the one it references via ``xlink:href``, or ``None``."""
-    if _local(node.tag) == "Polygon":
+    """The surface element a node *is* (``gml:Polygon`` or ``gml:Triangle``), or the ``xlink:href``\
+ polygon it references, or ``None``.
+
+    A boundary surface's geometry may be a ``gml:Triangle`` (a TIN patch), which has the same
+    ``exterior``/``LinearRing`` shape as a ``gml:Polygon``; it is resolved here so a triangulated
+    boundary surface keeps both its geometry and its semantic type.
+    """
+    if _local(node.tag) in _DIRECT_SURFACE_NAMES:
         return node
     referenced = _href(node)
     return polygons_by_id.get(referenced) if referenced else None

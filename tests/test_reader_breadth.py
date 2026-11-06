@@ -227,6 +227,27 @@ def test_dual_encoded_surface_is_not_double_counted() -> None:
     assert total == 1  # the dual-encoded roof is kept once
 
 
+def test_boundary_surface_made_of_triangles_is_read_with_semantics() -> None:
+    # A boundary surface whose LOD2 geometry is a gml:TriangulatedSurface/gml:Triangle (valid CityGML)
+    # must be read AND keep its semantic type — not dropped (review R2-M1: pass 1 only matched Polygon).
+    tri = (
+        "<gml:Triangle><gml:exterior><gml:LinearRing>"
+        '<gml:posList srsDimension="3">0 0 9 2 0 9 2 2 9 0 0 9</gml:posList>'
+        "</gml:LinearRing></gml:exterior></gml:Triangle>"
+    )
+    xml = (
+        f"<core:CityModel {_NS}><core:cityObjectMember><bldg:Building gml:id='B1'>"
+        "<bldg:boundedBy><bldg:RoofSurface><bldg:lod2MultiSurface>"
+        f"<gml:TriangulatedSurface><gml:trianglePatches>{tri}</gml:trianglePatches>"
+        "</gml:TriangulatedSurface></bldg:lod2MultiSurface></bldg:RoofSurface></bldg:boundedBy>"
+        "</bldg:Building></core:cityObjectMember></core:CityModel>"
+    ).replace("'", '"')
+    geometries = parse_citygml(xml).objects["B1"].geometries
+    assert len(geometries) == 1
+    assert len(geometries[0].boundaries) == 1
+    assert [surface.type for surface in geometries[0].semantics] == ["RoofSurface"]
+
+
 def test_tin_relief_triangles_are_read() -> None:
     # A TINRelief whose geometry is a gml:TriangulatedSurface of gml:Triangle patches must be read,
     # not silently dropped (review L1 — the type was advertised but only gml:Polygon was collected).
