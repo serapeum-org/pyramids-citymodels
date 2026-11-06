@@ -1,24 +1,33 @@
-"""Parse CityGML LOD2 semantic buildings into the shared IR (issue #7).
+"""Parse CityGML city objects into the shared IR (issue #7; reader breadth, feature §3).
 
-CityGML is schema-heavy GML/XML: a ``bldg:Building`` has optional ``bldg:BuildingPart`` children,
-each carrying **boundary surfaces** (``WallSurface``, ``RoofSurface``, ``GroundSurface``, …) that
-in turn carry ``gml:Polygon`` rings. This reader reconstructs that LOD2 *semantic* model —
-``Building → BuildingPart → boundary surface → polygon`` — because the raw geometry is already
-reachable through GDAL's GML driver; the semantics are what is missing (issue #1384).
+CityGML is schema-heavy GML/XML: a feature such as a ``bldg:Building`` (with optional
+``bldg:BuildingPart`` children) carries geometry either through **boundary surfaces**
+(``WallSurface``, ``RoofSurface``, ``GroundSurface``, …) that hold ``gml:Polygon`` rings, or
+**directly** on the feature in a ``lodXMultiSurface`` / ``lodXSolid`` / ``lodXGeometry`` container.
+This reader reconstructs both, because the semantics (and, for many object types, the geometry
+itself) are what is missing once a file is flattened (issue #1384).
 
 It parses with the standard-library ``xml.etree.ElementTree`` (no ``lxml``, no new dependency) and
 matches elements by **local name**, ignoring the namespace, so one code path handles CityGML 1.0
-(``.../1.0``), 2.0 (``.../2.0``) and 3.0 (``.../3.0``) rather than hardcoding a version's
-namespace URIs. A building (or part) becomes one :class:`~pyramids_citymodels.ir.Geometry` of
-type ``"MultiSurface"`` whose surfaces are its boundary polygons, each tagged with the local name
-of its boundary-surface element as the semantic ``type``. A ``BuildingPart`` becomes its own city
-object, linked to its parent building.
+(``.../1.0``), 2.0 (``.../2.0``) and 3.0 (``.../3.0``) rather than hardcoding a version's namespace
+URIs. A feature becomes one :class:`~pyramids_citymodels.ir.Geometry` of type ``"MultiSurface"``
+whose surfaces are its polygons: those under a boundary surface are tagged with that surface's local
+name as the semantic ``type`` (and the geometry is LOD 2, the semantic-surface LOD); those taken
+directly from a ``lodX`` container carry no semantic type and the geometry's LOD is read from the
+container (``lod1Solid`` → ``"1"``). A nested part (``BuildingPart`` / ``BridgePart`` /
+``TunnelPart``) becomes its own city object, linked to its parent.
+
+Beyond buildings, the reader recognizes the common top-level city objects — bridges, tunnels, city
+furniture, vegetation, water bodies, land use, relief and transportation (:data:`_CITY_OBJECT_NAMES`)
+— so a whole city file, not only its LOD2 buildings, reaches the IR.
 """
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
 import io
 import os
+import re
+from dataclasses import dataclass, field
 from typing import Any
 from xml.etree import ElementTree
 
@@ -36,7 +45,39 @@ __all__ = ["looks_like_citygml", "parse_citygml"]
 #: Default coordinate dimension assumed when a geometry declares no ``srsDimension``.
 _DEFAULT_SRS_DIMENSION = 3
 
-#: Local names of ``bldg`` boundary-surface elements that carry a semantic surface type.
+#: Local names of the top-level CityGML city objects this reader turns into city objects — buildings
+#: and their relatives across the thematic modules. A nested part (``BuildingPart`` / ``BridgePart``
+#: / ``TunnelPart``) is included so it becomes its own object linked to its parent. Boundary-surface
+#: elements (:data:`_BOUNDARY_SURFACE_NAMES`) are deliberately *not* here: they are geometry carriers
+#: of a feature, not features in their own right.
+_CITY_OBJECT_NAMES = frozenset(
+    {
+        "Building",
+        "BuildingPart",
+        "Bridge",
+        "BridgePart",
+        "Tunnel",
+        "TunnelPart",
+        "CityFurniture",
+        "SolitaryVegetationObject",
+        "PlantCover",
+        "WaterBody",
+        "LandUse",
+        "ReliefFeature",
+        "TINRelief",
+        "TransportationComplex",
+        "Road",
+        "Railway",
+        "Track",
+        "Square",
+        "GenericCityObject",
+        "CityObjectGroup",
+    }
+)
+
+#: Local names of boundary-surface elements that carry a semantic surface type — building/bridge/
+#: tunnel thematic surfaces plus the water-body ones. A polygon under one of these is tagged with
+#: the surface's local name; a polygon reached directly from a ``lodX`` container is not.
 _BOUNDARY_SURFACE_NAMES = frozenset(
     {
         "WallSurface",
@@ -48,8 +89,20 @@ _BOUNDARY_SURFACE_NAMES = frozenset(
         "CeilingSurface",
         "FloorSurface",
         "InteriorWallSurface",
+        "WaterSurface",
+        "WaterGroundSurface",
+        "WaterClosureSurface",
     }
 )
+
+#: A ``lodX...`` geometry-container local name (``lod1Solid``, ``lod2MultiSurface``, …); group 1 is
+#: the LOD digit, used to label a feature's directly-held geometry.
+_LOD_CONTAINER_RE = re.compile(r"^lod(\d)", re.IGNORECASE)
+
+#: GML surface elements read as a feature's directly-held geometry. A ``gml:Triangle`` (a TIN patch,
+#: the usual relief/terrain encoding) has the same ``exterior``/``LinearRing`` shape as a
+#: ``gml:Polygon``, so it is extracted the same way.
+_DIRECT_SURFACE_NAMES = frozenset({"Polygon", "Triangle"})
 
 #: Building attributes coerced from text to a number so the IR carries the same types the
 #: CityJSON reader does (which keeps JSON ``float``/``int``), rather than raw strings (SF5).
@@ -379,7 +432,7 @@ def _citygml_candidate_features(
     candidates: list[tuple[ElementTree.Element, str | None]] = []
     attributes_by_element: dict[ElementTree.Element, dict[str, Any]] = {}
     for element in root.iter():
-        if _local(element.tag) not in ("Building", "BuildingPart"):
+        if _local(element.tag) not in _CITY_OBJECT_NAMES:
             continue
         gml_identifier = _gml_id(element)
         attributes = _collect_building_attributes(element)
@@ -442,30 +495,135 @@ def _index_polygons(
 def _resolve_polygon(
     node: ElementTree.Element, polygons_by_id: dict[str, ElementTree.Element]
 ) -> "ElementTree.Element | None":
-    """The ``gml:Polygon`` a node *is*, or the one it references via ``xlink:href``, or ``None``."""
-    if _local(node.tag) == "Polygon":
+    """The surface element a node *is* (``gml:Polygon`` or ``gml:Triangle``), or the ``xlink:href``\
+ polygon it references, or ``None``.
+
+    A boundary surface's geometry may be a ``gml:Triangle`` (a TIN patch), which has the same
+    ``exterior``/``LinearRing`` shape as a ``gml:Polygon``; it is resolved here so a triangulated
+    boundary surface keeps both its geometry and its semantic type.
+    """
+    if _local(node.tag) in _DIRECT_SURFACE_NAMES:
         return node
     referenced = _href(node)
     return polygons_by_id.get(referenced) if referenced else None
 
 
-def _gather_boundary_surfaces(
+def _under_boundary_surface(
+    element: ElementTree.Element,
+    parent_of: dict[ElementTree.Element, ElementTree.Element],
+    feature_ids: dict[ElementTree.Element, str],
+) -> bool:
+    """Whether ``element`` sits inside a boundary-surface element, within its own feature.
+
+    Walks ancestors up to (but not past) the nearest feature; returns ``True`` if a boundary-surface
+    element is met first. Used to tell a feature's *direct* geometry (no boundary surface) from
+    geometry owned by a semantic boundary surface, which is gathered separately.
+    """
+    current = parent_of.get(element)
+    while current is not None and current not in feature_ids:
+        if _local(current.tag) in _BOUNDARY_SURFACE_NAMES:
+            return True
+        current = parent_of.get(current)
+    return False
+
+
+def _lod_from_ancestors(
+    element: ElementTree.Element,
+    parent_of: dict[ElementTree.Element, ElementTree.Element],
+    feature_ids: dict[ElementTree.Element, str],
+) -> str | None:
+    """The LOD digit of the nearest ``lodX`` container above ``element`` (within its feature), or ``None``."""
+    current = parent_of.get(element)
+    while current is not None and current not in feature_ids:
+        match = _LOD_CONTAINER_RE.match(_local(current.tag))
+        if match:
+            return match.group(1)
+        current = parent_of.get(current)
+    return None
+
+
+@dataclass
+class _SurfaceGroup:
+    """One prospective :class:`~pyramids_citymodels.ir.Geometry` — surfaces sharing a LOD + treatment.
+
+    A feature's boundary surfaces form a semantic group per LOD (the LOD read from each surface's
+    ``lodX`` container, default 2); its directly-held geometry forms one group per ``lodX`` level (no
+    semantics). Keeping them apart is what stops a coarse ``lod1Solid`` block from being merged into
+    — and relabelled as — a feature's LOD2 semantic model.
+    ``polygon_ids`` is parallel to ``boundaries`` (the source ``gml:id`` per surface) for matching
+    appearance targets.
+    """
+
+    lod: str | None
+    boundaries: list[Any] = field(default_factory=list)
+    semantics: list[SemanticSurface] = field(default_factory=list)
+    values: list[int | None] = field(default_factory=list)
+    polygon_ids: list[str | None] = field(default_factory=list)
+
+
+def _ring_key(surface: list[Any]) -> tuple[Any, ...]:
+    """A hashable key for a surface's *full* geometry (every ring), for de-duplicating dual encodings.
+
+    Two distinct ``gml:Polygon`` elements with identical coordinates (a surface encoded both under a
+    boundary surface and inline in a solid) are the same surface; object-identity (``id()``) cannot
+    see that, so geometry de-duplication keys on the rounded coordinates instead. Keying on *all*
+    rings — exterior and interior (holes) — so two surfaces that share an exterior ring but differ
+    in their holes are not wrongly collapsed (review R2-L1).
+    """
+    return tuple(
+        tuple(tuple(round(component, 9) for component in coord) for coord in ring)
+        for ring in surface
+    )
+
+
+def _accept_surface(
+    polygon: ElementTree.Element,
+    feature_id: str,
+    lod: str | None,
+    seen_ids: dict[str, set[int]],
+    seen_coords: dict[tuple[str, str | None], set[Any]],
+    *,
+    dedup_coords: bool,
+) -> list[Any] | None:
+    """Extract a valid, not-already-seen surface from ``polygon``, updating the shared de-dup state.
+
+    Returns the surface (rings) to collect, or ``None`` to skip: skipped when the polygon element was
+    already taken (by identity), when its ring is degenerate, or — only when ``dedup_coords`` (pass 2
+    direct geometry) — when a surface with the same coordinates was already collected at this
+    ``(feature, lod)``. The coordinates are always recorded so a later pass can de-dup against them.
+    """
+    if id(polygon) in seen_ids[feature_id]:
+        return None
+    seen_ids[feature_id].add(id(polygon))
+    surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
+    if not surface or len(surface[0]) < 3:
+        return None
+    key = _ring_key(surface)
+    coords = seen_coords.setdefault((feature_id, lod), set())
+    if dedup_coords and key in coords:
+        return None
+    coords.add(key)
+    return surface
+
+
+def _collect_boundary_surfaces(
     root: ElementTree.Element,
     parent_of: dict[ElementTree.Element, ElementTree.Element],
     feature_ids: dict[ElementTree.Element, str],
     polygons_by_id: dict[str, ElementTree.Element],
-) -> "dict[str, tuple[list[Any], list[SemanticSurface], list[int]]]":
-    """Collect each feature's boundary polygons (resolving ``xlink:href``), tagged by semantic type.
+    seen_ids: dict[str, set[int]],
+    seen_coords: dict[tuple[str, str | None], set[Any]],
+) -> "dict[str, dict[str, _SurfaceGroup]]":
+    """Pass 1: each feature's boundary-surface polygons, grouped per LOD and tagged semantically.
 
-    A polygon reachable from two boundary surfaces of one feature (inline in one, referenced by
-    ``xlink:href`` from another) is collected **once**, keeping the first (document-order) surface's
-    semantic type — so the seen-set is scoped to the feature, not reset per boundary surface (SF1).
+    A boundary surface's LOD is read from its ``lodX`` container (default 2, the usual
+    semantic-surface level) rather than hardcoded, so a bridge/tunnel ``lod3MultiSurface`` is not
+    mislabelled LOD 2 (review R2-L3). ``xlink:href`` geometry is resolved against ``polygons_by_id``;
+    a ``gml:Triangle`` patch is resolved like a polygon (review R2-M1). Updates the shared ``seen_*``
+    de-dup state so pass 2 can skip what is already collected.
     """
-    surfaces_by_feature: dict[
-        str, tuple[list[Any], list[SemanticSurface], list[int]]
-    ] = {identifier: ([], [], []) for identifier in feature_ids.values()}
-    seen_by_feature: dict[str, set[int]] = {
-        identifier: set() for identifier in feature_ids.values()
+    boundary_groups: dict[str, dict[str, _SurfaceGroup]] = {
+        identifier: {} for identifier in feature_ids.values()
     }
     for element in root.iter():
         local = _local(element.tag)
@@ -474,37 +632,244 @@ def _gather_boundary_surfaces(
         feature_id = _nearest_feature_id(element, parent_of, feature_ids)
         if feature_id is None:
             continue
-        boundaries, semantics, values = surfaces_by_feature[feature_id]
-        seen = seen_by_feature[feature_id]
         for node in element.iter():
             polygon = _resolve_polygon(node, polygons_by_id)
-            if polygon is None or id(polygon) in seen:
+            if polygon is None:
                 continue
-            seen.add(id(polygon))
-            surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
-            if not surface or len(surface[0]) < 3:
+            lod = _lod_from_ancestors(polygon, parent_of, feature_ids) or "2"
+            surface = _accept_surface(
+                polygon, feature_id, lod, seen_ids, seen_coords, dedup_coords=False
+            )
+            if surface is None:
                 continue
-            values.append(len(semantics))
-            semantics.append(SemanticSurface(type=local))
-            boundaries.append(surface)
-    return surfaces_by_feature
+            group = boundary_groups[feature_id].setdefault(lod, _SurfaceGroup(lod=lod))
+            group.values.append(len(group.semantics))
+            group.semantics.append(SemanticSurface(type=local))
+            group.boundaries.append(surface)
+            group.polygon_ids.append(_gml_id(polygon))
+    return boundary_groups
+
+
+def _collect_direct_surfaces(
+    root: ElementTree.Element,
+    parent_of: dict[ElementTree.Element, ElementTree.Element],
+    feature_ids: dict[ElementTree.Element, str],
+    seen_ids: dict[str, set[int]],
+    seen_coords: dict[tuple[str, str | None], set[Any]],
+) -> "dict[str, dict[str | None, _SurfaceGroup]]":
+    """Pass 2: each feature's *directly*-held polygons (not under a boundary surface), grouped per LOD.
+
+    A polygon in a ``lodX`` container (furniture/vegetation/water/relief, or a coarse block beside a
+    building's boundary surfaces) with no semantic type, grouped by the LOD read from its container
+    (``None`` when none). Skips a polygon already taken by pass 1 (by identity) or whose coordinates
+    are already present at the same LOD (dual-encoding), via the shared ``seen_*`` state.
+    """
+    direct_groups: dict[str, dict[str | None, _SurfaceGroup]] = {
+        identifier: {} for identifier in feature_ids.values()
+    }
+    for polygon in root.iter():
+        if _local(polygon.tag) not in _DIRECT_SURFACE_NAMES:
+            continue
+        if _under_boundary_surface(polygon, parent_of, feature_ids):
+            continue  # pass 1 owns boundary-surface polygons
+        feature_id = _nearest_feature_id(polygon, parent_of, feature_ids)
+        if feature_id is None:
+            continue
+        lod = _lod_from_ancestors(polygon, parent_of, feature_ids)
+        surface = _accept_surface(
+            polygon, feature_id, lod, seen_ids, seen_coords, dedup_coords=True
+        )
+        if surface is None:
+            continue
+        group = direct_groups[feature_id].setdefault(lod, _SurfaceGroup(lod=lod))
+        group.values.append(None)  # direct geometry carries no semantic surface
+        group.boundaries.append(surface)
+        group.polygon_ids.append(_gml_id(polygon))
+    return direct_groups
+
+
+def _gather_surfaces(
+    root: ElementTree.Element,
+    parent_of: dict[ElementTree.Element, ElementTree.Element],
+    feature_ids: dict[ElementTree.Element, str],
+    polygons_by_id: dict[str, ElementTree.Element],
+) -> "dict[str, list[_SurfaceGroup]]":
+    """Collect each feature's polygons into surface groups — one per LOD + semantic treatment.
+
+    Two passes. **Pass 1** walks boundary-surface elements and, resolving ``xlink:href`` against the
+    polygon index, puts each polygon in the feature's single **boundary group** (LOD 2) tagged with
+    the surface's local name. **Pass 2** walks every other polygon — a feature's *directly*-held
+    geometry (``lodXMultiSurface`` / ``lodXSolid`` / ``lodXGeometry`` on furniture, vegetation,
+    water, relief, …) — and puts it in a **direct group keyed by the LOD** read from its ``lodX``
+    container (``None`` when none), with no semantic type. Direct geometry is therefore never merged
+    into, or relabelled by, the boundary group, and polygons from different LODs stay in separate
+    groups. A polygon is collected once per feature both by object identity and by exterior-ring
+    coordinates, so a surface dual-encoded under a boundary surface *and* inline in a solid is kept
+    once (review H1).
+
+    Returns:
+        Each feature id mapped to its surface groups — the semantic boundary groups (one per LOD)
+        first, then the direct groups, each ordered by LOD (an unknown ``None`` LOD last).
+    """
+    # Shared de-dup state across both passes. ``seen_ids`` drops a polygon collected twice by object
+    # identity; ``seen_coords`` (keyed per feature per LOD) collapses a surface dual-encoded within
+    # one LOD while keeping the same surface present at two different LODs (review R2-M2).
+    seen_ids: dict[str, set[int]] = {
+        identifier: set() for identifier in feature_ids.values()
+    }
+    seen_coords: dict[tuple[str, str | None], set[Any]] = {}
+    boundary_groups = _collect_boundary_surfaces(
+        root, parent_of, feature_ids, polygons_by_id, seen_ids, seen_coords
+    )
+    direct_groups = _collect_direct_surfaces(
+        root, parent_of, feature_ids, seen_ids, seen_coords
+    )
+
+    def _by_lod(lod: str | None) -> tuple[bool, str]:
+        """Sort key: real LODs ascending, an unknown (``None``) LOD last."""
+        return (lod is None, lod or "")
+
+    groups_by_feature: dict[str, list[_SurfaceGroup]] = {}
+    for feature_id in feature_ids.values():
+        # Semantic (boundary) groups first, then direct groups; each ordered by LOD for determinism.
+        groups = [
+            boundary_groups[feature_id][lod]
+            for lod in sorted(boundary_groups[feature_id], key=_by_lod)
+        ]
+        groups.extend(
+            direct_groups[feature_id][lod]
+            for lod in sorted(direct_groups[feature_id], key=_by_lod)
+        )
+        groups_by_feature[feature_id] = groups
+    return groups_by_feature
+
+
+#: X3DMaterial children read as colour vectors ([r, g, b] floats) and as scalar floats.
+_MATERIAL_COLORS = frozenset({"diffuseColor", "emissiveColor", "specularColor"})
+_MATERIAL_SCALARS = frozenset({"ambientIntensity", "shininess", "transparency"})
+
+
+def _parse_x3d_material(
+    element: ElementTree.Element,
+) -> "tuple[dict[str, Any], list[str]]":
+    """Read a ``app:X3DMaterial`` into a CityJSON-shaped material dict plus its target polygon ids.
+
+    Colour members become ``[r, g, b]`` float lists and the scalar members floats, matching the
+    CityJSON material object; ``app:target`` references (``#poly_id``) become the surfaces the
+    material paints. The element's ``gml:id`` seeds the material ``name`` when present.
+    """
+    material: dict[str, Any] = {}
+    targets: list[str] = []
+    for child in element:
+        name = _local(child.tag)
+        text = (child.text or "").strip()
+        if name == "target" and text:
+            targets.append(text.lstrip("#"))
+        elif name in _MATERIAL_COLORS and text:
+            try:
+                material[name] = [float(component) for component in text.split()]
+            except ValueError:
+                pass
+        elif name in _MATERIAL_SCALARS and text:
+            material[name] = _coerce_number(text, float)
+        elif name == "isSmooth" and text:
+            material["isSmooth"] = text.lower() in ("true", "1")
+    gml_identifier = _gml_id(element)
+    if gml_identifier:
+        material.setdefault("name", gml_identifier)
+    return material, targets
+
+
+def _gather_appearances(
+    root: ElementTree.Element,
+) -> "tuple[list[dict[str, Any]], dict[str, list[int]], dict[int, str]]":
+    """Read CityGML ``app:X3DMaterial`` appearances into a material pool and target/theme indexes.
+
+    Textures (``app:ParameterizedTexture``) are **not** read yet — their UV coordinates need the
+    ``vertices-texture`` pool rebuilt from ``textureCoordinates`` (a documented follow-up); CityJSON
+    textures, by contrast, already round-trip (they ride along in the appearance pool).
+
+    Returns:
+        ``(materials, target_to_material, theme_of)`` — the CityJSON-shaped material objects, a map
+        from each material's ``app:target`` polygon ``gml:id`` to **every** material index painting
+        it (one per theme it is targeted in), and each material index's ``app:theme``.
+        :func:`_material_map` turns these into a per-geometry material map.
+    """
+    materials: list[dict[str, Any]] = []
+    target_to_material: dict[str, list[int]] = {}
+    theme_of: dict[int, str] = {}
+    for appearance in root.iter():
+        if _local(appearance.tag) != "Appearance":
+            continue
+        theme = next(
+            (
+                (child.text or "").strip()
+                for child in appearance
+                if _local(child.tag) == "theme" and (child.text or "").strip()
+            ),
+            "default",
+        )
+        for node in appearance.iter():
+            if _local(node.tag) != "X3DMaterial":
+                continue
+            material, targets = _parse_x3d_material(node)
+            index = len(materials)
+            materials.append(material)
+            theme_of[index] = theme
+            for target in targets:
+                target_to_material.setdefault(target, []).append(index)
+    return materials, target_to_material, theme_of
+
+
+def _material_map(
+    polygon_ids: list[str | None],
+    target_to_material: dict[str, list[int]],
+    theme_of: dict[int, str],
+) -> "dict[str, Any] | None":
+    """The CityJSON ``material`` map for one geometry, grouped by theme, or ``None`` if unpainted.
+
+    Each surface's source polygon ``gml:id`` is looked up in ``target_to_material``; every material
+    painting it sets that surface's material index under the material's own theme — so a surface
+    painted under several ``app:theme``\\ s lands under each theme key (review L2/R2-M3), the rest
+    ``None``.
+    """
+    by_theme: dict[str, list[int | None]] = {}
+    painted = False
+    for position, polygon_id in enumerate(polygon_ids):
+        for index in target_to_material.get(polygon_id or "", []):
+            painted = True
+            values = by_theme.setdefault(theme_of[index], [None] * len(polygon_ids))
+            values[position] = index
+    if not painted:
+        return None
+    return {
+        "material": {theme: {"values": values} for theme, values in by_theme.items()}
+    }
 
 
 def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityModel:
-    """Parse a CityGML document's LOD2 buildings into a :class:`~pyramids_citymodels.ir.CityModel`.
+    """Parse a CityGML document's city objects into a :class:`~pyramids_citymodels.ir.CityModel`.
+
+    Reads the common top-level city objects (:data:`_CITY_OBJECT_NAMES` — buildings, bridges,
+    tunnels, city furniture, vegetation, water, land use, relief, transportation, …), each as a
+    :class:`~pyramids_citymodels.ir.CityObject` carrying one ``"MultiSurface"`` geometry. A feature's
+    polygons come from its semantic **boundary surfaces** (tagged with the surface's local name, at
+    LOD 2) and/or from a ``lodX`` container it holds **directly** (no semantic type, LOD read from
+    the container). ``app:X3DMaterial`` appearances are read into the model's appearance pool and a
+    per-geometry material map (matched by ``app:target`` polygon id); textures are a follow-up.
 
     Args:
         source: A path to a ``.gml``/``.xml`` file, an open file, or an XML string/bytes.
         selector: An optional :class:`~pyramids_citymodels.options.ObjectFilter`. When given, only
-            matching ``Building``/``BuildingPart`` features (by id/type/attributes, and — for a
-            feature with a ``gml:Envelope`` — a bbox prefilter) are read; a dropped feature's
-            boundary surfaces are not parsed, and — per the filter's contract — any surfaces under
-            it roll up to the nearest *kept* ancestor feature. ``None`` reads every feature.
+            matching features (by id/type/attributes, and — for a feature with a ``gml:Envelope`` — a
+            bbox prefilter) are read; a dropped feature's surfaces are not parsed, and — per the
+            filter's contract — any surfaces under it roll up to the nearest *kept* ancestor feature.
+            ``None`` reads every feature.
 
     Returns:
-        A city model with one :class:`~pyramids_citymodels.ir.CityObject` per ``Building`` and per
-        ``BuildingPart``; each carries a single ``"MultiSurface"`` geometry whose surfaces are its
-        boundary polygons, tagged with their boundary-surface semantic type.
+        A city model with one :class:`~pyramids_citymodels.ir.CityObject` per recognized feature (a
+        nested ``BuildingPart`` / ``BridgePart`` / ``TunnelPart`` becomes its own object linked to
+        its parent); each carries a single ``"MultiSurface"`` geometry of its polygons.
 
     Note:
         Shared geometry (``xlink:href``) is resolved against a document-wide ``gml:id`` index, so a
@@ -555,18 +920,29 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
         if parent_feature_id:
             model.objects[parent_feature_id].children.append(identifier)
 
-    surfaces_by_feature = _gather_boundary_surfaces(
+    groups_by_feature = _gather_surfaces(
         root, parent_of, feature_ids, _index_polygons(root)
     )
-    for identifier, (boundaries, semantics, values) in surfaces_by_feature.items():
-        if boundaries:
+    materials, target_to_material, theme_of = _gather_appearances(root)
+    if materials:
+        model.appearances = {"materials": materials}
+    for identifier, groups in groups_by_feature.items():
+        for group in groups:
+            if not group.boundaries:
+                continue
+            # The boundary group is LOD 2 and keeps its semantic values; a direct group carries the
+            # LOD read from its lodX container (None when none) and no semantics.
+            semantic_values = group.values if group.semantics else None
             model.objects[identifier].geometries.append(
                 Geometry(
                     type="MultiSurface",
-                    lod="2",
-                    boundaries=boundaries,
-                    semantics=semantics,
-                    semantic_values=values,
+                    lod=group.lod,
+                    boundaries=group.boundaries,
+                    semantics=group.semantics,
+                    semantic_values=semantic_values,
+                    appearance=_material_map(
+                        group.polygon_ids, target_to_material, theme_of
+                    ),
                 )
             )
 
