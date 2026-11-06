@@ -1022,6 +1022,9 @@ def _texture_map(
     """
     by_theme: dict[str, list[Any]] = {}
     painted = False
+    mismatches = (
+        0  # count irreconcilable rings and warn once, not once per ring (review R2-N1)
+    )
     for position, polygon_id in enumerate(polygon_ids):
         surface = surfaces[position]
         for texture_index, theme, rings in texture_targets.get(polygon_id or "", []):
@@ -1034,15 +1037,17 @@ def _texture_map(
                     surface_value.append([texture_index, *matched])
                 else:
                     if uvs is not None:
-                        warnings.warn(
-                            f"CityGML texture: {len(uvs)} UV coordinate(s) do not match a "
-                            f"{len(ring)}-vertex ring; leaving that ring untextured",
-                            UserWarning,
-                            stacklevel=2,
-                        )
+                        mismatches += 1
                     surface_value.append([None])
             values[position] = surface_value
             painted = True
+    if mismatches:
+        warnings.warn(
+            f"CityGML texture: {mismatches} ring(s) had UV coordinates that could not be matched to "
+            "the ring's vertices; those rings were left untextured",
+            UserWarning,
+            stacklevel=2,
+        )
     if not painted:
         return None
     for values in by_theme.values():

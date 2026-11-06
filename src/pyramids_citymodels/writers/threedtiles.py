@@ -392,6 +392,9 @@ def _tileset_from_rings(
 def build_b3dm(model: CityModel) -> bytes | None:
     """Build the batched ``b3dm`` tile bytes for ``model``, or ``None`` when it has no areal geometry.
 
+    A standalone entry point that walks the model itself; :func:`write_3dtiles` is the efficient path
+    when both the tile and the tileset are needed (it gathers the geometry once and feeds both).
+
     Args:
         model: The city model to encode.
 
@@ -404,6 +407,9 @@ def build_b3dm(model: CityModel) -> bytes | None:
 
 def build_tileset(model: CityModel, content_uri: str | None) -> dict[str, Any]:
     """Build the ``tileset.json`` document for ``model``.
+
+    A standalone entry point that walks the model itself; :func:`write_3dtiles` is the efficient path
+    when both the tileset and the tile are needed (it gathers the geometry once and feeds both).
 
     Args:
         model: The city model being written.

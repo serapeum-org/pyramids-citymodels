@@ -108,7 +108,7 @@ def test_untextured_building_has_no_texture_appearance() -> None:
 def test_uv_count_mismatch_falls_back_to_untextured_ring_with_warning() -> None:
     # 3 UV pairs for a 5-vertex ring is irreconcilable (not the open-ring count 4) → the ring is left
     # untextured ([None]) and a warning is emitted rather than dropping silently.
-    with pytest.warns(UserWarning, match="do not match"):
+    with pytest.warns(UserWarning, match="could not be matched"):
         geometry = (
             parse_citygml(_textured("wall.png", "0 0 1 0 1 1"))
             .objects["B1"]
@@ -206,3 +206,28 @@ def test_partially_textured_multi_surface_fills_unpainted_surface() -> None:
     assert len(values) == 2  # one value per surface
     assert values[0][0][0] == 0  # first surface painted (texture index 0)
     assert values[1] == [[None]]  # second surface filled, untextured
+
+
+def test_texture_on_a_solid_is_nested_one_shell_deeper() -> None:
+    # A textured lodXSolid exercises _nest_appearance_for_solid on the texture branch: the values are
+    # wrapped one shell deeper than the MultiSurface form ([[ [ [tex, uv…] ] ]] — shell/surface/ring).
+    xml = (
+        f"<core:CityModel {_NS}>"
+        "<core:cityObjectMember><bldg:Building gml:id='B1'>"
+        "<bldg:lod2Solid><gml:Solid><gml:exterior><gml:CompositeSurface><gml:surfaceMember>"
+        "<gml:Polygon gml:id='poly1'><gml:exterior><gml:LinearRing>"
+        "<gml:posList srsDimension='3'>0 0 0 1 0 0 1 0 1 0 0 1 0 0 0</gml:posList>"
+        "</gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:CompositeSurface>"
+        "</gml:exterior></gml:Solid></bldg:lod2Solid></bldg:Building></core:cityObjectMember>"
+        "<app:appearanceMember><app:Appearance><app:theme>t</app:theme>"
+        "<app:surfaceDataMember><app:ParameterizedTexture><app:imageURI>w.png</app:imageURI>"
+        "<app:target uri='#poly1'><app:TexCoordList>"
+        "<app:textureCoordinates ring='#r'>0 0 1 0 1 1 0 1 0 0</app:textureCoordinates>"
+        "</app:TexCoordList></app:target></app:ParameterizedTexture>"
+        "</app:surfaceDataMember></app:Appearance></app:appearanceMember></core:CityModel>"
+    ).replace("'", '"')
+    geometry = parse_citygml(xml).objects["B1"].geometries[0]
+    assert geometry.type == "Solid"
+    values = geometry.appearance["texture"]["t"]["values"]
+    # one shell, one surface, one ring of [textureIndex, uv0..uv4]
+    assert values == [[[[0, 0, 1, 2, 3, 4]]]]
