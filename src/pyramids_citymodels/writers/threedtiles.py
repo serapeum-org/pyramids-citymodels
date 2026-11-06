@@ -331,17 +331,10 @@ def _encode_b3dm(glb: bytes, batch_length: int, batch_table: dict[str, Any]) -> 
     return header + feature_table + batch_table_json + glb
 
 
-def build_b3dm(model: CityModel) -> bytes | None:
-    """Build the batched ``b3dm`` tile bytes for ``model``, or ``None`` when it has no areal geometry.
-
-    Args:
-        model: The city model to encode.
-
-    Returns:
-        The ``b3dm`` bytes, or ``None`` when no object contributes an areal surface (then the tileset
-        has no content).
-    """
-    contributing = _object_rings(model)
+def _b3dm_from_rings(
+    contributing: list[tuple[CityObject, list[list[tuple[float, float, float]]]]],
+) -> bytes | None:
+    """Encode an already-gathered ``contributing`` list into ``b3dm`` bytes (``None`` if empty)."""
     if not contributing:
         return None
     all_rings = [ring for _city_object, rings in contributing for ring in rings]
@@ -356,18 +349,11 @@ def build_b3dm(model: CityModel) -> bytes | None:
     return _encode_b3dm(glb, len(contributing), _batch_table(contributing))
 
 
-def build_tileset(model: CityModel, content_uri: str | None) -> dict[str, Any]:
-    """Build the ``tileset.json`` document for ``model``.
-
-    Args:
-        model: The city model being written.
-        content_uri: The ``b3dm`` file name the root tile points at, or ``None`` for an empty model
-            (a valid tileset whose root has no content).
-
-    Returns:
-        The tileset document.
-    """
-    contributing = _object_rings(model)
+def _tileset_from_rings(
+    contributing: list[tuple[CityObject, list[list[tuple[float, float, float]]]]],
+    content_uri: str | None,
+) -> dict[str, Any]:
+    """Build the ``tileset.json`` document from an already-gathered ``contributing`` list."""
     if contributing:
         all_rings = [ring for _city_object, rings in contributing for ring in rings]
         minima, maxima = _bounds(all_rings)
@@ -378,6 +364,8 @@ def build_tileset(model: CityModel, content_uri: str | None) -> dict[str, Any]:
         error = 0.0
     root: dict[str, Any] = {
         "boundingVolume": {"box": box},
+        # A single leaf tile is the finest LOD, so its own geometricError is 0 (no further
+        # refinement); the tileset-level geometricError above is the model's diagonal.
         "geometricError": 0.0,
         "refine": "ADD",
     }
@@ -394,6 +382,33 @@ def build_tileset(model: CityModel, content_uri: str | None) -> dict[str, Any]:
     }
 
 
+def build_b3dm(model: CityModel) -> bytes | None:
+    """Build the batched ``b3dm`` tile bytes for ``model``, or ``None`` when it has no areal geometry.
+
+    Args:
+        model: The city model to encode.
+
+    Returns:
+        The ``b3dm`` bytes, or ``None`` when no object contributes an areal surface (then the tileset
+        has no content).
+    """
+    return _b3dm_from_rings(_object_rings(model))
+
+
+def build_tileset(model: CityModel, content_uri: str | None) -> dict[str, Any]:
+    """Build the ``tileset.json`` document for ``model``.
+
+    Args:
+        model: The city model being written.
+        content_uri: The ``b3dm`` file name the root tile points at, or ``None`` for an empty model
+            (a valid tileset whose root has no content).
+
+    Returns:
+        The tileset document.
+    """
+    return _tileset_from_rings(_object_rings(model), content_uri)
+
+
 def write_3dtiles(model: CityModel, directory: Any) -> dict[str, Any]:
     """Write ``model`` as a single-tile 3D Tiles tileset into ``directory``.
 
@@ -407,6 +422,11 @@ def write_3dtiles(model: CityModel, directory: Any) -> dict[str, Any]:
 
     Returns:
         The written ``tileset.json`` document.
+
+    Note:
+        The round-trip contract is via the **tileset** (which declares ``gltfUpAxis="Z"``). Reading
+        the ``content.b3dm`` on its own, outside the tileset, applies the 3D-Tiles default y-up→z-up
+        rotation and rotates the footprints — read back through ``tileset.json``, not the bare tile.
 
     Examples:
         - A one-building model writes a tileset and a b3dm into the directory:
@@ -428,9 +448,11 @@ def write_3dtiles(model: CityModel, directory: Any) -> dict[str, Any]:
     """
     target = Path(directory)
     target.mkdir(parents=True, exist_ok=True)
-    b3dm = build_b3dm(model)
+    # Gather the model's geometry once and feed both builders, rather than walking it twice.
+    contributing = _object_rings(model)
+    b3dm = _b3dm_from_rings(contributing)
     content_uri = _CONTENT_NAME if b3dm is not None else None
-    tileset = build_tileset(model, content_uri)
+    tileset = _tileset_from_rings(contributing, content_uri)
     (target / "tileset.json").write_text(
         json.dumps(tileset, ensure_ascii=False, indent=2), encoding="utf-8"
     )
