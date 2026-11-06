@@ -178,6 +178,55 @@ def test_direct_degenerate_polygon_is_skipped() -> None:
     )  # no valid surface -> no geometry
 
 
+def _building_lod2_roof_and_lod1_block() -> str:
+    """A building with a LOD2 RoofSurface boundary surface AND a directly-held lod1Solid block."""
+    roof = _RING.format("0 0 9 2 0 9 2 2 9 0 0 9")
+    block = _RING.format("0 0 0 2 0 0 2 2 0 0 0 0")
+    return (
+        f"<core:CityModel {_NS}><core:cityObjectMember><bldg:Building gml:id='B1'>"
+        "<bldg:boundedBy><bldg:RoofSurface><bldg:lod2MultiSurface><gml:MultiSurface>"
+        f"<gml:surfaceMember>{roof}</gml:surfaceMember></gml:MultiSurface>"
+        "</bldg:lod2MultiSurface></bldg:RoofSurface></bldg:boundedBy>"
+        "<bldg:lod1Solid><gml:Solid><gml:exterior><gml:CompositeSurface>"
+        f"<gml:surfaceMember>{block}</gml:surfaceMember>"
+        "</gml:CompositeSurface></gml:exterior></gml:Solid></bldg:lod1Solid>"
+        "</bldg:Building></core:cityObjectMember></core:CityModel>"
+    ).replace("'", '"')
+
+
+def test_direct_lod1_geometry_is_separate_from_lod2_boundary_surfaces() -> None:
+    # A building with LOD2 boundary surfaces AND a directly-held lod1Solid must yield TWO geometries
+    # at their own LODs, not one merged/relabelled LOD2 geometry (review H1).
+    geometries = (
+        parse_citygml(_building_lod2_roof_and_lod1_block()).objects["B1"].geometries
+    )
+    by_lod = {geometry.lod: geometry for geometry in geometries}
+    assert sorted(by_lod) == ["1", "2"]
+    assert [s.type for s in by_lod["2"].semantics] == [
+        "RoofSurface"
+    ]  # LOD2 keeps its semantics
+    assert by_lod["1"].semantics == []  # the LOD1 block carries none
+    assert len(by_lod["1"].boundaries) == 1 and len(by_lod["2"].boundaries) == 1
+
+
+def test_dual_encoded_surface_is_not_double_counted() -> None:
+    # The same polygon coordinates under a boundary surface AND inline in a lod2 solid must be
+    # collected once, not twice (review H1 — dedupe by coordinate, not object identity).
+    same = _RING.format("0 0 9 2 0 9 2 2 9 0 0 9")
+    xml = (
+        f"<core:CityModel {_NS}><core:cityObjectMember><bldg:Building gml:id='B1'>"
+        "<bldg:boundedBy><bldg:RoofSurface><bldg:lod2MultiSurface><gml:MultiSurface>"
+        f"<gml:surfaceMember>{same}</gml:surfaceMember></gml:MultiSurface>"
+        "</bldg:lod2MultiSurface></bldg:RoofSurface></bldg:boundedBy>"
+        "<bldg:lod2Solid><gml:Solid><gml:exterior><gml:CompositeSurface>"
+        f"<gml:surfaceMember>{same}</gml:surfaceMember>"
+        "</gml:CompositeSurface></gml:exterior></gml:Solid></bldg:lod2Solid>"
+        "</bldg:Building></core:cityObjectMember></core:CityModel>"
+    ).replace("'", '"')
+    total = sum(len(g.boundaries) for g in parse_citygml(xml).objects["B1"].geometries)
+    assert total == 1  # the dual-encoded roof is kept once
+
+
 def test_mixed_types_in_one_document_all_read() -> None:
     xml = (
         f"<core:CityModel {_NS}>"

@@ -165,6 +165,37 @@ def test_citygml_material_targeting_no_surface_paints_nothing() -> None:
     assert model.objects["B1"].geometries[0].appearance is None
 
 
+def test_citygml_materials_from_two_themes_stay_under_their_own_theme() -> None:
+    # Two surfaces of one feature painted by materials under different app:themes must land under
+    # their own theme keys, not lumped under the first (review L2).
+    xml = (
+        f"<core:CityModel {_NS}>"
+        '<core:cityObjectMember><bldg:Building gml:id="B1"><bldg:boundedBy>'
+        "<bldg:RoofSurface><bldg:lod2MultiSurface><gml:MultiSurface><gml:surfaceMember>"
+        '<gml:Polygon gml:id="poly1"><gml:exterior><gml:LinearRing>'
+        '<gml:posList srsDimension="3">0 0 9 2 0 9 2 2 9 0 0 9</gml:posList>'
+        "</gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:MultiSurface>"
+        "</bldg:lod2MultiSurface></bldg:RoofSurface></bldg:boundedBy>"
+        "<bldg:boundedBy><bldg:WallSurface><bldg:lod2MultiSurface><gml:MultiSurface>"
+        '<gml:surfaceMember><gml:Polygon gml:id="poly2"><gml:exterior><gml:LinearRing>'
+        '<gml:posList srsDimension="3">0 0 0 2 0 0 2 0 9 0 0 0</gml:posList>'
+        "</gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:MultiSurface>"
+        "</bldg:lod2MultiSurface></bldg:WallSurface></bldg:boundedBy></bldg:Building>"
+        "</core:cityObjectMember>"
+        "<app:appearanceMember><app:Appearance><app:theme>rgb</app:theme>"
+        '<app:surfaceDataMember><app:X3DMaterial><app:diffuseColor>1 0 0</app:diffuseColor>'
+        "<app:target>#poly1</app:target></app:X3DMaterial></app:surfaceDataMember>"
+        "</app:Appearance></app:appearanceMember>"
+        "<app:appearanceMember><app:Appearance><app:theme>thermal</app:theme>"
+        '<app:surfaceDataMember><app:X3DMaterial><app:diffuseColor>0 0 1</app:diffuseColor>'
+        "<app:target>#poly2</app:target></app:X3DMaterial></app:surfaceDataMember>"
+        "</app:Appearance></app:appearanceMember></core:CityModel>"
+    )
+    appearance = parse_citygml(xml).objects["B1"].geometries[0].appearance["material"]
+    assert appearance["rgb"]["values"] == [0, None]
+    assert appearance["thermal"]["values"] == [None, 1]
+
+
 def test_citygml_unpainted_surface_gets_a_null_material_value() -> None:
     # Two surfaces, only one targeted: the painted one is index 0, the other is null.
     xml = (
