@@ -576,6 +576,36 @@ def _ring_key(surface: list[Any]) -> tuple[Any, ...]:
     )
 
 
+def _accept_surface(
+    polygon: ElementTree.Element,
+    feature_id: str,
+    lod: str | None,
+    seen_ids: dict[str, set[int]],
+    seen_coords: dict[tuple[str, str | None], set[Any]],
+    *,
+    dedup_coords: bool,
+) -> list[Any] | None:
+    """Extract a valid, not-already-seen surface from ``polygon``, updating the shared de-dup state.
+
+    Returns the surface (rings) to collect, or ``None`` to skip: skipped when the polygon element was
+    already taken (by identity), when its ring is degenerate, or — only when ``dedup_coords`` (pass 2
+    direct geometry) — when a surface with the same coordinates was already collected at this
+    ``(feature, lod)``. The coordinates are always recorded so a later pass can de-dup against them.
+    """
+    if id(polygon) in seen_ids[feature_id]:
+        return None
+    seen_ids[feature_id].add(id(polygon))
+    surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
+    if not surface or len(surface[0]) < 3:
+        return None
+    key = _ring_key(surface)
+    coords = seen_coords.setdefault((feature_id, lod), set())
+    if dedup_coords and key in coords:
+        return None
+    coords.add(key)
+    return surface
+
+
 def _collect_boundary_surfaces(
     root: ElementTree.Element,
     parent_of: dict[ElementTree.Element, ElementTree.Element],
@@ -604,15 +634,15 @@ def _collect_boundary_surfaces(
             continue
         for node in element.iter():
             polygon = _resolve_polygon(node, polygons_by_id)
-            if polygon is None or id(polygon) in seen_ids[feature_id]:
-                continue
-            seen_ids[feature_id].add(id(polygon))
-            surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
-            if not surface or len(surface[0]) < 3:
+            if polygon is None:
                 continue
             lod = _lod_from_ancestors(polygon, parent_of, feature_ids) or "2"
+            surface = _accept_surface(
+                polygon, feature_id, lod, seen_ids, seen_coords, dedup_coords=False
+            )
+            if surface is None:
+                continue
             group = boundary_groups[feature_id].setdefault(lod, _SurfaceGroup(lod=lod))
-            seen_coords.setdefault((feature_id, lod), set()).add(_ring_key(surface))
             group.values.append(len(group.semantics))
             group.semantics.append(SemanticSurface(type=local))
             group.boundaries.append(surface)
@@ -632,7 +662,7 @@ def _collect_direct_surfaces(
     A polygon in a ``lodX`` container (furniture/vegetation/water/relief, or a coarse block beside a
     building's boundary surfaces) with no semantic type, grouped by the LOD read from its container
     (``None`` when none). Skips a polygon already taken by pass 1 (by identity) or whose coordinates
-    are already present at the same LOD (dual-encoding), reading the shared ``seen_*`` state.
+    are already present at the same LOD (dual-encoding), via the shared ``seen_*`` state.
     """
     direct_groups: dict[str, dict[str | None, _SurfaceGroup]] = {
         identifier: {} for identifier in feature_ids.values()
@@ -643,17 +673,14 @@ def _collect_direct_surfaces(
         if _under_boundary_surface(polygon, parent_of, feature_ids):
             continue  # pass 1 owns boundary-surface polygons
         feature_id = _nearest_feature_id(polygon, parent_of, feature_ids)
-        if feature_id is None or id(polygon) in seen_ids[feature_id]:
-            continue
-        seen_ids[feature_id].add(id(polygon))
-        surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
-        if not surface or len(surface[0]) < 3:
+        if feature_id is None:
             continue
         lod = _lod_from_ancestors(polygon, parent_of, feature_ids)
-        key = _ring_key(surface)
-        if key in seen_coords.setdefault((feature_id, lod), set()):
-            continue  # dual-encoded within this LOD: already collected
-        seen_coords[(feature_id, lod)].add(key)
+        surface = _accept_surface(
+            polygon, feature_id, lod, seen_ids, seen_coords, dedup_coords=True
+        )
+        if surface is None:
+            continue
         group = direct_groups[feature_id].setdefault(lod, _SurfaceGroup(lod=lod))
         group.values.append(None)  # direct geometry carries no semantic surface
         group.boundaries.append(surface)
