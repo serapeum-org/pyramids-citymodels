@@ -121,8 +121,15 @@ def _build_gltf(model: CityModel) -> dict[str, Any]:
         "ascii"
     )
 
-    minima = [min(p[axis] for p in positions) for axis in range(3)]
-    maxima = [max(p[axis] for p in positions) for axis in range(3)]
+    # Declare min/max from the float32 bytes actually stored, not the float64 positions — otherwise
+    # a bound that is not float32-exact disagrees with the data and the glTF validator flags
+    # ACCESSOR_MIN/MAX_MISMATCH (a loader could frustum-cull a sliver of geometry).
+    stored = [
+        struct.unpack_from("<3f", position_blob, vertex * 12)
+        for vertex in range(len(positions))
+    ]
+    minima = [min(point[axis] for point in stored) for axis in range(3)]
+    maxima = [max(point[axis] for point in stored) for axis in range(3)]
     return {
         "asset": {"version": "2.0", "generator": "pyramids-citymodels"},
         "scene": 0,

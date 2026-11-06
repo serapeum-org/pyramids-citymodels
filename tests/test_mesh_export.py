@@ -158,6 +158,21 @@ def test_gltf_accessor_min_max_bound_the_positions() -> None:
     assert gltf["accessors"][0]["max"] == [1.0, 1.0, 0.0]
 
 
+def test_gltf_min_max_equal_the_stored_float32_positions() -> None:
+    # The declared accessor bounds must match the float32 bytes actually stored, not the float64
+    # originals (review M1 — ACCESSOR_MAX_MISMATCH otherwise). Use values the shift leaves
+    # non-float32-exact.
+    surface = [[(0.1, 0.2, 3.33), (3.5, 0.2, 3.33), (3.5, 2.6, 3.33)]]
+    gltf = write_gltf(_model(surface))
+    buffer = _decode_buffer(gltf)
+    count = gltf["accessors"][0]["count"]
+    floats = struct.unpack(f"<{count * 3}f", buffer[: count * 3 * 4])
+    stored_min = [min(floats[axis::3]) for axis in range(3)]
+    stored_max = [max(floats[axis::3]) for axis in range(3)]
+    assert gltf["accessors"][0]["min"] == stored_min
+    assert gltf["accessors"][0]["max"] == stored_max
+
+
 def test_gltf_empty_model_is_a_valid_empty_scene() -> None:
     gltf = write_gltf(CityModel())
     assert gltf["scenes"] == [{"nodes": []}]
