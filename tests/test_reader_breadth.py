@@ -120,6 +120,21 @@ def test_nested_part_of_a_non_building_links_to_its_parent() -> None:
     assert "BP1" in model.objects["BR1"].children
 
 
+def test_boundary_surface_lod_follows_its_container() -> None:
+    # A boundary surface under a lod3MultiSurface is LOD 3, not hardcoded LOD 2 (review R2-L3).
+    xml = (
+        f"<core:CityModel {_NS}><core:cityObjectMember><bldg:Building gml:id='B1'>"
+        "<bldg:boundedBy><bldg:RoofSurface><bldg:lod3MultiSurface><gml:MultiSurface>"
+        f"<gml:surfaceMember>{_TRI}</gml:surfaceMember></gml:MultiSurface>"
+        "</bldg:lod3MultiSurface></bldg:RoofSurface></bldg:boundedBy>"
+        "</bldg:Building></core:cityObjectMember></core:CityModel>"
+    ).replace("'", '"')
+    geometries = parse_citygml(xml).objects["B1"].geometries
+    assert len(geometries) == 1
+    assert geometries[0].lod == "3"
+    assert [surface.type for surface in geometries[0].semantics] == ["RoofSurface"]
+
+
 def test_building_behaviour_is_unchanged() -> None:
     # The existing LOD2 semantic-building path must be untouched by the breadth generalization.
     model = parse_citygml(_boundary("bldg:Building", "RoofSurface", "B1"))

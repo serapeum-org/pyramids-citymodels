@@ -546,9 +546,10 @@ def _lod_from_ancestors(
 class _SurfaceGroup:
     """One prospective :class:`~pyramids_citymodels.ir.Geometry` — surfaces sharing a LOD + treatment.
 
-    A feature's boundary surfaces form one group (LOD 2, semantic); its directly-held geometry forms
-    one group per ``lodX`` container level (no semantics). Keeping them apart is what stops a coarse
-    ``lod1Solid`` block from being merged into — and relabelled as — a feature's LOD2 semantic model.
+    A feature's boundary surfaces form a semantic group per LOD (the LOD read from each surface's
+    ``lodX`` container, default 2); its directly-held geometry forms one group per ``lodX`` level (no
+    semantics). Keeping them apart is what stops a coarse ``lod1Solid`` block from being merged into
+    — and relabelled as — a feature's LOD2 semantic model.
     ``polygon_ids`` is parallel to ``boundaries`` (the source ``gml:id`` per surface) for matching
     appearance targets.
     """
@@ -595,10 +596,16 @@ def _gather_surfaces(
     once (review H1).
 
     Returns:
-        Each feature id mapped to its surface groups — the boundary group first (if any), then the
-        direct groups ordered by LOD (``None`` last).
+        Each feature id mapped to its surface groups — the semantic boundary groups (one per LOD)
+        first, then the direct groups, each ordered by LOD (an unknown ``None`` LOD last).
     """
-    boundary_group: dict[str, _SurfaceGroup] = {}
+    # Boundary (semantic) groups and direct groups are both keyed per feature per LOD. A boundary
+    # surface's LOD is read from its ``lodX`` container (defaulting to 2, the usual semantic-surface
+    # level) rather than hardcoded, so a bridge/tunnel ``lod3MultiSurface`` is not mislabelled LOD 2
+    # (review R2-L3).
+    boundary_groups: dict[str, dict[str, _SurfaceGroup]] = {
+        identifier: {} for identifier in feature_ids.values()
+    }
     direct_groups: dict[str, dict[str | None, _SurfaceGroup]] = {
         identifier: {} for identifier in feature_ids.values()
     }
@@ -617,7 +624,6 @@ def _gather_surfaces(
         feature_id = _nearest_feature_id(element, parent_of, feature_ids)
         if feature_id is None:
             continue
-        group = boundary_group.setdefault(feature_id, _SurfaceGroup(lod="2"))
         for node in element.iter():
             polygon = _resolve_polygon(node, polygons_by_id)
             if polygon is None or id(polygon) in seen_ids[feature_id]:
@@ -626,7 +632,11 @@ def _gather_surfaces(
             surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
             if not surface or len(surface[0]) < 3:
                 continue
-            seen_coords.setdefault((feature_id, group.lod), set()).add(
+            boundary_lod = _lod_from_ancestors(polygon, parent_of, feature_ids) or "2"
+            group = boundary_groups[feature_id].setdefault(
+                boundary_lod, _SurfaceGroup(lod=boundary_lod)
+            )
+            seen_coords.setdefault((feature_id, boundary_lod), set()).add(
                 _ring_key(surface)
             )
             group.values.append(len(group.semantics))
@@ -656,15 +666,21 @@ def _gather_surfaces(
         group.boundaries.append(surface)
         group.polygon_ids.append(_gml_id(polygon))
 
+    def _by_lod(lod: str | None) -> tuple[bool, str]:
+        """Sort key: real LODs ascending, an unknown (``None``) LOD last."""
+        return (lod is None, lod or "")
+
     groups_by_feature: dict[str, list[_SurfaceGroup]] = {}
     for feature_id in feature_ids.values():
-        groups: list[_SurfaceGroup] = []
-        if feature_id in boundary_group:
-            groups.append(boundary_group[feature_id])
-        for lod in sorted(
-            direct_groups[feature_id], key=lambda value: (value is None, value or "")
-        ):
-            groups.append(direct_groups[feature_id][lod])
+        # Semantic (boundary) groups first, then direct groups; each ordered by LOD for determinism.
+        groups = [
+            boundary_groups[feature_id][lod]
+            for lod in sorted(boundary_groups[feature_id], key=_by_lod)
+        ]
+        groups.extend(
+            direct_groups[feature_id][lod]
+            for lod in sorted(direct_groups[feature_id], key=_by_lod)
+        )
         groups_by_feature[feature_id] = groups
     return groups_by_feature
 
