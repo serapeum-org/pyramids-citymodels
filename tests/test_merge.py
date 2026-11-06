@@ -107,6 +107,23 @@ def test_merge_takes_second_appearances_when_first_has_none() -> None:
     assert a.merge(b).appearances == {"materials": [{"name": "b"}]}
 
 
+def test_merge_does_not_alias_the_appearance_pool_of_an_input() -> None:
+    # The kept appearance pool must be independent too (review R2-L2 — it was a shallow dict copy,
+    # so the nested materials list stayed shared with the source).
+    a = CityModel(appearances={"materials": [{"name": "a"}]})
+    merged = a.merge(CityModel())
+    merged.appearances["materials"].append({"name": "leak"})
+    assert a.appearances == {"materials": [{"name": "a"}]}  # source pool untouched
+
+    first_empty = CityModel()
+    b = CityModel(appearances={"materials": [{"name": "b"}]})
+    merged2 = first_empty.merge(b)
+    merged2.appearances["materials"].append({"name": "leak"})
+    assert b.appearances == {
+        "materials": [{"name": "b"}]
+    }  # second-model pool untouched too
+
+
 def test_merge_preserves_geometry() -> None:
     geometry = Geometry(type="MultiSurface", lod="2", boundaries=[[[(0.0, 0.0, 0.0)]]])
     a = _model(a="Building")

@@ -693,7 +693,10 @@ class CityModel:
             metadata=dict(self.metadata),
             version=self.version,
             source_format=self.source_format,
-            appearances=dict(self.appearances),
+            # Deep-copy so the merged model is fully independent — consistent with the deep-copied
+            # geometries that index into this pool (the nested materials/textures lists are shared
+            # by a shallow dict() copy otherwise).
+            appearances=copy.deepcopy(self.appearances),
             extensions=dict(self.extensions),
         )
         for model in (self, *others):
@@ -757,7 +760,7 @@ def _reconcile_metadata(merged: "CityModel", model: "CityModel") -> None:
     for key, value in model.extensions.items():
         merged.extensions.setdefault(key, value)
     if model.appearances and not merged.appearances:
-        merged.appearances = dict(model.appearances)
+        merged.appearances = copy.deepcopy(model.appearances)
     elif model.appearances:
         warnings.warn(
             "merging models that both carry appearances; appearance pools are index-based and are "
