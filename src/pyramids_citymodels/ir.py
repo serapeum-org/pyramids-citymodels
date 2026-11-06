@@ -26,6 +26,7 @@ geometry type, which is all the flattener needs.
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
+import copy
 import re
 import warnings
 from collections.abc import Iterable, Iterator, Sequence
@@ -702,7 +703,9 @@ class CityModel:
                     id=remap[object_id],
                     type=city_object.type,
                     attributes=dict(city_object.attributes),
-                    geometries=list(city_object.geometries),
+                    # Deep-copy so the merged model is fully independent: a later in-place edit to a
+                    # merged geometry's boundaries/semantics must not leak into the source model.
+                    geometries=copy.deepcopy(city_object.geometries),
                     parents=[remap.get(p, p) for p in city_object.parents],
                     children=[remap.get(c, c) for c in city_object.children],
                 )

@@ -117,6 +117,21 @@ def test_merge_preserves_geometry() -> None:
     assert merged.objects["g"].geometries[0].boundaries == [[[(0.0, 0.0, 0.0)]]]
 
 
+def test_merge_does_not_alias_geometry_objects_with_the_inputs() -> None:
+    # merge promises a new, independent model; a later edit to a merged geometry must not reach the
+    # source (review M2 — geometries were shallow-copied, aliasing the Geometry instances).
+    geometry = Geometry(type="MultiSurface", lod="2", boundaries=[[[(0.0, 0.0, 0.0)]]])
+    b = CityModel(
+        objects={"g": CityObject(id="g", type="Building", geometries=[geometry])}
+    )
+    merged = CityModel().merge(b)
+    assert merged.objects["g"].geometries[0] is not b.objects["g"].geometries[0]
+    merged.objects["g"].geometries[0].boundaries.append("leak")
+    assert b.objects["g"].geometries[0].boundaries == [
+        [[(0.0, 0.0, 0.0)]]
+    ]  # source untouched
+
+
 def test_merge_with_no_others_is_a_copy() -> None:
     a = _model(a="Building")
     merged = a.merge()
