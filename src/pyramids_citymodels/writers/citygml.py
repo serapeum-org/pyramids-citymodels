@@ -422,6 +422,15 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
     # map is a per-call local threaded through construction — no module-global is mutated, so
     # concurrent writes of different-version models cannot corrupt each other.
     version = model.version if model.version in _MATCHED_VERSIONS else "2.0"
+    if model.version is not None and model.version not in _MATCHED_VERSIONS:
+        # CityGML 3.0 restructures the geometry model, so emitting 3.0 namespaces with this writer's
+        # 2.0 element structure would be invalid 3.0. The reader reads 3.0 (version-agnostic by local
+        # name), but on write the model is downgraded to valid 2.0 — the version does not round-trip.
+        warnings.warn(
+            f"CityGML writer: a {model.version} source is written as valid CityGML 2.0 (this writer "
+            "emits the 2.0 building structure), so the CityGML version does not round-trip",
+            stacklevel=2,
+        )
     ns = _namespaces(version)
 
     unreadable = sorted(
