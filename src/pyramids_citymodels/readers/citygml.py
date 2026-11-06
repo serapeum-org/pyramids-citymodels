@@ -817,14 +817,120 @@ def _parse_x3d_material(
     return material, targets
 
 
+def _appearance_theme(appearance: ElementTree.Element) -> str:
+    """The ``app:theme`` text of an ``app:Appearance``, or ``"default"`` when it declares none."""
+    return next(
+        (
+            (child.text or "").strip()
+            for child in appearance
+            if _local(child.tag) == "theme" and (child.text or "").strip()
+        ),
+        "default",
+    )
+
+
+#: CityGML ``imageURI`` suffix → CityJSON texture ``type``; an unknown suffix falls back to ``PNG``.
+_TEXTURE_TYPES = {
+    ".png": "PNG",
+    ".jpg": "JPG",
+    ".jpeg": "JPG",
+    ".tif": "TIFF",
+    ".tiff": "TIFF",
+    ".gif": "GIF",
+    ".bmp": "BMP",
+}
+
+
+def _texture_type(uri: str) -> str:
+    """The CityJSON texture ``type`` for an image ``uri``, read from its suffix (default ``PNG``)."""
+    lower = uri.lower()
+    for suffix, kind in _TEXTURE_TYPES.items():
+        if lower.endswith(suffix):
+            return kind
+    return "PNG"
+
+
+def _parse_parameterized_texture(
+    element: ElementTree.Element, vertices_texture: list[list[float]]
+) -> "tuple[dict[str, Any] | None, dict[str, list[list[int]]]]":
+    """Read one ``app:ParameterizedTexture`` into a CityJSON texture object and its per-ring UVs.
+
+    The ``app:imageURI`` becomes the texture object; each ``app:target uri="#poly"`` carries an
+    ``app:TexCoordList`` of one ``app:textureCoordinates`` per ring (``u v u v …``). Every ``u v``
+    pair is appended to the shared ``vertices-texture`` pool and its index recorded, so the returned
+    map is ``{polygon_id: [[uv_index, …] per ring]}`` — the indices needed to paint each ring.
+
+    Returns:
+        ``(texture, targets)`` — the texture object (``None`` when the element has no ``imageURI``)
+        and the per-polygon per-ring UV-index lists.
+    """
+    image: str | None = None
+    targets: dict[str, list[list[int]]] = {}
+    for child in element:
+        name = _local(child.tag)
+        if name == "imageURI":
+            image = (child.text or "").strip() or None
+        elif name == "target":
+            polygon_id = (child.get("uri") or "").lstrip("#")
+            if not polygon_id:
+                continue
+            rings: list[list[int]] = []
+            for coordinates in child.iter():
+                if _local(coordinates.tag) != "textureCoordinates":
+                    continue
+                try:
+                    flat = [float(value) for value in (coordinates.text or "").split()]
+                except ValueError:
+                    continue
+                uv_indices: list[int] = []
+                for offset in range(0, len(flat) - 1, 2):
+                    uv_indices.append(len(vertices_texture))
+                    vertices_texture.append([flat[offset], flat[offset + 1]])
+                rings.append(uv_indices)
+            if rings:
+                targets.setdefault(polygon_id, []).extend(rings)
+    if image is None:
+        return None, {}
+    return {"type": _texture_type(image), "image": image}, targets
+
+
+def _gather_textures(
+    root: ElementTree.Element, vertices_texture: list[list[float]]
+) -> "tuple[list[dict[str, Any]], dict[str, list[tuple[int, str, list[list[int]]]]]]":
+    """Read CityGML ``app:ParameterizedTexture`` appearances into a texture pool and a target index.
+
+    Grows the shared ``vertices-texture`` UV pool and returns the textures plus, per ``app:target``
+    polygon ``gml:id``, every ``(texture index, app:theme, per-ring UV-index lists)`` painting it.
+    :func:`_texture_map` turns these into a per-geometry texture map (§3 gap — CityGML textures now
+    carry to CityJSON, like ``app:X3DMaterial`` colours already did).
+    """
+    textures: list[dict[str, Any]] = []
+    texture_targets: dict[str, list[tuple[int, str, list[list[int]]]]] = {}
+    for appearance in root.iter():
+        if _local(appearance.tag) != "Appearance":
+            continue
+        theme = _appearance_theme(appearance)
+        for node in appearance.iter():
+            if _local(node.tag) != "ParameterizedTexture":
+                continue
+            texture, targets = _parse_parameterized_texture(node, vertices_texture)
+            if texture is None:
+                continue
+            index = len(textures)
+            textures.append(texture)
+            for polygon_id, rings in targets.items():
+                texture_targets.setdefault(polygon_id, []).append((index, theme, rings))
+    return textures, texture_targets
+
+
 def _gather_appearances(
     root: ElementTree.Element,
 ) -> "tuple[list[dict[str, Any]], dict[str, list[int]], dict[int, str]]":
     """Read CityGML ``app:X3DMaterial`` appearances into a material pool and target/theme indexes.
 
-    Textures (``app:ParameterizedTexture``) are **not** read yet — their UV coordinates need the
-    ``vertices-texture`` pool rebuilt from ``textureCoordinates`` (a documented follow-up); CityJSON
-    textures, by contrast, already round-trip (they ride along in the appearance pool).
+    Textures (``app:ParameterizedTexture``) are read separately by :func:`_gather_textures`, which
+    rebuilds the ``vertices-texture`` UV pool from ``textureCoordinates``; this function covers only
+    the ``app:X3DMaterial`` colour appearances.
 
     Returns:
         ``(materials, target_to_material, theme_of)`` — the CityJSON-shaped material objects, a map
@@ -838,14 +944,7 @@ def _gather_appearances(
     for appearance in root.iter():
         if _local(appearance.tag) != "Appearance":
             continue
-        theme = next(
-            (
-                (child.text or "").strip()
-                for child in appearance
-                if _local(child.tag) == "theme" and (child.text or "").strip()
-            ),
-            "default",
-        )
+        theme = _appearance_theme(appearance)
         for node in appearance.iter():
             if _local(node.tag) != "X3DMaterial":
                 continue
@@ -884,6 +983,57 @@ def _material_map(
     }
 
 
+def _texture_map(
+    surfaces: list[Any],
+    polygon_ids: list[str | None],
+    texture_targets: dict[str, list[tuple[int, str, list[list[int]]]]],
+) -> "dict[str, Any] | None":
+    """The CityJSON ``texture`` map for one geometry, grouped by theme, or ``None`` if untextured.
+
+    Parallels ``surfaces`` down to **ring** level: a painted ring becomes ``[texture_index, uv₀, …]``
+    (one UV index per ring vertex, matched position-by-position); an unpainted ring — or one whose
+    UV count does not match the ring's vertex count — becomes ``[None]``. Each surface's source
+    polygon ``gml:id`` is looked up in ``texture_targets``; a surface painted under several
+    ``app:theme``\\ s lands under each theme key.
+    """
+    by_theme: dict[str, list[Any]] = {}
+    painted = False
+    for position, polygon_id in enumerate(polygon_ids):
+        surface = surfaces[position]
+        for texture_index, theme, rings in texture_targets.get(polygon_id or "", []):
+            values = by_theme.setdefault(theme, [None] * len(surfaces))
+            surface_value: list[Any] = []
+            for ring_position, ring in enumerate(surface):
+                uvs = rings[ring_position] if ring_position < len(rings) else None
+                if uvs is not None and len(uvs) == len(ring):
+                    surface_value.append([texture_index, *uvs])
+                else:
+                    surface_value.append([None])
+            values[position] = surface_value
+            painted = True
+    if not painted:
+        return None
+    for values in by_theme.values():
+        for position, surface in enumerate(surfaces):
+            if values[position] is None:
+                values[position] = [[None] for _ in surface]
+    return {
+        "texture": {theme: {"values": values} for theme, values in by_theme.items()}
+    }
+
+
+def _nest_appearance_for_solid(appearance: dict[str, Any]) -> dict[str, Any]:
+    """Wrap each theme's ``values`` one shell deeper so a material/texture map parallels a ``Solid``.
+
+    A ``Solid``'s boundaries nest its surfaces inside one outer shell; its CityJSON appearance
+    ``values`` must mirror that, so every ``{"values": X}`` becomes ``{"values": [X]}``.
+    """
+    return {
+        kind: {theme: {"values": [spec["values"]]} for theme, spec in themes.items()}
+        for kind, themes in appearance.items()
+    }
+
+
 def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityModel:
     """Parse a CityGML document's city objects into a :class:`~pyramids_citymodels.ir.CityModel`.
 
@@ -892,8 +1042,9 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
     :class:`~pyramids_citymodels.ir.CityObject` carrying one ``"MultiSurface"`` geometry. A feature's
     polygons come from its semantic **boundary surfaces** (tagged with the surface's local name, at
     LOD 2) and/or from a ``lodX`` container it holds **directly** (no semantic type, LOD read from
-    the container). ``app:X3DMaterial`` appearances are read into the model's appearance pool and a
-    per-geometry material map (matched by ``app:target`` polygon id); textures are a follow-up.
+    the container). ``app:X3DMaterial`` colours **and** ``app:ParameterizedTexture`` textures are
+    read into the model's appearance pool and a per-geometry material/texture map (matched by
+    ``app:target`` polygon id; textures also rebuild the ``vertices-texture`` UV pool).
 
     Args:
         source: A path to a ``.gml``/``.xml`` file, an open file, or an XML string/bytes.
@@ -961,8 +1112,17 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
         root, parent_of, feature_ids, _index_polygons(root)
     )
     materials, target_to_material, theme_of = _gather_appearances(root)
+    vertices_texture: list[list[float]] = []
+    textures, texture_targets = _gather_textures(root, vertices_texture)
+    appearances: dict[str, Any] = {}
     if materials:
-        model.appearances = {"materials": materials}
+        appearances["materials"] = materials
+    if textures:
+        appearances["textures"] = textures
+    if vertices_texture:
+        appearances["vertices-texture"] = vertices_texture
+    if appearances:
+        model.appearances = appearances
     for identifier, groups in groups_by_feature.items():
         for group in groups:
             if not group.boundaries:
@@ -976,6 +1136,16 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
                 boundaries: list[Any] = [group.boundaries]
             else:
                 boundaries = group.boundaries
+            # Material (per-surface) and texture (per-ring) maps are built over the flat surface
+            # list, then nested one shell deeper for a Solid so they parallel its boundaries.
+            appearance = (
+                _material_map(group.polygon_ids, target_to_material, theme_of) or {}
+            )
+            texture = _texture_map(group.boundaries, group.polygon_ids, texture_targets)
+            if texture:
+                appearance.update(texture)
+            if appearance and group.geom_type == "Solid":
+                appearance = _nest_appearance_for_solid(appearance)
             model.objects[identifier].geometries.append(
                 Geometry(
                     type=group.geom_type,
@@ -983,9 +1153,7 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
                     boundaries=boundaries,
                     semantics=group.semantics,
                     semantic_values=semantic_values,
-                    appearance=_material_map(
-                        group.polygon_ids, target_to_material, theme_of
-                    ),
+                    appearance=appearance or None,
                 )
             )
 
