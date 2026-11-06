@@ -448,6 +448,48 @@ class CityModel:
 
         return write_jsonfg(self, path)
 
+    def to_obj(self, path: Any = None) -> str | None:
+        """Serialize this model to Wavefront OBJ (see :func:`.writers.obj.write_obj`).
+
+        A plain-geometry mesh export (feature #14): each surface's exterior ring becomes one face.
+        Returns the OBJ text as a ``str`` when ``path`` is ``None``, else writes it.
+
+        Examples:
+            - Each object's faces are grouped under an ``o`` marker:
+                ```python
+                >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+                >>> "o b" in model.to_obj().splitlines()
+                True
+
+                ```
+        """
+        from pyramids_citymodels.writers.obj import write_obj
+
+        return write_obj(self, path)
+
+    def to_gltf(self, path: Any = None) -> "dict[str, Any] | None":
+        """Serialize this model to glTF 2.0 (see :func:`.writers.gltf.write_gltf`).
+
+        A triangulated, positions-only mesh export (feature #14), embedded as a self-contained
+        ``.gltf``. Returns the document ``dict`` when ``path`` is ``None``, else writes it.
+
+        Examples:
+            - A one-triangle model exports one triangle (three indices):
+                ```python
+                >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+                >>> model.to_gltf()["accessors"][1]["count"]
+                3
+
+                ```
+        """
+        from pyramids_citymodels.writers.gltf import write_gltf
+
+        return write_gltf(self, path)
+
     def to_file(self, path: Any) -> "dict[str, Any] | str | None":
         """Serialize this model to ``path``, choosing the writer by the path's suffix.
 
@@ -458,11 +500,13 @@ class CityModel:
           (:meth:`to_cityjsonseq`)
         - ``.gml`` / ``.xml`` / ``.citygml`` → CityGML (:meth:`to_citygml`)
         - ``.fg.json`` / ``.jsonfg`` → JSON-FG (:meth:`to_jsonfg`)
+        - ``.obj`` → Wavefront OBJ (:meth:`to_obj`)
+        - ``.gltf`` → glTF 2.0 (:meth:`to_gltf`)
 
         The CityJSON and CityGML suffixes are symmetric with :meth:`from_file`. The CityJSON Text
-        Sequence (``.city.jsonl`` / ``.cityjsonseq`` / ``.jsonl``) and JSON-FG (``.fg.json`` /
-        ``.jsonfg``) suffixes are **write-only**: this package ships no reader for either, so
-        :meth:`from_file` cannot read them back.
+        Sequence (``.city.jsonl`` / ``.cityjsonseq`` / ``.jsonl``), JSON-FG (``.fg.json`` /
+        ``.jsonfg``), OBJ (``.obj``) and glTF (``.gltf``) suffixes are **write-only**: this package
+        ships no reader for them, so :meth:`from_file` cannot read them back.
 
         Args:
             path: The output path; its suffix selects the format.
@@ -508,12 +552,16 @@ class CityModel:
             return self.to_jsonfg(path)
         if name.endswith((".gml", ".xml", ".citygml")):
             return self.to_citygml(path)
+        if name.endswith(".obj"):
+            return self.to_obj(path)
+        if name.endswith(".gltf"):
+            return self.to_gltf(path)
         if name.endswith((".city.json", ".cityjson", ".json")):
             return self.to_cityjson(path)
         raise CityModelError(
             f"cannot infer a city-model writer from the suffix of {path!r}; expected one of "
             ".city.json/.cityjson/.json, .city.jsonl/.cityjsonseq/.jsonl, .gml/.xml/.citygml, "
-            ".fg.json/.jsonfg"
+            ".fg.json/.jsonfg, .obj, .gltf"
         )
 
     def coordinates(self) -> Iterator[tuple[float, ...]]:
