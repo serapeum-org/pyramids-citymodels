@@ -602,9 +602,10 @@ def _gather_surfaces(
     seen_ids: dict[str, set[int]] = {
         identifier: set() for identifier in feature_ids.values()
     }
-    seen_coords: dict[str, set[Any]] = {
-        identifier: set() for identifier in feature_ids.values()
-    }
+    # Coordinate de-dup is scoped per (feature, LOD): a surface dual-encoded within one LOD (under a
+    # boundary surface AND inline in a same-LOD solid) collapses to one, but the *same* surface
+    # legitimately present at two different LODs survives in both (review R2-M2).
+    seen_coords: dict[tuple[str, str | None], set[Any]] = {}
 
     for element in root.iter():
         local = _local(element.tag)
@@ -622,7 +623,9 @@ def _gather_surfaces(
             surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
             if not surface or len(surface[0]) < 3:
                 continue
-            seen_coords[feature_id].add(_ring_key(surface))
+            seen_coords.setdefault((feature_id, group.lod), set()).add(
+                _ring_key(surface)
+            )
             group.values.append(len(group.semantics))
             group.semantics.append(SemanticSurface(type=local))
             group.boundaries.append(surface)
@@ -640,11 +643,11 @@ def _gather_surfaces(
         surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
         if not surface or len(surface[0]) < 3:
             continue
-        key = _ring_key(surface)
-        if key in seen_coords[feature_id]:
-            continue  # dual-encoded: already collected (e.g. under a boundary surface)
-        seen_coords[feature_id].add(key)
         lod = _lod_from_ancestors(polygon, parent_of, feature_ids)
+        key = _ring_key(surface)
+        if key in seen_coords.setdefault((feature_id, lod), set()):
+            continue  # dual-encoded within this LOD: already collected
+        seen_coords[(feature_id, lod)].add(key)
         group = direct_groups[feature_id].setdefault(lod, _SurfaceGroup(lod=lod))
         group.values.append(None)  # direct geometry carries no semantic surface
         group.boundaries.append(surface)

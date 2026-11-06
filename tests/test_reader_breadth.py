@@ -209,6 +209,23 @@ def test_direct_lod1_geometry_is_separate_from_lod2_boundary_surfaces() -> None:
     assert len(by_lod["1"].boundaries) == 1 and len(by_lod["2"].boundaries) == 1
 
 
+def test_identical_surface_at_two_lods_survives_in_both() -> None:
+    # A surface present at lod1 AND lod2 with identical coordinates must appear in BOTH geometries;
+    # the coordinate de-dup is per-LOD (dual-encoding within one LOD), not cross-LOD (review R2-M2).
+    same = _RING.format("0 0 0 2 0 0 2 2 0 0 0 0")
+    xml = (
+        f"<core:CityModel {_NS}><core:cityObjectMember><bldg:Building gml:id='B1'>"
+        "<bldg:lod1MultiSurface><gml:MultiSurface><gml:surfaceMember>"
+        f"{same}</gml:surfaceMember></gml:MultiSurface></bldg:lod1MultiSurface>"
+        "<bldg:lod2MultiSurface><gml:MultiSurface><gml:surfaceMember>"
+        f"{same}</gml:surfaceMember></gml:MultiSurface></bldg:lod2MultiSurface>"
+        "</bldg:Building></core:cityObjectMember></core:CityModel>"
+    ).replace("'", '"')
+    by_lod = {g.lod: g for g in parse_citygml(xml).objects["B1"].geometries}
+    assert sorted(by_lod) == ["1", "2"]
+    assert len(by_lod["1"].boundaries) == 1 and len(by_lod["2"].boundaries) == 1
+
+
 def test_dual_encoded_surface_is_not_double_counted() -> None:
     # The same polygon coordinates under a boundary surface AND inline in a lod2 solid must be
     # collected once, not twice (review H1 — dedupe by coordinate, not object identity).
