@@ -851,15 +851,38 @@ def _texture_type(uri: str) -> str:
     return "PNG"
 
 
+def _target_ring_uvs(
+    target: ElementTree.Element, vertices_texture: list[list[float]]
+) -> list[list[int]]:
+    """One ``app:target``'s per-ring UV-index lists, growing the shared ``vertices-texture`` pool.
+
+    Each ``app:textureCoordinates`` (one per ring) is a ``u v u v …`` list; every pair is appended
+    to the pool and its index recorded, so the result is ``[[uv_index, …] per ring]``.
+    """
+    rings: list[list[int]] = []
+    for coordinates in target.iter():
+        if _local(coordinates.tag) != "textureCoordinates":
+            continue
+        try:
+            flat = [float(value) for value in (coordinates.text or "").split()]
+        except ValueError:
+            continue
+        uv_indices: list[int] = []
+        for offset in range(0, len(flat) - 1, 2):
+            uv_indices.append(len(vertices_texture))
+            vertices_texture.append([flat[offset], flat[offset + 1]])
+        rings.append(uv_indices)
+    return rings
+
+
 def _parse_parameterized_texture(
     element: ElementTree.Element, vertices_texture: list[list[float]]
 ) -> "tuple[dict[str, Any] | None, dict[str, list[list[int]]]]":
     """Read one ``app:ParameterizedTexture`` into a CityJSON texture object and its per-ring UVs.
 
     The ``app:imageURI`` becomes the texture object; each ``app:target uri="#poly"`` carries an
-    ``app:TexCoordList`` of one ``app:textureCoordinates`` per ring (``u v u v …``). Every ``u v``
-    pair is appended to the shared ``vertices-texture`` pool and its index recorded, so the returned
-    map is ``{polygon_id: [[uv_index, …] per ring]}`` — the indices needed to paint each ring.
+    ``app:TexCoordList`` of one ``app:textureCoordinates`` per ring, read by :func:`_target_ring_uvs`
+    into ``{polygon_id: [[uv_index, …] per ring]}`` — the indices needed to paint each ring.
 
     Returns:
         ``(texture, targets)`` — the texture object (``None`` when the element has no ``imageURI``)
@@ -875,19 +898,7 @@ def _parse_parameterized_texture(
             polygon_id = (child.get("uri") or "").lstrip("#")
             if not polygon_id:
                 continue
-            rings: list[list[int]] = []
-            for coordinates in child.iter():
-                if _local(coordinates.tag) != "textureCoordinates":
-                    continue
-                try:
-                    flat = [float(value) for value in (coordinates.text or "").split()]
-                except ValueError:
-                    continue
-                uv_indices: list[int] = []
-                for offset in range(0, len(flat) - 1, 2):
-                    uv_indices.append(len(vertices_texture))
-                    vertices_texture.append([flat[offset], flat[offset + 1]])
-                rings.append(uv_indices)
+            rings = _target_ring_uvs(child, vertices_texture)
             if rings:
                 targets.setdefault(polygon_id, []).extend(rings)
     if image is None:
@@ -1005,6 +1016,39 @@ def _reconcile_ring_uvs(uvs: "list[int] | None", ring: list[Any]) -> "list[int] 
     return None
 
 
+def _surface_texture_value(
+    surface: list[Any], rings: list[list[int]], texture_index: int
+) -> tuple[list[Any], int]:
+    """One surface's per-ring CityJSON texture value, plus its count of irreconcilable rings.
+
+    Each ring becomes ``[texture_index, uv₀, …]`` when its UVs reconcile with the ring's vertices
+    (:func:`_reconcile_ring_uvs`), else ``[None]``; the second return value counts the rings that
+    had UVs but could not be matched (so the caller can warn once).
+    """
+    surface_value: list[Any] = []
+    mismatches = 0
+    for ring_position, ring in enumerate(surface):
+        uvs = rings[ring_position] if ring_position < len(rings) else None
+        matched = _reconcile_ring_uvs(uvs, ring)
+        if matched is not None:
+            surface_value.append([texture_index, *matched])
+        else:
+            if uvs is not None:
+                mismatches += 1
+            surface_value.append([None])
+    return surface_value, mismatches
+
+
+def _fill_untextured_surfaces(
+    by_theme: dict[str, list[Any]], surfaces: list[Any]
+) -> None:
+    """Fill each theme's still-``None`` surface slots with an untextured ring value (``[None]`` each)."""
+    for values in by_theme.values():
+        for position, surface in enumerate(surfaces):
+            if values[position] is None:
+                values[position] = [[None] for _ in surface]
+
+
 def _texture_map(
     surfaces: list[Any],
     polygon_ids: list[str | None],
@@ -1023,23 +1067,16 @@ def _texture_map(
     by_theme: dict[str, list[Any]] = {}
     painted = False
     mismatches = (
-        0  # count irreconcilable rings and warn once, not once per ring (review R2-N1)
+        0  # count irreconcilable rings and warn once, not per ring (review R2-N1)
     )
     for position, polygon_id in enumerate(polygon_ids):
-        surface = surfaces[position]
         for texture_index, theme, rings in texture_targets.get(polygon_id or "", []):
             values = by_theme.setdefault(theme, [None] * len(surfaces))
-            surface_value: list[Any] = []
-            for ring_position, ring in enumerate(surface):
-                uvs = rings[ring_position] if ring_position < len(rings) else None
-                matched = _reconcile_ring_uvs(uvs, ring)
-                if matched is not None:
-                    surface_value.append([texture_index, *matched])
-                else:
-                    if uvs is not None:
-                        mismatches += 1
-                    surface_value.append([None])
+            surface_value, surface_mismatches = _surface_texture_value(
+                surfaces[position], rings, texture_index
+            )
             values[position] = surface_value
+            mismatches += surface_mismatches
             painted = True
     if mismatches:
         warnings.warn(
@@ -1050,10 +1087,7 @@ def _texture_map(
         )
     if not painted:
         return None
-    for values in by_theme.values():
-        for position, surface in enumerate(surfaces):
-            if values[position] is None:
-                values[position] = [[None] for _ in surface]
+    _fill_untextured_surfaces(by_theme, surfaces)
     return {
         "texture": {theme: {"values": values} for theme, values in by_theme.items()}
     }
@@ -1069,6 +1103,76 @@ def _nest_appearance_for_solid(appearance: dict[str, Any]) -> dict[str, Any]:
         kind: {theme: {"values": [spec["values"]]} for theme, spec in themes.items()}
         for kind, themes in appearance.items()
     }
+
+
+def _create_city_objects(
+    model: CityModel,
+    feature_ids: dict[ElementTree.Element, str],
+    parent_of: dict[ElementTree.Element, ElementTree.Element],
+    attributes_by_element: dict[ElementTree.Element, dict[str, Any]],
+) -> None:
+    """Add one :class:`CityObject` per feature to ``model``, linking a part to its parent feature."""
+    for element, identifier in feature_ids.items():
+        parent_feature_id = _nearest_feature_id(element, parent_of, feature_ids)
+        model.objects[identifier] = CityObject(
+            id=identifier,
+            type=_local(element.tag),
+            attributes=attributes_by_element[element],
+            parents=[parent_feature_id] if parent_feature_id else [],
+        )
+        if parent_feature_id:
+            model.objects[parent_feature_id].children.append(identifier)
+
+
+def _appearance_pool(
+    materials: list[dict[str, Any]],
+    textures: list[dict[str, Any]],
+    vertices_texture: list[list[float]],
+) -> dict[str, Any]:
+    """The model-level appearance pool (``materials`` / ``textures`` / ``vertices-texture``), empty if none."""
+    pool: dict[str, Any] = {}
+    if materials:
+        pool["materials"] = materials
+    if textures:
+        pool["textures"] = textures
+    if vertices_texture:
+        pool["vertices-texture"] = vertices_texture
+    return pool
+
+
+def _geometry_from_group(
+    group: _SurfaceGroup,
+    target_to_material: dict[str, list[int]],
+    theme_of: dict[int, str],
+    texture_targets: dict[str, list[tuple[int, str, list[list[int]]]]],
+) -> Geometry:
+    """Build one IR :class:`Geometry` from a gathered surface group.
+
+    A boundary group is LOD 2 and keeps its semantic values; a direct group carries the LOD read from
+    its ``lodX`` container (``None`` when none) and no semantics. A ``Solid`` group's surfaces — and
+    its material/texture ``values`` — are nested one shell deeper, parallel to the CityJSON ``Solid``
+    boundaries (a list of shells of surfaces), preserving the geometry type (§3 gap 2).
+    """
+    semantic_values = group.values if group.semantics else None
+    boundaries: list[Any] = (
+        [group.boundaries] if group.geom_type == "Solid" else group.boundaries
+    )
+    # Material (per-surface) and texture (per-ring) maps are built over the flat surface list, then
+    # nested one shell deeper for a Solid so they parallel its boundaries.
+    appearance = _material_map(group.polygon_ids, target_to_material, theme_of) or {}
+    texture = _texture_map(group.boundaries, group.polygon_ids, texture_targets)
+    if texture:
+        appearance.update(texture)
+    if appearance and group.geom_type == "Solid":
+        appearance = _nest_appearance_for_solid(appearance)
+    return Geometry(
+        type=group.geom_type,
+        lod=group.lod,
+        boundaries=boundaries,
+        semantics=group.semantics,
+        semantic_values=semantic_values,
+        appearance=appearance or None,
+    )
 
 
 def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityModel:
@@ -1133,17 +1237,7 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
         crs=_detect_crs(root), source_format="CityGML", version=_detect_version(root)
     )
 
-    # Create a city object per feature, with parent/child links between a part and its building.
-    for element, identifier in feature_ids.items():
-        parent_feature_id = _nearest_feature_id(element, parent_of, feature_ids)
-        model.objects[identifier] = CityObject(
-            id=identifier,
-            type=_local(element.tag),
-            attributes=attributes_by_element[element],
-            parents=[parent_feature_id] if parent_feature_id else [],
-        )
-        if parent_feature_id:
-            model.objects[parent_feature_id].children.append(identifier)
+    _create_city_objects(model, feature_ids, parent_of, attributes_by_element)
 
     groups_by_feature = _gather_surfaces(
         root, parent_of, feature_ids, _index_polygons(root)
@@ -1151,46 +1245,16 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
     materials, target_to_material, theme_of = _gather_appearances(root)
     vertices_texture: list[list[float]] = []
     textures, texture_targets = _gather_textures(root, vertices_texture)
-    appearances: dict[str, Any] = {}
-    if materials:
-        appearances["materials"] = materials
-    if textures:
-        appearances["textures"] = textures
-    if vertices_texture:
-        appearances["vertices-texture"] = vertices_texture
-    if appearances:
-        model.appearances = appearances
+    pool = _appearance_pool(materials, textures, vertices_texture)
+    if pool:
+        model.appearances = pool
     for identifier, groups in groups_by_feature.items():
         for group in groups:
             if not group.boundaries:
                 continue
-            # The boundary group is LOD 2 and keeps its semantic values; a direct group carries the
-            # LOD read from its lodX container (None when none) and no semantics. A ``Solid`` group's
-            # surfaces are nested one shell deeper (CityJSON ``Solid`` boundaries are a list of
-            # shells of surfaces), preserving the geometry type (§3 gap 2).
-            semantic_values = group.values if group.semantics else None
-            if group.geom_type == "Solid":
-                boundaries: list[Any] = [group.boundaries]
-            else:
-                boundaries = group.boundaries
-            # Material (per-surface) and texture (per-ring) maps are built over the flat surface
-            # list, then nested one shell deeper for a Solid so they parallel its boundaries.
-            appearance = (
-                _material_map(group.polygon_ids, target_to_material, theme_of) or {}
-            )
-            texture = _texture_map(group.boundaries, group.polygon_ids, texture_targets)
-            if texture:
-                appearance.update(texture)
-            if appearance and group.geom_type == "Solid":
-                appearance = _nest_appearance_for_solid(appearance)
             model.objects[identifier].geometries.append(
-                Geometry(
-                    type=group.geom_type,
-                    lod=group.lod,
-                    boundaries=boundaries,
-                    semantics=group.semantics,
-                    semantic_values=semantic_values,
-                    appearance=appearance or None,
+                _geometry_from_group(
+                    group, target_to_material, theme_of, texture_targets
                 )
             )
 

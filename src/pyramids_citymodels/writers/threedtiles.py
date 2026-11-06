@@ -62,6 +62,23 @@ _B3DM_HEADER = struct.Struct("<4sIIIIII")
 _CONTENT_NAME = "content.b3dm"
 
 
+def _exterior_rings(
+    city_object: CityObject,
+) -> list[list[tuple[float, float, float]]]:
+    """A city object's surfaces' exterior rings (opened, as xyz triples, each with ≥3 vertices)."""
+    rings: list[list[tuple[float, float, float]]] = []
+    for geometry in city_object.geometries:
+        for surface, _value in iter_surfaces(
+            geometry.boundaries, geometry.semantic_values
+        ):
+            if not surface:
+                continue
+            ring = [xyz(coordinate) for coordinate in open_ring(surface[0])]
+            if len(ring) >= 3:
+                rings.append(ring)
+    return rings
+
+
 def _object_rings(
     model: CityModel,
 ) -> list[tuple[CityObject, list[list[tuple[float, float, float]]]]]:
@@ -72,16 +89,7 @@ def _object_rings(
     """
     contributing: list[tuple[CityObject, list[list[tuple[float, float, float]]]]] = []
     for city_object in model.objects.values():
-        rings: list[list[tuple[float, float, float]]] = []
-        for geometry in city_object.geometries:
-            for surface, _value in iter_surfaces(
-                geometry.boundaries, geometry.semantic_values
-            ):
-                if not surface:
-                    continue
-                ring = [xyz(coordinate) for coordinate in open_ring(surface[0])]
-                if len(ring) >= 3:
-                    rings.append(ring)
+        rings = _exterior_rings(city_object)
         if rings:
             contributing.append((city_object, rings))
     return contributing
