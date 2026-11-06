@@ -576,6 +576,91 @@ def _ring_key(surface: list[Any]) -> tuple[Any, ...]:
     )
 
 
+def _collect_boundary_surfaces(
+    root: ElementTree.Element,
+    parent_of: dict[ElementTree.Element, ElementTree.Element],
+    feature_ids: dict[ElementTree.Element, str],
+    polygons_by_id: dict[str, ElementTree.Element],
+    seen_ids: dict[str, set[int]],
+    seen_coords: dict[tuple[str, str | None], set[Any]],
+) -> "dict[str, dict[str, _SurfaceGroup]]":
+    """Pass 1: each feature's boundary-surface polygons, grouped per LOD and tagged semantically.
+
+    A boundary surface's LOD is read from its ``lodX`` container (default 2, the usual
+    semantic-surface level) rather than hardcoded, so a bridge/tunnel ``lod3MultiSurface`` is not
+    mislabelled LOD 2 (review R2-L3). ``xlink:href`` geometry is resolved against ``polygons_by_id``;
+    a ``gml:Triangle`` patch is resolved like a polygon (review R2-M1). Updates the shared ``seen_*``
+    de-dup state so pass 2 can skip what is already collected.
+    """
+    boundary_groups: dict[str, dict[str, _SurfaceGroup]] = {
+        identifier: {} for identifier in feature_ids.values()
+    }
+    for element in root.iter():
+        local = _local(element.tag)
+        if local not in _BOUNDARY_SURFACE_NAMES:
+            continue
+        feature_id = _nearest_feature_id(element, parent_of, feature_ids)
+        if feature_id is None:
+            continue
+        for node in element.iter():
+            polygon = _resolve_polygon(node, polygons_by_id)
+            if polygon is None or id(polygon) in seen_ids[feature_id]:
+                continue
+            seen_ids[feature_id].add(id(polygon))
+            surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
+            if not surface or len(surface[0]) < 3:
+                continue
+            lod = _lod_from_ancestors(polygon, parent_of, feature_ids) or "2"
+            group = boundary_groups[feature_id].setdefault(lod, _SurfaceGroup(lod=lod))
+            seen_coords.setdefault((feature_id, lod), set()).add(_ring_key(surface))
+            group.values.append(len(group.semantics))
+            group.semantics.append(SemanticSurface(type=local))
+            group.boundaries.append(surface)
+            group.polygon_ids.append(_gml_id(polygon))
+    return boundary_groups
+
+
+def _collect_direct_surfaces(
+    root: ElementTree.Element,
+    parent_of: dict[ElementTree.Element, ElementTree.Element],
+    feature_ids: dict[ElementTree.Element, str],
+    seen_ids: dict[str, set[int]],
+    seen_coords: dict[tuple[str, str | None], set[Any]],
+) -> "dict[str, dict[str | None, _SurfaceGroup]]":
+    """Pass 2: each feature's *directly*-held polygons (not under a boundary surface), grouped per LOD.
+
+    A polygon in a ``lodX`` container (furniture/vegetation/water/relief, or a coarse block beside a
+    building's boundary surfaces) with no semantic type, grouped by the LOD read from its container
+    (``None`` when none). Skips a polygon already taken by pass 1 (by identity) or whose coordinates
+    are already present at the same LOD (dual-encoding), reading the shared ``seen_*`` state.
+    """
+    direct_groups: dict[str, dict[str | None, _SurfaceGroup]] = {
+        identifier: {} for identifier in feature_ids.values()
+    }
+    for polygon in root.iter():
+        if _local(polygon.tag) not in _DIRECT_SURFACE_NAMES:
+            continue
+        if _under_boundary_surface(polygon, parent_of, feature_ids):
+            continue  # pass 1 owns boundary-surface polygons
+        feature_id = _nearest_feature_id(polygon, parent_of, feature_ids)
+        if feature_id is None or id(polygon) in seen_ids[feature_id]:
+            continue
+        seen_ids[feature_id].add(id(polygon))
+        surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
+        if not surface or len(surface[0]) < 3:
+            continue
+        lod = _lod_from_ancestors(polygon, parent_of, feature_ids)
+        key = _ring_key(surface)
+        if key in seen_coords.setdefault((feature_id, lod), set()):
+            continue  # dual-encoded within this LOD: already collected
+        seen_coords[(feature_id, lod)].add(key)
+        group = direct_groups[feature_id].setdefault(lod, _SurfaceGroup(lod=lod))
+        group.values.append(None)  # direct geometry carries no semantic surface
+        group.boundaries.append(surface)
+        group.polygon_ids.append(_gml_id(polygon))
+    return direct_groups
+
+
 def _gather_surfaces(
     root: ElementTree.Element,
     parent_of: dict[ElementTree.Element, ElementTree.Element],
@@ -599,72 +684,19 @@ def _gather_surfaces(
         Each feature id mapped to its surface groups — the semantic boundary groups (one per LOD)
         first, then the direct groups, each ordered by LOD (an unknown ``None`` LOD last).
     """
-    # Boundary (semantic) groups and direct groups are both keyed per feature per LOD. A boundary
-    # surface's LOD is read from its ``lodX`` container (defaulting to 2, the usual semantic-surface
-    # level) rather than hardcoded, so a bridge/tunnel ``lod3MultiSurface`` is not mislabelled LOD 2
-    # (review R2-L3).
-    boundary_groups: dict[str, dict[str, _SurfaceGroup]] = {
-        identifier: {} for identifier in feature_ids.values()
-    }
-    direct_groups: dict[str, dict[str | None, _SurfaceGroup]] = {
-        identifier: {} for identifier in feature_ids.values()
-    }
+    # Shared de-dup state across both passes. ``seen_ids`` drops a polygon collected twice by object
+    # identity; ``seen_coords`` (keyed per feature per LOD) collapses a surface dual-encoded within
+    # one LOD while keeping the same surface present at two different LODs (review R2-M2).
     seen_ids: dict[str, set[int]] = {
         identifier: set() for identifier in feature_ids.values()
     }
-    # Coordinate de-dup is scoped per (feature, LOD): a surface dual-encoded within one LOD (under a
-    # boundary surface AND inline in a same-LOD solid) collapses to one, but the *same* surface
-    # legitimately present at two different LODs survives in both (review R2-M2).
     seen_coords: dict[tuple[str, str | None], set[Any]] = {}
-
-    for element in root.iter():
-        local = _local(element.tag)
-        if local not in _BOUNDARY_SURFACE_NAMES:
-            continue
-        feature_id = _nearest_feature_id(element, parent_of, feature_ids)
-        if feature_id is None:
-            continue
-        for node in element.iter():
-            polygon = _resolve_polygon(node, polygons_by_id)
-            if polygon is None or id(polygon) in seen_ids[feature_id]:
-                continue
-            seen_ids[feature_id].add(id(polygon))
-            surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
-            if not surface or len(surface[0]) < 3:
-                continue
-            boundary_lod = _lod_from_ancestors(polygon, parent_of, feature_ids) or "2"
-            group = boundary_groups[feature_id].setdefault(
-                boundary_lod, _SurfaceGroup(lod=boundary_lod)
-            )
-            seen_coords.setdefault((feature_id, boundary_lod), set()).add(
-                _ring_key(surface)
-            )
-            group.values.append(len(group.semantics))
-            group.semantics.append(SemanticSurface(type=local))
-            group.boundaries.append(surface)
-            group.polygon_ids.append(_gml_id(polygon))
-
-    for polygon in root.iter():
-        if _local(polygon.tag) not in _DIRECT_SURFACE_NAMES:
-            continue
-        if _under_boundary_surface(polygon, parent_of, feature_ids):
-            continue  # pass 1 owns boundary-surface polygons
-        feature_id = _nearest_feature_id(polygon, parent_of, feature_ids)
-        if feature_id is None or id(polygon) in seen_ids[feature_id]:
-            continue
-        seen_ids[feature_id].add(id(polygon))
-        surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
-        if not surface or len(surface[0]) < 3:
-            continue
-        lod = _lod_from_ancestors(polygon, parent_of, feature_ids)
-        key = _ring_key(surface)
-        if key in seen_coords.setdefault((feature_id, lod), set()):
-            continue  # dual-encoded within this LOD: already collected
-        seen_coords[(feature_id, lod)].add(key)
-        group = direct_groups[feature_id].setdefault(lod, _SurfaceGroup(lod=lod))
-        group.values.append(None)  # direct geometry carries no semantic surface
-        group.boundaries.append(surface)
-        group.polygon_ids.append(_gml_id(polygon))
+    boundary_groups = _collect_boundary_surfaces(
+        root, parent_of, feature_ids, polygons_by_id, seen_ids, seen_coords
+    )
+    direct_groups = _collect_direct_surfaces(
+        root, parent_of, feature_ids, seen_ids, seen_coords
+    )
 
     def _by_lod(lod: str | None) -> tuple[bool, str]:
         """Sort key: real LODs ascending, an unknown (``None``) LOD last."""
