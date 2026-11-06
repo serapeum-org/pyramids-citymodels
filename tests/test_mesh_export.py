@@ -174,3 +174,30 @@ def test_to_file_routes_gltf(tmp_path: Path) -> None:
     out = tmp_path / "m.gltf"
     _model(_QUAD).to_file(out)
     assert json.loads(out.read_text())["meshes"][0]["primitives"][0]["mode"] == 4
+
+
+def test_gltf_drops_a_closed_rings_duplicate_vertex() -> None:
+    # A closed triangle (first == last) yields three positions, not four.
+    assert write_gltf(_model(_CLOSED_TRIANGLE))["accessors"][0]["count"] == 3
+
+
+def test_gltf_pools_a_vertex_shared_between_surfaces() -> None:
+    shared = (0.0, 0.0, 0.0)
+    a = [[shared, (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+    b = [[shared, (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]]
+    gltf = write_gltf(_model(a, b))
+    assert gltf["accessors"][0]["count"] == 4  # the shared corner is interned once
+
+
+def test_gltf_skips_a_degenerate_surface() -> None:
+    # A two-point ring is not a surface; it is dropped, leaving an empty (mesh-less) glTF.
+    assert write_gltf(_model([[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]]))["scenes"] == [
+        {"nodes": []}
+    ]
+
+
+def test_obj_skips_a_degenerate_surface_and_its_now_empty_object() -> None:
+    # The object's only surface is a two-point ring -> no face -> the object emits no 'o' marker.
+    lines = write_obj(_model([[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]])).splitlines()
+    assert not [line for line in lines if line.startswith("o ")]
+    assert not [line for line in lines if line.startswith("f ")]

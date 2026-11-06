@@ -133,6 +133,38 @@ def test_citygml_without_appearance_has_empty_appearances() -> None:
     assert model.objects["B1"].geometries[0].appearance is None
 
 
+def test_citygml_material_non_numeric_color_is_skipped_not_fatal() -> None:
+    # A malformed diffuseColor is dropped (not stored, not raised); the material still registers.
+    model = parse_citygml(_citygml_with_material(diffuse="red green blue"))
+    material = model.appearances["materials"][0]
+    assert "diffuseColor" not in material  # unparseable colour omitted
+    assert material["shininess"] == 0.2  # the rest of the material is intact
+
+
+def test_citygml_material_reads_is_smooth() -> None:
+    xml = _citygml_with_material().replace(
+        "<app:shininess>0.2</app:shininess>", "<app:isSmooth>true</app:isSmooth>"
+    )
+    assert parse_citygml(xml).appearances["materials"][0]["isSmooth"] is True
+
+
+def test_citygml_material_without_a_gml_id_has_no_name() -> None:
+    xml = _citygml_with_material().replace(
+        '<app:X3DMaterial gml:id="mat">', "<app:X3DMaterial>"
+    )
+    assert "name" not in parse_citygml(xml).appearances["materials"][0]
+
+
+def test_citygml_material_targeting_no_surface_paints_nothing() -> None:
+    # The material registers in the pool, but no feature gets a material map (nothing matched).
+    xml = _citygml_with_material().replace(
+        "<app:target>#poly1</app:target>", "<app:target>#ghost</app:target>"
+    )
+    model = parse_citygml(xml)
+    assert len(model.appearances["materials"]) == 1
+    assert model.objects["B1"].geometries[0].appearance is None
+
+
 def test_citygml_unpainted_surface_gets_a_null_material_value() -> None:
     # Two surfaces, only one targeted: the painted one is index 0, the other is null.
     xml = (

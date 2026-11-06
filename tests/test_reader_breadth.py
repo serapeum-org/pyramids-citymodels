@@ -135,6 +135,49 @@ def test_breadth_objects_flatten_to_a_feature_collection() -> None:
     assert "F1" in set(frame["city_object_id"])
 
 
+def test_direct_geometry_without_a_lod_container_has_lod_none() -> None:
+    # A polygon held straight on the feature (no lodX wrapper) still reads; its LOD is unknown.
+    xml = (
+        f"<core:CityModel {_NS}><core:cityObjectMember>"
+        f'<frn:CityFurniture gml:id="F1">{_TRI}</frn:CityFurniture>'
+        "</core:cityObjectMember></core:CityModel>"
+    )
+    geometry = parse_citygml(xml).objects["F1"].geometries[0]
+    assert geometry.lod is None
+    assert len(geometry.boundaries) == 1
+
+
+def test_polygon_outside_any_feature_is_ignored() -> None:
+    # A stray polygon not inside a recognized city object has no nearest feature and is dropped.
+    xml = (
+        f"<core:CityModel {_NS}>"
+        f"<core:cityObjectMember><frn:CityFurniture gml:id='F1'>"
+        f"<frn:lod1Geometry><gml:MultiSurface><gml:surfaceMember>{_TRI}"
+        "</gml:surfaceMember></gml:MultiSurface></frn:lod1Geometry></frn:CityFurniture>"
+        f"</core:cityObjectMember>{_TRI}</core:CityModel>"
+    ).replace("'", '"')
+    model = parse_citygml(xml)
+    assert set(model.objects) == {"F1"}
+    assert (
+        len(model.objects["F1"].geometries[0].boundaries) == 1
+    )  # the stray triangle not added
+
+
+def test_direct_degenerate_polygon_is_skipped() -> None:
+    # A direct polygon whose ring has fewer than three points is not a surface and is dropped.
+    two_point = _RING.format("0 0 0 1 0 0")
+    xml = (
+        f"<core:CityModel {_NS}><core:cityObjectMember>"
+        f'<frn:CityFurniture gml:id="F1"><frn:lod1Geometry><gml:MultiSurface>'
+        f"<gml:surfaceMember>{two_point}</gml:surfaceMember>"
+        "</gml:MultiSurface></frn:lod1Geometry></frn:CityFurniture>"
+        "</core:cityObjectMember></core:CityModel>"
+    )
+    assert (
+        parse_citygml(xml).objects["F1"].geometries == []
+    )  # no valid surface -> no geometry
+
+
 def test_mixed_types_in_one_document_all_read() -> None:
     xml = (
         f"<core:CityModel {_NS}>"
