@@ -25,7 +25,12 @@ The writer targets exactly what that reader rebuilds, so the round-trip fidelity
 - **Lossy:** attribute ``uom`` units, original ``gml:id``\\ s of surfaces/polygons (regenerated),
   a geometry whose surfaces carry *no* semantic type (written as a plain building geometry, which
   this package's semantic reader does not read back), and any non-``Building``/``BuildingPart``
-  object type (written, but not reconstructed by the reader — the writer warns when it drops one).
+  object type. Such a type (``Bridge``, ``CityFurniture``, … — now common since the CityGML reader
+  reads them) is written under the ``bldg:`` namespace with a warning, e.g. ``<bldg:CityFurniture>``,
+  which is **not schema-valid** (city furniture belongs to the ``frn:`` namespace): the geometry and
+  attributes are preserved for a CityJSON/JSON-FG/mesh target, but a CityGML→CityGML round-trip of a
+  non-building object is best-effort, not conformant (emitting the correct thematic namespace per
+  type is a follow-up).
   The geometry **type** does not survive a conversion either: the reader always rebuilds a
   ``MultiSurface``, so a CityJSON ``Solid``/``MultiSolid`` keeps its *surfaces* but comes back as a
   ``MultiSurface``, not a ``Solid``.
