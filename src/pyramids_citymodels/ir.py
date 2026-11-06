@@ -29,9 +29,12 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored 
 import re
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pyramids_citymodels.errors import CityModelError
+
+if TYPE_CHECKING:
+    from pyramids_citymodels.options import ObjectFilter
 
 __all__ = [
     "CityModel",
@@ -249,7 +252,9 @@ class CityModel:
     extensions: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_file(cls, path: Any) -> "CityModel":
+    def from_file(
+        cls, path: Any, selector: "ObjectFilter | None" = None
+    ) -> "CityModel":
         """Parse a city-model file into a :class:`CityModel`, choosing the reader by content.
 
         The symmetric counterpart of :meth:`to_file`: it dispatches to the CityJSON, CityGML or
@@ -264,9 +269,14 @@ class CityModel:
 
         Args:
             path: A path to a CityJSON, CityGML or 3D Tiles file.
+            selector: An optional :class:`~pyramids_citymodels.options.ObjectFilter` read-time
+                subset. The CityJSON and CityGML readers apply it while parsing (skipping an
+                object's geometry when it does not match); the 3D Tiles reader prunes tile subtrees
+                by bbox and filters the decoded features, since its objects are synthesized from
+                tiles. ``None`` reads everything.
 
         Returns:
-            The parsed city model.
+            The parsed city model, containing only the objects the ``selector`` keeps.
 
         Raises:
             CityModelError: If no reader recognizes the file.
@@ -292,6 +302,19 @@ class CityModel:
                 'CityGML'
 
                 ```
+            - Subset to chosen ids at read time with an
+              :class:`~pyramids_citymodels.options.ObjectFilter`:
+                ```python
+                >>> from pyramids_citymodels.options import ObjectFilter
+                >>> doc = (
+                ...     '{"type": "CityJSON", "version": "2.0", "vertices": [], '
+                ...     '"CityObjects": {"a": {"type": "Building"}, "b": {"type": "Building"}}}'
+                ... )
+                >>> model = CityModel.from_file(doc, ObjectFilter.coerce(ids="a"))
+                >>> list(model.objects)
+                ['a']
+
+                ```
         """
         from pyramids_citymodels.errors import CityModelError
         from pyramids_citymodels.readers.citygml import (
@@ -309,13 +332,16 @@ class CityModel:
 
         name = str(path).lower()
         if name.endswith((".gml", ".xml", ".citygml")):
-            return parse_citygml(path)
+            return parse_citygml(path, selector)
         if looks_like_cityjson(path):
-            return parse_cityjson(path)
+            return parse_cityjson(path, selector)
         if looks_like_3dtiles(path):
-            return parse_3dtiles(path)
+            # 3D Tiles objects are synthesized from decoded tiles rather than read from named
+            # features, so the reader prunes tile subtrees by bbox and applies the rest of the
+            # subset to the decoded features itself (see parse_3dtiles).
+            return parse_3dtiles(path, selector)
         if looks_like_citygml(path):
-            return parse_citygml(path)
+            return parse_citygml(path, selector)
         raise CityModelError(
             f"no city-model reader recognizes {path!r} (not CityJSON, 3D Tiles or CityGML)"
         )

@@ -49,6 +49,17 @@ class CityGmlDriver:
         """Parse ``source``'s LOD2 buildings into a :class:`pyramids.feature.FeatureCollection`.
 
         Keyword Args:
+            ids: Read only features with these ``gml:id``\\ s (a str or iterable of strings);
+                subset applied at parse time, before polygons are parsed.
+            types: Read only features of these types (``"Building"`` / ``"BuildingPart"``).
+            attributes: Read only features whose attributes equal these key/value pairs.
+            bbox: ``(xmin, ymin, xmax, ymax)`` in the file's CRS — a conservative prefilter that
+                skips a feature whose own ``gml:Envelope`` is outside; features without one are
+                kept (refine with ``FeatureCollection.clip_by_rect`` for an exact result).
+            exclude: ids/types/attributes to drop (a mapping, an ``ObjectFilter``, or ids) — the
+                negation of the keep criteria.
+            sample: Keep a random subset — a ``float`` fraction or an ``int`` count — of the matches.
+            seed: Seed for ``sample``, for a reproducible subset.
             strategy: ``"footprint"`` or ``"semantic_surfaces"`` (default).
             lod: Level of detail to select; ``None`` takes the highest present.
             geometry_dimension: ``"xyz"`` (default) keeps Z, ``"xy"`` drops it.
@@ -78,7 +89,17 @@ class CityGmlDriver:
                 ```
         """
         from pyramids_citymodels.flatten import to_feature_collection
+        from pyramids_citymodels.options import ObjectFilter
         from pyramids_citymodels.readers.citygml import parse_citygml
 
-        model = parse_citygml(source)
+        selector = ObjectFilter.coerce(
+            ids=kwargs.pop("ids", None),
+            types=kwargs.pop("types", None),
+            attributes=kwargs.pop("attributes", None),
+            bbox=kwargs.pop("bbox", None),
+            exclude=kwargs.pop("exclude", None),
+            sample=kwargs.pop("sample", None),
+            seed=kwargs.pop("seed", None),
+        )
+        model = parse_citygml(source, selector)
         return to_feature_collection(model, **kwargs)

@@ -28,8 +28,27 @@ from pyramids_citymodels.ir import (
     SemanticSurface,
     crs_from_identifier,
 )
+from pyramids_citymodels.options import ObjectFilter
 
 __all__ = ["looks_like_cityjson", "parse_cityjson"]
+
+
+def _extent_2d(extent: Any) -> "tuple[float, float, float, float] | None":
+    """Normalize a CityJSON ``geographicalExtent`` to 2D ``(xmin, ymin, xmax, ymax)``, or ``None``.
+
+    CityJSON declares an extent as ``[minx, miny, minz, maxx, maxy, maxz]`` (6 values); a 4-value
+    ``[minx, miny, maxx, maxy]`` is accepted too. Anything shorter, or non-numeric, is treated as
+    "no declared extent" so the bbox prefilter keeps the object rather than guessing.
+    """
+    if not isinstance(extent, (list, tuple)) or len(extent) < 4:
+        return None
+    try:
+        values = [float(component) for component in extent]
+    except (TypeError, ValueError):
+        return None
+    if len(values) >= 6:
+        return (values[0], values[1], values[3], values[4])
+    return (values[0], values[1], values[2], values[3])
 
 
 def _load(source: Any) -> Any:
@@ -143,15 +162,63 @@ def _parse_semantics(
     return surfaces, semantics.get("values")
 
 
-def parse_cityjson(source: Any) -> CityModel:
+def _select_cityjson_ids(
+    raw_objects: dict[str, Any], selector: "ObjectFilter | None"
+) -> set[str]:
+    """The object ids to read, applied to object *headers* before any geometry is dereferenced.
+
+    With no selector every id is kept. Otherwise an object survives when it matches by
+    id/type/attribute and is not proven outside the bbox by its declared ``geographicalExtent`` (one
+    without an extent is kept and refined downstream); the survivors are then thinned by any random
+    sample. This is the parse-time win: a city-scale file is subset without decoding what it
+    discards (feature #5, bbox #32).
+    """
+    if selector is None:
+        return set(raw_objects)
+    candidates = [
+        object_id
+        for object_id, raw in raw_objects.items()
+        if selector.matches(
+            object_id, raw.get("type", "Unknown"), raw.get("attributes") or {}
+        )
+        and not selector.rejects_extent(_extent_2d(raw.get("geographicalExtent")))
+    ]
+    return selector.sample_ids(candidates)
+
+
+def _build_geometry(
+    raw_geometry: dict[str, Any], vertices: list[tuple[float, ...]]
+) -> Geometry:
+    """Build one IR :class:`Geometry` from a CityJSON geometry, dereferencing its boundaries."""
+    surfaces, values = _parse_semantics(raw_geometry.get("semantics"))
+    lod = raw_geometry.get("lod")
+    appearance: dict[str, Any] = {
+        key: raw_geometry[key] for key in ("material", "texture") if key in raw_geometry
+    }
+    return Geometry(
+        type=raw_geometry.get("type", "Unknown"),
+        lod=None if lod is None else str(lod),
+        boundaries=_dereference(raw_geometry.get("boundaries", []), vertices),
+        semantics=surfaces,
+        semantic_values=values,
+        appearance=appearance or None,
+    )
+
+
+def parse_cityjson(source: Any, selector: "ObjectFilter | None" = None) -> CityModel:
     """Parse a CityJSON document into a :class:`~pyramids_citymodels.ir.CityModel`.
 
     Args:
         source: A path to a ``.city.json``/``.json`` file, an open text file, a JSON string, or
             an already-decoded CityJSON ``dict``.
+        selector: An optional :class:`~pyramids_citymodels.options.ObjectFilter`. When given, a
+            city object is read only if it matches (by id/type/attributes, and — for an object that
+            declares a ``geographicalExtent`` — a bbox prefilter); non-matching objects are skipped
+            **before their geometry is dereferenced**, so a large file can be subset without paying
+            to decode the objects it discards. ``None`` reads every object.
 
     Returns:
-        The city model with every boundary dereferenced to transformed coordinate tuples.
+        The city model with every (kept) boundary dereferenced to transformed coordinate tuples.
 
     Raises:
         ValueError: If the document is not a CityJSON object.
@@ -198,33 +265,19 @@ def parse_cityjson(source: Any) -> CityModel:
         extensions=dict(document.get("extensions", {}) or {}),
     )
 
-    for object_id, raw in document.get("CityObjects", {}).items():
-        geometries = []
-        for raw_geometry in raw.get("geometry", []):
-            surfaces, values = _parse_semantics(raw_geometry.get("semantics"))
-            lod = raw_geometry.get("lod")
-            appearance = {
-                key: raw_geometry[key]
-                for key in ("material", "texture")
-                if key in raw_geometry
-            }
-            geometries.append(
-                Geometry(
-                    type=raw_geometry.get("type", "Unknown"),
-                    lod=None if lod is None else str(lod),
-                    boundaries=_dereference(
-                        raw_geometry.get("boundaries", []), vertices
-                    ),
-                    semantics=surfaces,
-                    semantic_values=values,
-                    appearance=appearance or None,
-                )
-            )
+    raw_objects = document.get("CityObjects", {}) or {}
+    kept_ids = _select_cityjson_ids(raw_objects, selector)
+    for object_id, raw in raw_objects.items():
+        if object_id not in kept_ids:
+            continue
         model.objects[object_id] = CityObject(
             id=object_id,
             type=raw.get("type", "Unknown"),
             attributes=dict(raw.get("attributes", {}) or {}),
-            geometries=geometries,
+            geometries=[
+                _build_geometry(raw_geometry, vertices)
+                for raw_geometry in raw.get("geometry", [])
+            ],
             parents=list(raw.get("parents", []) or []),
             children=list(raw.get("children", []) or []),
         )

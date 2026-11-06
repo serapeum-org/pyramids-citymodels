@@ -50,8 +50,137 @@ import numpy as np
 
 from pyramids_citymodels.errors import UnsupportedGeometryError
 from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+from pyramids_citymodels.options import ObjectFilter
 
 __all__ = ["looks_like_3dtiles", "parse_3dtiles"]
+
+
+def _geometry_extent_2d(
+    city_object: CityObject,
+) -> "tuple[float, float, float, float] | None":
+    """The 2D ``(xmin, ymin, xmax, ymax)`` extent of a feature's footprint, or ``None`` if empty.
+
+    Walks the footprint boundaries (lists nest; a coordinate is a tuple) and takes the XY bounds.
+    This is the *decoded* footprint extent, so the bbox test on a 3D Tiles feature is exact — the
+    reader does not reproject, so the bbox is read in the tileset's own stored coordinate system
+    (usually ECEF metres), the same frame the footprints live in.
+    """
+    xs: list[float] = []
+    ys: list[float] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, tuple):
+            if len(node) >= 2:
+                xs.append(node[0])
+                ys.append(node[1])
+            return
+        if isinstance(node, list):
+            for child in node:
+                walk(child)
+
+    for geometry in city_object.geometries:
+        walk(geometry.boundaries)
+    if not xs:
+        return None
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _bounding_volume_extent(
+    tile: dict[str, Any], transform: np.ndarray
+) -> "tuple[float, float, float, float] | None":
+    """The 2D extent of a tile's ``box`` bounding volume after ``transform``, or ``None``.
+
+    A 3D Tiles ``box`` bounding volume is ``[cx, cy, cz, ux, uy, uz, vx, vy, vz, wx, wy, wz]`` — a
+    centre plus three half-axis vectors. Its eight corners are transformed into the root frame and
+    their XY bounds returned, giving a conservative axis-aligned extent for pruning. Only a ``box``
+    volume is handled; a ``region`` (geographic radians) or ``sphere`` returns ``None`` so the
+    caller does not prune on a volume it cannot place without reprojection.
+    """
+    volume = tile.get("boundingVolume") or {}
+    box = volume.get("box")
+    if not isinstance(box, (list, tuple)) or len(box) < 12:
+        return None
+    try:
+        center = np.array([float(component) for component in box[0:3]])
+        axis_u = np.array([float(component) for component in box[3:6]])
+        axis_v = np.array([float(component) for component in box[6:9]])
+        axis_w = np.array([float(component) for component in box[9:12]])
+    except (TypeError, ValueError):
+        return None
+    corners = np.array(
+        [
+            center + sign_u * axis_u + sign_v * axis_v + sign_w * axis_w
+            for sign_u in (-1.0, 1.0)
+            for sign_v in (-1.0, 1.0)
+            for sign_w in (-1.0, 1.0)
+        ]
+    )
+    homogeneous = np.column_stack([corners, np.ones(len(corners))])
+    world = (transform @ homogeneous.T).T[:, :3]
+    return (
+        float(world[:, 0].min()),
+        float(world[:, 1].min()),
+        float(world[:, 0].max()),
+        float(world[:, 1].max()),
+    )
+
+
+def _tile_content_outside_bbox(
+    tile: dict[str, Any],
+    transform: np.ndarray,
+    selector: "ObjectFilter | None",
+) -> bool:
+    """Whether a tile's *own* content decode can be skipped because its bounding volume misses the bbox.
+
+    The 3D Tiles bbox *prefilter*: a tile's bounding volume encloses the tile's own content, so if it
+    is disjoint from the query bbox this tile's ``b3dm`` need not be decoded — its footprints are all
+    outside. This gates **only the tile's own content**, never its children: 3D Tiles does not require
+    a child's bounding volume to nest inside its parent's (notably under ``"refine": "REPLACE"``), so
+    the walker still recurses into children, each judged on its own box. Skipping a whole subtree on
+    an ancestor box could silently drop an in-bbox descendant, breaking the conservative-superset
+    contract.
+
+    It fires for **any** ``gltfUpAxis``: a ``box`` bounding volume is defined in the tile's (z-up)
+    coordinate frame regardless of the up-axis — the up-axis rotation applies only to glTF *content* —
+    and the decoded footprints are brought to that same z-up world frame via
+    ``tile_transform @ _up_axis_to_zup(up_axis)``, so the transformed box extent and the footprints
+    share the XY plane. It is conservative in that it requires a bbox and a ``box`` volume this reader
+    can place: a ``region``/``sphere`` volume yields no extent, so the content is decoded and the exact
+    per-feature footprint test catches anything outside. Content is never skipped on a volume the
+    reader cannot place.
+    """
+    if selector is None or selector.bbox is None:
+        return False
+    extent = _bounding_volume_extent(tile, transform)
+    return extent is not None and selector.rejects_extent(extent)
+
+
+def _apply_selector(
+    objects: dict[str, CityObject], selector: "ObjectFilter | None"
+) -> dict[str, CityObject]:
+    """Filter decoded 3D Tiles features by ``selector`` (metadata, exact footprint bbox, sample).
+
+    3D Tiles features are synthesized from decoded tiles rather than read from named file objects,
+    so — unlike CityJSON/CityGML — their metadata and footprints only exist after decoding. The
+    subtree prefilter (:func:`_subtree_outside_bbox`) already skipped whole branches cheaply; this
+    applies the full filter to what remains, using each feature's decoded footprint extent for an
+    exact bbox test, then thins the survivors by any random sample.
+    """
+    if selector is None:
+        return objects
+    candidates = [
+        object_id
+        for object_id, city_object in objects.items()
+        if selector.matches(object_id, city_object.type, city_object.attributes)
+        and not selector.rejects_extent(_geometry_extent_2d(city_object))
+    ]
+    kept = selector.sample_ids(candidates)
+    return {
+        object_id: city_object
+        for object_id, city_object in objects.items()
+        if object_id in kept
+    }
+
 
 #: Little-endian magic for a binary glTF container (``"glTF"``).
 _GLB_MAGIC = 0x46546C67
@@ -610,16 +739,25 @@ def _walk_tileset(
     up_axis: Any,
     objects: dict[str, CityObject],
     counter: list[int],
+    selector: "ObjectFilter | None" = None,
 ) -> None:
     """Depth-first walk of a tileset tree, decoding each tile's content into ``objects``.
 
     ``counter`` is a single-element list used as a running tile index, so each decoded content file
-    gets a distinct ``source_id`` for its generated feature ids across the whole walk.
+    gets a distinct ``source_id`` for its generated feature ids across the whole walk. When
+    ``selector`` carries a bbox, a tile whose bounding volume is disjoint from it has its own content
+    decode skipped (the read-time bbox prefilter, see :func:`_tile_content_outside_bbox`); the walk
+    still recurses into that tile's children, since a child's bounding volume need not nest inside
+    its parent's, so skipping a whole subtree could drop an in-bbox descendant.
     """
     here = _tile_transform(tile, transform)
     content = tile.get("content") or {}
     uri = content.get("uri") or content.get("url")
-    if uri and base is not None:
+    if (
+        uri
+        and base is not None
+        and not _tile_content_outside_bbox(tile, here, selector)
+    ):
         if "://" in str(uri):
             # A content.uri may be an absolute URL; this reader resolves only local, relative
             # paths. Skip it loudly rather than turning it into a bogus local path read as empty.
@@ -630,9 +768,9 @@ def _walk_tileset(
                 stacklevel=2,
             )
         else:
-            _decode_content(base / uri, here, up_axis, objects, counter)
+            _decode_content(base / uri, here, up_axis, objects, counter, selector)
     for child in tile.get("children", []):
-        _walk_tileset(child, base, here, up_axis, objects, counter)
+        _walk_tileset(child, base, here, up_axis, objects, counter, selector)
 
 
 def _decode_content(
@@ -641,6 +779,7 @@ def _decode_content(
     up_axis: Any,
     objects: dict[str, CityObject],
     counter: list[int],
+    selector: "ObjectFilter | None" = None,
 ) -> None:
     """Decode one referenced content file (a nested tileset, a ``b3dm``, or a routed-out ``pnts``)."""
     suffix = path.suffix.lower()
@@ -653,7 +792,13 @@ def _decode_content(
         ):
             nested_up = (nested.get("asset") or {}).get("gltfUpAxis", up_axis)
             _walk_tileset(
-                nested["root"], nested_base, transform, nested_up, objects, counter
+                nested["root"],
+                nested_base,
+                transform,
+                nested_up,
+                objects,
+                counter,
+                selector,
             )
         return
     data = _read_bytes(path)
@@ -673,7 +818,7 @@ def _decode_content(
         _insert_object(objects, city_object)
 
 
-def parse_3dtiles(source: Any) -> CityModel:
+def parse_3dtiles(source: Any, selector: "ObjectFilter | None" = None) -> CityModel:
     """Parse a 3D Tiles tileset or a single ``b3dm`` tile into a :class:`CityModel`.
 
     A ``tileset.json`` path (or decoded dict/JSON string) is walked from its root, following every
@@ -683,6 +828,10 @@ def parse_3dtiles(source: Any) -> CityModel:
 
     Args:
         source: A ``tileset.json`` path / dict / JSON string, or a ``b3dm`` path / bytes.
+        selector: An optional :class:`~pyramids_citymodels.options.ObjectFilter` read-time subset.
+            A bbox prunes whole tile subtrees whose bounding volume misses it (skipping their
+            decode); the id/type/attribute, exclude, exact-footprint bbox and random-sample tests
+            then apply to the features that remain. ``None`` reads everything.
 
     Returns:
         The parsed model. Its ``crs`` is ``None`` — see the module docstring on coordinate systems.
@@ -725,14 +874,18 @@ def parse_3dtiles(source: Any) -> CityModel:
         up_axis = (document.get("asset") or {}).get("gltfUpAxis", "Y")
         root = document.get("root")
         if isinstance(root, dict):
-            _walk_tileset(root, base, np.eye(4), up_axis, objects, [0])
-        return CityModel(objects=objects, source_format="3DTiles")
+            _walk_tileset(root, base, np.eye(4), up_axis, objects, [0], selector)
+        return CityModel(
+            objects=_apply_selector(objects, selector), source_format="3DTiles"
+        )
 
     data = _read_bytes(source)
     if data is not None and len(data) >= 4 and data[:4] == b"b3dm":
         for city_object in _parse_b3dm_tile(data, np.eye(4), "Y", "tile"):
             _insert_object(objects, city_object)
-        return CityModel(objects=objects, source_format="3DTiles")
+        return CityModel(
+            objects=_apply_selector(objects, selector), source_format="3DTiles"
+        )
 
     raise TypeError(
         f"cannot read 3D Tiles from {type(source).__name__}: expected a tileset.json or a b3dm tile"

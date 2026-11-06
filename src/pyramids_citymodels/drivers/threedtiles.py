@@ -63,6 +63,19 @@ class ThreeDTilesDriver:
         """Parse ``source`` and flatten its footprints into a ``FeatureCollection``.
 
         Keyword Args:
+            ids: Read only features with these ids (a str or iterable of strings).
+            types: Read only features of these types.
+            attributes: Read only features whose attributes satisfy these criteria (scalar equality
+                or a predicate mapping such as ``{"ge": 10}`` / ``{"like": "resid%"}``).
+            bbox: ``(xmin, ymin, xmax, ymax)`` in the tileset's **stored coordinate system** —
+                commonly ECEF metres, since this reader does not reproject (``crs`` is ``None``).
+                This is unlike the CityJSON/CityGML ``bbox``, which is in the file's own CRS; a
+                lon/lat or projected bbox will silently select nothing here. It prunes whole tile
+                subtrees whose bounding volume misses it (skipping their decode) and then exactly
+                filters the decoded features by their footprint extent.
+            exclude: ids/types/attributes to drop (a mapping, an ``ObjectFilter``, or ids).
+            sample: Keep a random subset — a ``float`` fraction or an ``int`` count — of the matches.
+            seed: Seed for ``sample``, for a reproducible subset.
             strategy: ``"footprint"`` or ``"semantic_surfaces"`` (default). 3D Tiles carries no
                 semantic surfaces, so each feature's footprint becomes one row either way.
             lod: Level of detail to select; ``None`` takes the highest present (3D Tiles has none).
@@ -86,7 +99,17 @@ class ThreeDTilesDriver:
                 ```
         """
         from pyramids_citymodels.flatten import to_feature_collection
+        from pyramids_citymodels.options import ObjectFilter
         from pyramids_citymodels.readers.threedtiles import parse_3dtiles
 
-        model = parse_3dtiles(source)
+        selector = ObjectFilter.coerce(
+            ids=kwargs.pop("ids", None),
+            types=kwargs.pop("types", None),
+            attributes=kwargs.pop("attributes", None),
+            bbox=kwargs.pop("bbox", None),
+            exclude=kwargs.pop("exclude", None),
+            sample=kwargs.pop("sample", None),
+            seed=kwargs.pop("seed", None),
+        )
+        model = parse_3dtiles(source, selector)
         return to_feature_collection(model, **kwargs)

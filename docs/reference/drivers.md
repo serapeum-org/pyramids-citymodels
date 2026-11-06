@@ -41,7 +41,50 @@ features = CityJsonDriver().read("building.city.json", strategy="semantic_surfac
 
 ### Read options
 
-Both drivers' `read` forward the same keyword options to the flattener:
+Both drivers' `read` accept the same keyword options. The first group is a **read-time subset**
+applied by the reader (non-matching objects are skipped *before* their geometry is decoded, so a
+city-scale file can be sliced without paying to parse what it discards); the rest are forwarded to
+the flattener.
+
+Subset (parse-time), bundled as an
+[`ObjectFilter`][pyramids_citymodels.options.ObjectFilter]:
+
+- `ids` — keep only objects with these ids (a string, or an iterable of strings).
+- `types` — keep only objects of these types (e.g. `"Building"`, `"BuildingPart"`).
+- `attributes` — keep only objects whose attributes satisfy each of these criteria. A value is
+  either a scalar (matched by `==`) or a **CQL2-style predicate mapping** whose operators must all
+  hold: `{"ge": 10}`, `{"gt": 0, "lt": 100}`, `{"in": ["residential", "commercial"]}`,
+  `{"nin": [...]}`, `{"ne": x}`, `{"like": "resid%"}` (`%`/`*` = any run, `_`/`?` = one char), or
+  `{"between": [lo, hi]}`. A comparison against a missing/incomparable value is a non-match, never
+  an error.
+- `bbox` — `(xmin, ymin, xmax, ymax)` in the **file's own CRS** (no reprojection here). A
+  *conservative prefilter*: an object is skipped only when a **declared extent the file already
+  carries** — a CityJSON per-object `geographicalExtent`, or a CityGML feature's own
+  `gml:Envelope` — proves it lies wholly outside. An object with **no declared extent is kept**
+  (proving it outside would mean decoding the geometry this is meant to skip), so the bbox result
+  is a *superset* of the exact selection. Refine it with `FeatureCollection.clip_by_rect(...)`
+  downstream for an exact clip. (3D Tiles instead prunes whole tile subtrees whose bounding volume
+  misses the bbox, then filters the decoded features by their exact footprint extent. Its bbox is
+  in the tileset's **stored** coordinate system — commonly ECEF metres, since the 3D Tiles reader
+  does not reproject — not a lon/lat or projected CRS, so a wrong-frame bbox silently selects
+  nothing.)
+- `exclude` — the **negation**: ids/types/attributes whose match *drops* an object (a mapping of
+  `ids`/`types`/`attributes`, an `ObjectFilter`, or a lone id / iterable of ids). "Keep X but not
+  Y." Metadata only — a `bbox`/`sample` inside an `exclude` is ignored.
+- `sample` — keep a **random subset** of the matches: a `float` fraction (`0.1` ≈ 10%) or an `int`
+  maximum count. Reproducible when `seed` is given. For CityJSON/CityGML the draw is made over the
+  objects that pass the metadata and bbox tests, *before* any geometry is decoded.
+- `seed` — seed for the `sample` draw, for a repeatable subset.
+
+An object is kept only when it satisfies **every** keep criterion, is **not** matched by `exclude`,
+and survives the `sample`; filtering is per object and does not pull in relatives (a kept
+`BuildingPart` whose `Building` was dropped keeps a dangling `parent_id`, and in CityGML a dropped
+feature's surfaces roll up to the nearest kept ancestor). Filtering a `FeatureCollection` *after*
+reading is a GIS operation and stays in `pyramids-core`; these keywords are only the parse-time
+skip. The same subset is available on the IR entry point as
+`CityModel.from_file(path, ObjectFilter.coerce(...))`.
+
+Projection (flatten-time):
 
 - `strategy` — `"semantic_surfaces"` (default; one row per boundary surface) or `"footprint"`
   (one plan-view row per object).
@@ -49,6 +92,13 @@ Both drivers' `read` forward the same keyword options to the flattener:
 - `geometry_dimension` — `"xyz"` (default, keeps Z) or `"xy"` (drops Z). Ignored for a footprint.
 - `child_inherits_parent_attributes` — when `True`, a `BuildingPart` row also carries its
   `Building`'s attributes.
+
+```python
+# Read only two buildings, as footprints, straight into a FeatureCollection:
+features = CityJsonDriver().read(
+    "city.city.json", ids=["B1", "B2"], strategy="footprint"
+)
+```
 
 A surface geometry is a planar polygon in 3D: a **vertical wall is non-areal in the XY plane** by
 design, so it is valid-but-zero-area in `semantic_surfaces` and excluded from a `footprint`. An
