@@ -704,7 +704,7 @@ def _parse_x3d_material(
 
 def _gather_appearances(
     root: ElementTree.Element,
-) -> "tuple[list[dict[str, Any]], dict[str, int], dict[int, str]]":
+) -> "tuple[list[dict[str, Any]], dict[str, list[int]], dict[int, str]]":
     """Read CityGML ``app:X3DMaterial`` appearances into a material pool and target/theme indexes.
 
     Textures (``app:ParameterizedTexture``) are **not** read yet — their UV coordinates need the
@@ -713,11 +713,12 @@ def _gather_appearances(
 
     Returns:
         ``(materials, target_to_material, theme_of)`` — the CityJSON-shaped material objects, a map
-        from each material's ``app:target`` polygon ``gml:id`` to its index, and each material
-        index's ``app:theme``. :func:`_material_map` turns these into a per-geometry material map.
+        from each material's ``app:target`` polygon ``gml:id`` to **every** material index painting
+        it (one per theme it is targeted in), and each material index's ``app:theme``.
+        :func:`_material_map` turns these into a per-geometry material map.
     """
     materials: list[dict[str, Any]] = []
-    target_to_material: dict[str, int] = {}
+    target_to_material: dict[str, list[int]] = {}
     theme_of: dict[int, str] = {}
     for appearance in root.iter():
         if _local(appearance.tag) != "Appearance":
@@ -738,30 +739,29 @@ def _gather_appearances(
             materials.append(material)
             theme_of[index] = theme
             for target in targets:
-                target_to_material[target] = index
+                target_to_material.setdefault(target, []).append(index)
     return materials, target_to_material, theme_of
 
 
 def _material_map(
     polygon_ids: list[str | None],
-    target_to_material: dict[str, int],
+    target_to_material: dict[str, list[int]],
     theme_of: dict[int, str],
 ) -> "dict[str, Any] | None":
     """The CityJSON ``material`` map for one geometry, grouped by theme, or ``None`` if unpainted.
 
-    Each surface's source polygon ``gml:id`` is looked up in ``target_to_material``; a hit sets that
-    surface's material index under the material's own theme (so surfaces painted under different
-    ``app:theme``\\ s land under the right theme key — review L2), the rest ``None``.
+    Each surface's source polygon ``gml:id`` is looked up in ``target_to_material``; every material
+    painting it sets that surface's material index under the material's own theme — so a surface
+    painted under several ``app:theme``\\ s lands under each theme key (review L2/R2-M3), the rest
+    ``None``.
     """
     by_theme: dict[str, list[int | None]] = {}
     painted = False
     for position, polygon_id in enumerate(polygon_ids):
-        index = target_to_material.get(polygon_id or "")
-        if index is None:
-            continue
-        painted = True
-        values = by_theme.setdefault(theme_of[index], [None] * len(polygon_ids))
-        values[position] = index
+        for index in target_to_material.get(polygon_id or "", []):
+            painted = True
+            values = by_theme.setdefault(theme_of[index], [None] * len(polygon_ids))
+            values[position] = index
     if not painted:
         return None
     return {
