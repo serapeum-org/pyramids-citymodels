@@ -230,11 +230,14 @@ def _append_plain_surface(
 def _append_solid(
     ns: dict[str, str], feature: ElementTree.Element, geometry: Geometry, lod: int
 ) -> None:
-    """Append a (non-semantic) ``Solid``/``MultiSolid`` as a ``bldg:lod{n}Solid`` of a CompositeSurface.
+    """Append a (non-semantic) ``Solid`` as a ``bldg:lod{n}Solid`` of one ``gml:CompositeSurface``.
 
     Emitting the surfaces inside a ``gml:Solid`` (rather than as separate plain ``MultiSurface``
     properties) preserves the geometry *type*, so a CityJSON ``Solid`` round-trips as a ``Solid``
-    through CityGML (the reader reads a ``lodXSolid`` back as ``type="Solid"`` — §3 gap 2).
+    through CityGML (the reader reads a ``lodXSolid`` back as ``type="Solid"`` — §3 gap 2). Only a
+    single ``Solid`` is handled here: a ``MultiSolid`` is **not** routed through this path (that would
+    collapse its N solids into one shell and mislabel the type), so it falls through to the
+    per-surface path in :func:`_append_geometry` and is written as its surfaces.
     """
     polygons = [
         polygon
@@ -259,14 +262,16 @@ def _append_geometry(
 ) -> None:
     """Append one IR geometry to ``feature`` — a ``gml:Solid`` when it is a plain solid, else surfaces.
 
-    A non-semantic ``Solid``/``MultiSolid`` is emitted as a ``bldg:lod{n}Solid`` so its type survives
-    the round-trip (§3 gap 2). Otherwise the geometry is walked to surface level for ANY type via the
-    shared IR traversal, each surface paired with its semantic value — so a semantic ``Solid``'s
-    surfaces (nested one shell deeper) are still reached and emitted as ``bldg:boundedBy`` boundary
-    surfaces, and a surface with no semantic type becomes a plain building ``MultiSurface``.
+    A non-semantic ``Solid`` is emitted as a ``bldg:lod{n}Solid`` so its type survives the round-trip
+    (§3 gap 2). Every other geometry is walked to surface level for ANY type via the shared IR
+    traversal, each surface paired with its semantic value — so a semantic ``Solid``'s surfaces (nested
+    one shell deeper) are still reached and emitted as ``bldg:boundedBy`` boundary surfaces, and a
+    surface with no semantic type becomes a plain building ``MultiSurface``. A ``MultiSolid`` is **not**
+    emitted as a single ``gml:Solid`` (that would collapse its solids and mislabel the type); it takes
+    this per-surface path, so its type is not preserved (a documented limit) but it is never mislabelled.
     """
     lod = _lod_number(geometry)
-    if geometry.type in ("Solid", "MultiSolid") and not geometry.semantics:
+    if geometry.type == "Solid" and not geometry.semantics:
         _append_solid(ns, feature, geometry, lod)
         return
     for surface, semantic_value in iter_surfaces(

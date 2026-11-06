@@ -124,3 +124,27 @@ def test_material_on_a_solid_is_nested_one_shell_deeper() -> None:
     assert geometry.type == "Solid"
     # values nest one level deeper than a MultiSurface's per-surface [idx] list.
     assert geometry.appearance["material"]["wall"]["values"] == [[0]]
+
+
+def test_multisolid_is_not_emitted_as_a_single_solid() -> None:
+    # A MultiSolid must not be collapsed into one gml:Solid (which would mislabel it Solid on read).
+    # It is written as its surfaces instead: type is not preserved, but it is never mislabelled.
+    solid_a = [[[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 0.0, 0.0)]]]
+    solid_b = [[[(5.0, 5.0, 0.0), (6.0, 5.0, 0.0), (6.0, 6.0, 0.0), (5.0, 5.0, 0.0)]]]
+    model = CityModel(
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(type="MultiSolid", lod="2", boundaries=[solid_a, solid_b])
+                ],
+            )
+        }
+    )
+    xml = model.to_citygml()
+    assert "<gml:Solid" not in xml  # not collapsed into a single gml:Solid
+    back = parse_citygml(xml).objects["b"].geometries[0]
+    assert back.type == "MultiSurface"  # honestly typed, not a bogus Solid
+    # both solids' surfaces survive as surfaces of the read-back MultiSurface
+    assert len(back.boundaries) == 2
