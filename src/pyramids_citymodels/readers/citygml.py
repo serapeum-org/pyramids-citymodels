@@ -542,6 +542,32 @@ def _lod_from_ancestors(
     return None
 
 
+def _container_geometry_type(
+    element: ElementTree.Element,
+    parent_of: dict[ElementTree.Element, ElementTree.Element],
+    feature_ids: dict[ElementTree.Element, str],
+) -> str:
+    """The IR geometry type for ``element``'s directly-held geometry — ``Solid`` or ``MultiSurface``.
+
+    Reads the nearest geometry container above the polygon (within its feature): a ``gml:Solid`` (or
+    a ``lodXSolid`` property) means the feature's directly-held geometry is a solid, so the geometry
+    type is preserved as ``"Solid"`` rather than flattened to ``"MultiSurface"`` (§3 gap 2). Anything
+    else — a ``MultiSurface``/``CompositeSurface``/``lodXMultiSurface`` or no recognizable container —
+    is a ``"MultiSurface"``.
+    """
+    current = parent_of.get(element)
+    while current is not None and current not in feature_ids:
+        local = _local(current.tag)
+        if (
+            local == "Solid"
+            or _LOD_CONTAINER_RE.match(local)
+            and local.endswith("Solid")
+        ):
+            return "Solid"
+        current = parent_of.get(current)
+    return "MultiSurface"
+
+
 @dataclass
 class _SurfaceGroup:
     """One prospective :class:`~pyramids_citymodels.ir.Geometry` — surfaces sharing a LOD + treatment.
@@ -555,6 +581,7 @@ class _SurfaceGroup:
     """
 
     lod: str | None
+    geom_type: str = "MultiSurface"
     boundaries: list[Any] = field(default_factory=list)
     semantics: list[SemanticSurface] = field(default_factory=list)
     values: list[int | None] = field(default_factory=list)
@@ -656,15 +683,17 @@ def _collect_direct_surfaces(
     feature_ids: dict[ElementTree.Element, str],
     seen_ids: dict[str, set[int]],
     seen_coords: dict[tuple[str, str | None], set[Any]],
-) -> "dict[str, dict[str | None, _SurfaceGroup]]":
-    """Pass 2: each feature's *directly*-held polygons (not under a boundary surface), grouped per LOD.
+) -> "dict[str, dict[tuple[str | None, str], _SurfaceGroup]]":
+    """Pass 2: each feature's *directly*-held polygons (not under a boundary surface), grouped.
 
     A polygon in a ``lodX`` container (furniture/vegetation/water/relief, or a coarse block beside a
-    building's boundary surfaces) with no semantic type, grouped by the LOD read from its container
-    (``None`` when none). Skips a polygon already taken by pass 1 (by identity) or whose coordinates
-    are already present at the same LOD (dual-encoding), via the shared ``seen_*`` state.
+    building's boundary surfaces) with no semantic type, grouped by its ``(LOD, geometry type)`` —
+    the LOD read from its ``lodX`` container (``None`` when none) and the type (``Solid`` vs
+    ``MultiSurface``) read from its geometry container so a solid is preserved, not flattened (§3
+    gap 2). Skips a polygon already taken by pass 1 (by identity) or whose coordinates are already
+    present at the same LOD (dual-encoding), via the shared ``seen_*`` state.
     """
-    direct_groups: dict[str, dict[str | None, _SurfaceGroup]] = {
+    direct_groups: dict[str, dict[tuple[str | None, str], _SurfaceGroup]] = {
         identifier: {} for identifier in feature_ids.values()
     }
     for polygon in root.iter():
@@ -681,7 +710,10 @@ def _collect_direct_surfaces(
         )
         if surface is None:
             continue
-        group = direct_groups[feature_id].setdefault(lod, _SurfaceGroup(lod=lod))
+        geom_type = _container_geometry_type(polygon, parent_of, feature_ids)
+        group = direct_groups[feature_id].setdefault(
+            (lod, geom_type), _SurfaceGroup(lod=lod, geom_type=geom_type)
+        )
         group.values.append(None)  # direct geometry carries no semantic surface
         group.boundaries.append(surface)
         group.polygon_ids.append(_gml_id(polygon))
@@ -729,16 +761,21 @@ def _gather_surfaces(
         """Sort key: real LODs ascending, an unknown (``None``) LOD last."""
         return (lod is None, lod or "")
 
+    def _by_lod_type(key: tuple[str | None, str]) -> tuple[bool, str, str]:
+        """Sort key for a direct group's ``(lod, geom_type)``: LOD first, then type, deterministic."""
+        lod, geom_type = key
+        return (lod is None, lod or "", geom_type)
+
     groups_by_feature: dict[str, list[_SurfaceGroup]] = {}
     for feature_id in feature_ids.values():
-        # Semantic (boundary) groups first, then direct groups; each ordered by LOD for determinism.
+        # Semantic (boundary) groups first, then direct groups; each ordered for determinism.
         groups = [
             boundary_groups[feature_id][lod]
             for lod in sorted(boundary_groups[feature_id], key=_by_lod)
         ]
         groups.extend(
-            direct_groups[feature_id][lod]
-            for lod in sorted(direct_groups[feature_id], key=_by_lod)
+            direct_groups[feature_id][key]
+            for key in sorted(direct_groups[feature_id], key=_by_lod_type)
         )
         groups_by_feature[feature_id] = groups
     return groups_by_feature
@@ -931,13 +968,19 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
             if not group.boundaries:
                 continue
             # The boundary group is LOD 2 and keeps its semantic values; a direct group carries the
-            # LOD read from its lodX container (None when none) and no semantics.
+            # LOD read from its lodX container (None when none) and no semantics. A ``Solid`` group's
+            # surfaces are nested one shell deeper (CityJSON ``Solid`` boundaries are a list of
+            # shells of surfaces), preserving the geometry type (§3 gap 2).
             semantic_values = group.values if group.semantics else None
+            if group.geom_type == "Solid":
+                boundaries: list[Any] = [group.boundaries]
+            else:
+                boundaries = group.boundaries
             model.objects[identifier].geometries.append(
                 Geometry(
-                    type="MultiSurface",
+                    type=group.geom_type,
                     lod=group.lod,
-                    boundaries=group.boundaries,
+                    boundaries=boundaries,
                     semantics=group.semantics,
                     semantic_values=semantic_values,
                     appearance=_material_map(
