@@ -560,15 +560,18 @@ class _SurfaceGroup:
     polygon_ids: list[str | None] = field(default_factory=list)
 
 
-def _ring_key(surface: list[Any]) -> tuple[tuple[float, ...], ...]:
-    """A hashable key for a surface's exterior ring, for de-duplicating dual-encoded polygons.
+def _ring_key(surface: list[Any]) -> tuple[Any, ...]:
+    """A hashable key for a surface's *full* geometry (every ring), for de-duplicating dual encodings.
 
     Two distinct ``gml:Polygon`` elements with identical coordinates (a surface encoded both under a
     boundary surface and inline in a solid) are the same surface; object-identity (``id()``) cannot
-    see that, so geometry de-duplication keys on the rounded exterior-ring coordinates instead.
+    see that, so geometry de-duplication keys on the rounded coordinates instead. Keying on *all*
+    rings — exterior and interior (holes) — so two surfaces that share an exterior ring but differ
+    in their holes are not wrongly collapsed (review R2-L1).
     """
     return tuple(
-        tuple(round(component, 9) for component in coord) for coord in surface[0]
+        tuple(tuple(round(component, 9) for component in coord) for coord in ring)
+        for ring in surface
     )
 
 

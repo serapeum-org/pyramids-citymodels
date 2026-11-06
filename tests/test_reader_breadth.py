@@ -265,6 +265,33 @@ def test_boundary_surface_made_of_triangles_is_read_with_semantics() -> None:
     assert [surface.type for surface in geometries[0].semantics] == ["RoofSurface"]
 
 
+def test_two_direct_surfaces_sharing_an_exterior_but_different_holes_both_kept() -> (
+    None
+):
+    # De-dup keys on the full surface (all rings), so two surfaces with the same exterior ring but
+    # different interior rings (holes) are not collapsed as duplicates (review R2-L1).
+    def poly(hole: str) -> str:
+        return (
+            "<gml:Polygon><gml:exterior><gml:LinearRing>"
+            '<gml:posList srsDimension="3">0 0 0 10 0 0 10 10 0 0 0 0</gml:posList>'
+            "</gml:LinearRing></gml:exterior><gml:interior><gml:LinearRing>"
+            f'<gml:posList srsDimension="3">{hole}</gml:posList>'
+            "</gml:LinearRing></gml:interior></gml:Polygon>"
+        )
+
+    xml = (
+        f"<core:CityModel {_NS}><core:cityObjectMember><bldg:Building gml:id='B1'>"
+        "<bldg:lod1MultiSurface><gml:MultiSurface>"
+        f"<gml:surfaceMember>{poly('1 1 0 2 1 0 2 2 0 1 1 0')}</gml:surfaceMember>"
+        f"<gml:surfaceMember>{poly('5 5 0 6 5 0 6 6 0 5 5 0')}</gml:surfaceMember>"
+        "</gml:MultiSurface></bldg:lod1MultiSurface>"
+        "</bldg:Building></core:cityObjectMember></core:CityModel>"
+    ).replace("'", '"')
+    geometries = parse_citygml(xml).objects["B1"].geometries
+    assert len(geometries) == 1
+    assert len(geometries[0].boundaries) == 2  # both surfaces kept (holes differ)
+
+
 def test_tin_relief_triangles_are_read() -> None:
     # A TINRelief whose geometry is a gml:TriangulatedSurface of gml:Triangle patches must be read,
     # not silently dropped (review L1 — the type was advertised but only gml:Polygon was collected).
