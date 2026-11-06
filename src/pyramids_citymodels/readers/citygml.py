@@ -27,6 +27,7 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored 
 import io
 import os
 import re
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 from xml.etree import ElementTree
@@ -983,6 +984,27 @@ def _material_map(
     }
 
 
+def _reconcile_ring_uvs(uvs: "list[int] | None", ring: list[Any]) -> "list[int] | None":
+    """The UV-index list to paint ``ring`` with — closed to the ring's length — or ``None``.
+
+    Accepts a UV list already matching the (stored, closed) ring length, and a list sized to the
+    *open* ring (``len(ring) - 1`` when the ring is closed), which it closes by repeating the first
+    UV index. Any other length is irreconcilable and yields ``None`` (the caller warns and leaves the
+    ring untextured).
+    """
+    if uvs is None:
+        return None
+    if len(uvs) == len(ring):
+        return uvs
+    if (
+        len(ring) > 1
+        and tuple(ring[0]) == tuple(ring[-1])
+        and len(uvs) == len(ring) - 1
+    ):
+        return [*uvs, uvs[0]]
+    return None
+
+
 def _texture_map(
     surfaces: list[Any],
     polygon_ids: list[str | None],
@@ -991,9 +1013,11 @@ def _texture_map(
     """The CityJSON ``texture`` map for one geometry, grouped by theme, or ``None`` if untextured.
 
     Parallels ``surfaces`` down to **ring** level: a painted ring becomes ``[texture_index, uv₀, …]``
-    (one UV index per ring vertex, matched position-by-position); an unpainted ring — or one whose
-    UV count does not match the ring's vertex count — becomes ``[None]``. Each surface's source
-    polygon ``gml:id`` is looked up in ``texture_targets``; a surface painted under several
+    (one UV index per ring vertex, matched position-by-position). A UV list sized to the *open* ring
+    (one pair per distinct vertex, ``N`` for a stored closed ``N+1``-vertex ring) is closed to match;
+    an unpainted ring — or one whose UV count genuinely cannot be reconciled with the ring — becomes
+    ``[None]`` (and a genuine size mismatch warns rather than dropping silently). Each surface's
+    source polygon ``gml:id`` is looked up in ``texture_targets``; a surface painted under several
     ``app:theme``\\ s lands under each theme key.
     """
     by_theme: dict[str, list[Any]] = {}
@@ -1005,9 +1029,17 @@ def _texture_map(
             surface_value: list[Any] = []
             for ring_position, ring in enumerate(surface):
                 uvs = rings[ring_position] if ring_position < len(rings) else None
-                if uvs is not None and len(uvs) == len(ring):
-                    surface_value.append([texture_index, *uvs])
+                matched = _reconcile_ring_uvs(uvs, ring)
+                if matched is not None:
+                    surface_value.append([texture_index, *matched])
                 else:
+                    if uvs is not None:
+                        warnings.warn(
+                            f"CityGML texture: {len(uvs)} UV coordinate(s) do not match a "
+                            f"{len(ring)}-vertex ring; leaving that ring untextured",
+                            UserWarning,
+                            stacklevel=2,
+                        )
                     surface_value.append([None])
             values[position] = surface_value
             painted = True

@@ -8,6 +8,8 @@ CityGML building carries its texture into CityJSON, not just its material colour
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 
+import pytest
+
 from pyramids_citymodels.readers.citygml import parse_citygml
 
 _NS = (
@@ -103,13 +105,28 @@ def test_untextured_building_has_no_texture_appearance() -> None:
     assert model.objects["B1"].geometries[0].appearance is None
 
 
-def test_uv_count_mismatch_falls_back_to_untextured_ring() -> None:
-    # Only 3 UV pairs for a 5-vertex ring → ring is untextured ([None]), not a malformed value.
+def test_uv_count_mismatch_falls_back_to_untextured_ring_with_warning() -> None:
+    # 3 UV pairs for a 5-vertex ring is irreconcilable (not the open-ring count 4) → the ring is left
+    # untextured ([None]) and a warning is emitted rather than dropping silently.
+    with pytest.warns(UserWarning, match="do not match"):
+        geometry = (
+            parse_citygml(_textured("wall.png", "0 0 1 0 1 1"))
+            .objects["B1"]
+            .geometries[0]
+        )
+    assert geometry.appearance["texture"]["rgbTexture"]["values"] == [[[None]]]
+
+
+def test_open_length_uv_list_is_closed_to_match_the_ring() -> None:
+    # 4 UV pairs (one per distinct vertex) for a stored closed 5-vertex ring: the texture survives,
+    # with the UV list closed by repeating the first index (0,1,2,3 -> 0,1,2,3,0).
     geometry = (
-        parse_citygml(_textured("wall.png", "0 0 1 0 1 1")).objects["B1"].geometries[0]
+        parse_citygml(_textured("wall.png", "0 0 1 0 1 1 0 1"))
+        .objects["B1"]
+        .geometries[0]
     )
     values = geometry.appearance["texture"]["rgbTexture"]["values"]
-    assert values == [[[None]]]
+    assert values == [[[0, 0, 1, 2, 3, 0]]]  # [textureIndex, uv0..uv3, uv0 repeated]
 
 
 def test_parameterized_texture_without_image_is_skipped() -> None:
