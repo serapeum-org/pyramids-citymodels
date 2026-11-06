@@ -708,20 +708,28 @@ def _gather_appearances(
 
 
 def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityModel:
-    """Parse a CityGML document's LOD2 buildings into a :class:`~pyramids_citymodels.ir.CityModel`.
+    """Parse a CityGML document's city objects into a :class:`~pyramids_citymodels.ir.CityModel`.
+
+    Reads the common top-level city objects (:data:`_CITY_OBJECT_NAMES` — buildings, bridges,
+    tunnels, city furniture, vegetation, water, land use, relief, transportation, …), each as a
+    :class:`~pyramids_citymodels.ir.CityObject` carrying one ``"MultiSurface"`` geometry. A feature's
+    polygons come from its semantic **boundary surfaces** (tagged with the surface's local name, at
+    LOD 2) and/or from a ``lodX`` container it holds **directly** (no semantic type, LOD read from
+    the container). ``app:X3DMaterial`` appearances are read into the model's appearance pool and a
+    per-geometry material map (matched by ``app:target`` polygon id); textures are a follow-up.
 
     Args:
         source: A path to a ``.gml``/``.xml`` file, an open file, or an XML string/bytes.
         selector: An optional :class:`~pyramids_citymodels.options.ObjectFilter`. When given, only
-            matching ``Building``/``BuildingPart`` features (by id/type/attributes, and — for a
-            feature with a ``gml:Envelope`` — a bbox prefilter) are read; a dropped feature's
-            boundary surfaces are not parsed, and — per the filter's contract — any surfaces under
-            it roll up to the nearest *kept* ancestor feature. ``None`` reads every feature.
+            matching features (by id/type/attributes, and — for a feature with a ``gml:Envelope`` — a
+            bbox prefilter) are read; a dropped feature's surfaces are not parsed, and — per the
+            filter's contract — any surfaces under it roll up to the nearest *kept* ancestor feature.
+            ``None`` reads every feature.
 
     Returns:
-        A city model with one :class:`~pyramids_citymodels.ir.CityObject` per ``Building`` and per
-        ``BuildingPart``; each carries a single ``"MultiSurface"`` geometry whose surfaces are its
-        boundary polygons, tagged with their boundary-surface semantic type.
+        A city model with one :class:`~pyramids_citymodels.ir.CityObject` per recognized feature (a
+        nested ``BuildingPart`` / ``BridgePart`` / ``TunnelPart`` becomes its own object linked to
+        its parent); each carries a single ``"MultiSurface"`` geometry of its polygons.
 
     Note:
         Shared geometry (``xlink:href``) is resolved against a document-wide ``gml:id`` index, so a

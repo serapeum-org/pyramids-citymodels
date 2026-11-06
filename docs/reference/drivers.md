@@ -140,6 +140,8 @@ model.to_file("building.city.json")  # CityJSON 2.0
 model.to_file("building.city.jsonl")  # CityJSON Text Sequence (one feature per line)
 model.to_file("building.gml")  # CityGML 2.0
 model.to_file("building.fg.json")  # JSON-FG (OGC Features & Geometries JSON)
+model.to_file("building.obj")  # Wavefront OBJ (plain mesh)
+model.to_file("building.gltf")  # glTF 2.0 (plain mesh)
 
 # or call a format method directly; a None path returns the document instead of writing
 document = model.to_cityjson()  # -> dict
@@ -153,10 +155,19 @@ CityModel.from_file("building.gml").to_file("building.city.json")  # CityGML →
 
 | Method | Format | Round-trips? |
 |---|---|---|
-| `to_cityjson` | CityJSON 2.0 | Yes — `parse → write → parse` reproduces the model (the vertex pool is rebuilt and re-indexed from the IR). Geometry, semantics, materials, metadata, CRS and version round-trip; texture *coordinates* do not (the reader does not capture the `vertices-texture` UV pool). |
+| `to_cityjson` | CityJSON 2.0 | Yes — `parse → write → parse` reproduces the model (the vertex pool is rebuilt and re-indexed from the IR). Geometry, semantics, metadata, CRS, version **and appearance** round-trip: the appearance pool (`materials`, `textures` and the `vertices-texture` UV pool) is carried verbatim and the per-geometry `material`/`texture` value maps re-emitted beside it. |
 | `to_cityjsonseq` | CityJSON Text Sequence (`.city.jsonl`) | Yes, via CityJSON — a header line then one `CityJSONFeature` per top-level object. |
 | `to_citygml` | CityGML (2.0; a 1.0/2.0 source keeps its version) | Partially — the surfaces of `MultiSurface` and `Solid`/`MultiSolid` geometry (with their semantic types), object ids/types, the parent/child hierarchy and the CRS round-trip; a `1.0`/`2.0` source also keeps its version, while a `3.0`/unknown source is emitted as `2.0`. A `Solid`/`MultiSolid` keeps its surfaces but comes back as a `MultiSurface` (the reader rebuilds only `MultiSurface`), the `gml:LinearRing` round-trip is exact only for already-closed (spec-conformant) source rings, attribute `uom` units and surface `gml:id`s are lost, and a non-`Building`/`BuildingPart` object is written with a warning but not read back (see the writer's module docs). |
 | `to_jsonfg` | JSON-FG | No — a one-way GIS-exchange projection (3D geometry in each feature's `place`); there is no JSON-FG reader. |
+| `to_obj` | Wavefront OBJ | No — a one-way plain-geometry mesh export: each surface's exterior ring becomes one `f` face over a shared vertex pool, objects grouped under `o` markers. Interior rings (holes) are dropped and no appearance is written. |
+| `to_gltf` | glTF 2.0 | No — a one-way plain-geometry mesh export: exterior rings are fan-triangulated into one positions-only mesh, embedded as a base64 buffer, shifted by the model's per-axis minimum (recorded as the node `translation` for float32 precision). Exterior rings only; no normals/appearance. |
+
+Conversion coverage is set by the readers. The **CityGML reader** reads the common top-level city
+objects — buildings, bridges, tunnels, city furniture, vegetation, water bodies, land use, relief
+and transportation — taking each feature's geometry from its semantic boundary surfaces (LOD 2)
+and/or a `lodX` container it holds directly (LOD read from the container), and reads
+`app:X3DMaterial` appearances into the model's material pool; CityGML textures
+(`ParameterizedTexture`) are a follow-up.
 
 ## Writing API
 
@@ -177,6 +188,18 @@ CityModel.from_file("building.gml").to_file("building.city.json")  # CityGML →
         show_root_heading: true
         heading_level: 3
         members: ["write_jsonfg"]
+
+::: pyramids_citymodels.writers.obj
+    options:
+        show_root_heading: true
+        heading_level: 3
+        members: ["write_obj"]
+
+::: pyramids_citymodels.writers.gltf
+    options:
+        show_root_heading: true
+        heading_level: 3
+        members: ["write_gltf"]
 
 ## Driver classes
 
