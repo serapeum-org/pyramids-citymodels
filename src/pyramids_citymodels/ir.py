@@ -27,6 +27,7 @@ geometry type, which is all the flattener needs.
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
 import re
+import warnings
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -588,6 +589,131 @@ class CityModel:
                 ```
         """
         return VertexPool.for_coordinates(self.coordinates(), precision)
+
+    def merge(self, *others: "CityModel") -> "CityModel":
+        """Combine this model with ``others`` into one new model (feature #15).
+
+        An IR-level union — pure format-level aggregation, no GIS — that returns a **new**
+        :class:`CityModel` and mutates none of the inputs. Objects from every model are gathered in
+        order (``self`` first). An id that collides with one already taken is re-keyed with a
+        ``#2`` (``#3``, …) suffix, and that model's ``parents``/``children`` links are rewritten to
+        the new ids so the hierarchy stays internally consistent.
+
+        The CRS and version are taken from the first model that declares one; a later model whose
+        declared CRS differs is a conflict — its objects are still merged, but a warning is raised
+        because coordinates are **not** reprojected here (that is ``pyramids-core``'s job).
+        ``source_format`` becomes the common value, or ``"mixed"`` when the inputs disagree.
+        ``metadata`` and ``extensions`` are shallow-merged with earlier models winning on a key
+        clash. Appearance pools are index-based and cannot be concatenated without re-indexing every
+        geometry, so the merged model keeps the **first** non-empty ``appearances`` and warns if a
+        later model's appearances are dropped.
+
+        Args:
+            *others: Further models to merge into a copy of this one, in order.
+
+        Returns:
+            A new :class:`CityModel` holding every input's objects under unique ids.
+
+        Examples:
+            - Merge two one-object models; the objects coexist under their own ids:
+                ```python
+                >>> a = CityModel(objects={"a": CityObject(id="a", type="Building")})
+                >>> b = CityModel(objects={"b": CityObject(id="b", type="Bridge")})
+                >>> sorted(a.merge(b).objects)
+                ['a', 'b']
+
+                ```
+            - A colliding id is re-keyed and the clone's child link follows it:
+                ```python
+                >>> a = CityModel(objects={"x": CityObject(id="x", type="Building")})
+                >>> b = CityModel(objects={
+                ...     "x": CityObject(id="x", type="Building", children=["p"]),
+                ...     "p": CityObject(id="p", type="BuildingPart", parents=["x"])})
+                >>> merged = a.merge(b)
+                >>> sorted(merged.objects)
+                ['p', 'x', 'x#2']
+                >>> merged.objects["x#2"].children
+                ['p']
+                >>> merged.objects["p"].parents
+                ['x#2']
+
+                ```
+        """
+        merged = CityModel(
+            crs=self.crs,
+            metadata=dict(self.metadata),
+            version=self.version,
+            source_format=self.source_format,
+            appearances=dict(self.appearances),
+            extensions=dict(self.extensions),
+        )
+        for model in (self, *others):
+            remap = _merge_ids(model.objects, into=merged.objects)
+            for object_id, city_object in model.objects.items():
+                merged.objects[remap[object_id]] = CityObject(
+                    id=remap[object_id],
+                    type=city_object.type,
+                    attributes=dict(city_object.attributes),
+                    geometries=list(city_object.geometries),
+                    parents=[remap.get(p, p) for p in city_object.parents],
+                    children=[remap.get(c, c) for c in city_object.children],
+                )
+            if model is self:
+                continue
+            _reconcile_metadata(merged, model)
+        return merged
+
+
+def _merge_ids(
+    objects: dict[str, "CityObject"], into: dict[str, "CityObject"]
+) -> dict[str, str]:
+    """Map each id in ``objects`` to a unique id not already in ``into`` (suffixing a clash).
+
+    A clash gets the lowest free ``<id>#<n>`` (``#2``, ``#3``, …). The whole map is computed up
+    front — reserving each chosen id against both the existing keys and ids assigned earlier in this
+    same model — so links can be rewritten consistently before any object is inserted.
+    """
+    remap: dict[str, str] = {}
+    taken = set(into)
+    for object_id in objects:
+        new_id = object_id
+        suffix = 2
+        while new_id in taken:
+            new_id = f"{object_id}#{suffix}"
+            suffix += 1
+        remap[object_id] = new_id
+        taken.add(new_id)
+    return remap
+
+
+def _reconcile_metadata(merged: "CityModel", model: "CityModel") -> None:
+    """Fold a later model's CRS/version/format/metadata/extensions/appearances into ``merged``."""
+    if merged.crs is None:
+        merged.crs = model.crs
+    elif model.crs is not None and model.crs != merged.crs:
+        warnings.warn(
+            f"merging models with different CRS ({merged.crs!r} and {model.crs!r}); coordinates "
+            f"are not reprojected here, so the merged model keeps {merged.crs!r}",
+            UserWarning,
+            stacklevel=3,
+        )
+    if merged.version is None:
+        merged.version = model.version
+    if model.source_format != merged.source_format:
+        merged.source_format = "mixed"
+    for key, value in model.metadata.items():
+        merged.metadata.setdefault(key, value)
+    for key, value in model.extensions.items():
+        merged.extensions.setdefault(key, value)
+    if model.appearances and not merged.appearances:
+        merged.appearances = dict(model.appearances)
+    elif model.appearances:
+        warnings.warn(
+            "merging models that both carry appearances; appearance pools are index-based and are "
+            "not concatenated, so the merged model keeps only the first model's appearances",
+            UserWarning,
+            stacklevel=3,
+        )
 
 
 @dataclass
