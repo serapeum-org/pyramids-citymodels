@@ -64,7 +64,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -802,6 +802,62 @@
     <span class="md-ellipsis">
       
         write_jsonfg
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.writers.obj" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        obj
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="obj">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.writers.obj.write_obj" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        write_obj
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.writers.gltf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        gltf
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="gltf">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.writers.gltf.write_gltf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        write_gltf
       
     </span>
   </a>
@@ -1943,6 +1999,62 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.writers.obj" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        obj
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="obj">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.writers.obj.write_obj" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        write_obj
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.writers.gltf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        gltf
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="gltf">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pyramids_citymodels.writers.gltf.write_gltf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        write_gltf
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2495,9 +2607,11 @@ appearances and metadata are preserved. This is the decision recorded in
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">model</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.city.jsonl"</span><span class="p">)</span>  <span class="c1"># CityJSON Text Sequence (one feature per line)</span>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="n">model</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.gml"</span><span class="p">)</span>  <span class="c1"># CityGML 2.0</span>
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="n">model</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.fg.json"</span><span class="p">)</span>  <span class="c1"># JSON-FG (OGC Features &amp; Geometries JSON)</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="c1"># or call a format method directly; a None path returns the document instead of writing</span>
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="n">document</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">to_cityjson</span><span class="p">()</span>  <span class="c1"># -&gt; dict</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="n">model</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.obj"</span><span class="p">)</span>  <span class="c1"># Wavefront OBJ (plain mesh)</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="n">model</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.gltf"</span><span class="p">)</span>  <span class="c1"># glTF 2.0 (plain mesh)</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="c1"># or call a format method directly; a None path returns the document instead of writing</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="n">document</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">to_cityjson</span><span class="p">()</span>  <span class="c1"># -&gt; dict</span>
 </code></pre></div>
 <p>Format conversion is therefore a single IR→IR expression that never touches the flattened form:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">CityModel</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"building.gml"</span><span class="p">)</span><span class="o">.</span><span class="n">to_file</span><span class="p">(</span><span class="s2">"building.city.json"</span><span class="p">)</span>  <span class="c1"># CityGML → CityJSON</span>
@@ -2514,7 +2628,7 @@ appearances and metadata are preserved. This is the decision recorded in
 <tr>
 <td><code>to_cityjson</code></td>
 <td>CityJSON 2.0</td>
-<td>Yes — <code>parse → write → parse</code> reproduces the model (the vertex pool is rebuilt and re-indexed from the IR). Geometry, semantics, materials, metadata, CRS and version round-trip; texture <em>coordinates</em> do not (the reader does not capture the <code>vertices-texture</code> UV pool).</td>
+<td>Yes — <code>parse → write → parse</code> reproduces the model (the vertex pool is rebuilt and re-indexed from the IR). Geometry, semantics, metadata, CRS, version <strong>and appearance</strong> round-trip: the appearance pool (<code>materials</code>, <code>textures</code> and the <code>vertices-texture</code> UV pool) is carried verbatim and the per-geometry <code>material</code>/<code>texture</code> value maps re-emitted beside it.</td>
 </tr>
 <tr>
 <td><code>to_cityjsonseq</code></td>
@@ -2531,8 +2645,24 @@ appearances and metadata are preserved. This is the decision recorded in
 <td>JSON-FG</td>
 <td>No — a one-way GIS-exchange projection (3D geometry in each feature's <code>place</code>); there is no JSON-FG reader.</td>
 </tr>
+<tr>
+<td><code>to_obj</code></td>
+<td>Wavefront OBJ</td>
+<td>No — a one-way plain-geometry mesh export: each surface's exterior ring becomes one <code>f</code> face over a shared vertex pool, objects grouped under <code>o</code> markers. Interior rings (holes) are dropped and no appearance is written.</td>
+</tr>
+<tr>
+<td><code>to_gltf</code></td>
+<td>glTF 2.0</td>
+<td>No — a one-way plain-geometry mesh export: exterior rings are fan-triangulated into one positions-only mesh, embedded as a base64 buffer, shifted by the model's per-axis minimum (recorded as the node <code>translation</code> for float32 precision). Exterior rings only; no normals/appearance.</td>
+</tr>
 </tbody>
 </table>
+<p>Conversion coverage is set by the readers. The <strong>CityGML reader</strong> reads the common top-level city
+objects — buildings, bridges, tunnels, city furniture, vegetation, water bodies, land use, relief
+and transportation — taking each feature's geometry from its semantic boundary surfaces (LOD 2)
+and/or a <code>lodX</code> container it holds directly (LOD read from the container), and reads
+<code>app:X3DMaterial</code> appearances into the model's material pool; CityGML textures
+(<code>ParameterizedTexture</code>) are a follow-up.</p>
 <h2 id="writing-api"><a class="toclink" href="#writing-api">Writing API</a><a class="headerlink" href="#writing-api" title="Permanent link">#</a></h2>
 
 
@@ -3742,6 +3872,621 @@ a terminal conversion, not a round-trip.</p>
 <a id="pyramids_citymodels.writers.jsonfg.write_jsonfg--source--__codelineno-0-149" name="pyramids_citymodels.writers.jsonfg.write_jsonfg--source--__codelineno-0-149"></a>    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">handle</span><span class="p">:</span>
 <a id="pyramids_citymodels.writers.jsonfg.write_jsonfg--source--__codelineno-0-150" name="pyramids_citymodels.writers.jsonfg.write_jsonfg--source--__codelineno-0-150"></a>        <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">document</span><span class="p">,</span> <span class="n">handle</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
 <a id="pyramids_citymodels.writers.jsonfg.write_jsonfg--source--__codelineno-0-151" name="pyramids_citymodels.writers.jsonfg.write_jsonfg--source--__codelineno-0-151"></a>    <span class="k">return</span> <span class="kc">None</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-module">
+
+
+
+<h3 id="pyramids_citymodels.writers.obj" class="doc doc-heading"><a href="#pyramids_citymodels.writers.obj" class="toclink">
+            <code>pyramids_citymodels.writers.obj</code>
+
+
+</a><a href="#pyramids_citymodels.writers.obj" class="headerlink" title="Permanent link">#</a></h3>
+
+    <div class="doc doc-contents first">
+
+        <p>Serialize the IR to Wavefront OBJ (feature #14 — export to meshes).</p>
+<p>OBJ is the lowest-common-denominator mesh hand-off: a flat list of <code>v</code> vertices and <code>f</code> faces
+that every 3-D tool reads. This writer walks every city object's geometries to surface level
+(:func:<code>pyramids_citymodels.ir.iter_surfaces</code>, so it works for any geometry type — <code>MultiSurface</code>,
+<code>Solid</code>, …), de-duplicates the vertices into one shared pool, and emits each surface's <strong>exterior
+ring</strong> as one face, grouped under an <code>o &lt;object-id&gt;</code> so a viewer can still tell the objects apart.</p>
+<p>Deliberate, documented limits of this plain-geometry export:</p>
+<ul>
+<li><strong>Exterior rings only.</strong> A surface's interior rings (holes) are dropped — OBJ faces have no native
+  hole support; a hole would need the face triangulated around it, which is geometry processing this
+  package leaves to a mesh tool.</li>
+<li><strong>Faces, not triangles.</strong> Each polygon is emitted as a single n-gon <code>f</code> (OBJ allows it); a
+  consumer that needs triangles triangulates on import. (The glTF writer, which <em>must</em> triangulate,
+  does so.)</li>
+<li><strong>No appearance.</strong> Materials/textures are not written — this is plain geometry; appearance round-
+  trips through the CityJSON writer instead.</li>
+</ul>
+<p>Only the standard library is used, matching the other writers.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="pyramids_citymodels.writers.obj.write_obj" class="doc doc-heading"><a href="#pyramids_citymodels.writers.obj.write_obj" class="toclink">
+            <code class="highlight language-python"><span class="n">write_obj</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+</a><a href="#pyramids_citymodels.writers.obj.write_obj" class="headerlink" title="Permanent link">#</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Serialize a :class:<code>~pyramids_citymodels.ir.CityModel</code> to Wavefront OBJ.</p>
+<p>Each surface's exterior ring becomes one face; vertices are shared across the whole model.
+Objects are written in document order, each preceded by an <code>o &lt;id&gt;</code> group marker. See the
+module docstring for the (documented) limits: exterior rings only, n-gon faces, no appearance.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>model</code>
+            </td>
+            <td>
+                  <code><span title="pyramids_citymodels.ir.CityModel">CityModel</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The city model to serialize.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>path</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A filesystem path to write the <code>.obj</code> text to, or <code>None</code> to return it as a string.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The OBJ text as a <code>str</code> when <code>path</code> is <code>None</code>; otherwise <code>None</code> (written to <code>path</code>).</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <ul>
+<li>A one-triangle building yields three <code>v</code> lines and one <code>f</code> under its <code>o</code> group:
+    <div class="highlight"><pre><span></span><code><a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-1" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-1" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-0-1"></a><span class="o">&gt;&gt;&gt;</span> <span class="kn">from</span><span class="w"> </span><span class="nn">pyramids_citymodels.ir</span><span class="w"> </span><span class="kn">import</span> <span class="n">CityModel</span><span class="p">,</span> <span class="n">CityObject</span><span class="p">,</span> <span class="n">Geometry</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-2" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-2" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-0-2"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">surface</span> <span class="o">=</span> <span class="p">[[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)]]</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-3" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-3" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-0-3"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">model</span> <span class="o">=</span> <span class="n">CityModel</span><span class="p">(</span><span class="n">objects</span><span class="o">=</span><span class="p">{</span><span class="s2">"b"</span><span class="p">:</span> <span class="n">CityObject</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="s2">"b"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">"Building"</span><span class="p">,</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-4" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-4" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-0-4"></a><span class="o">...</span>     <span class="n">geometries</span><span class="o">=</span><span class="p">[</span><span class="n">Geometry</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s2">"MultiSurface"</span><span class="p">,</span> <span class="n">lod</span><span class="o">=</span><span class="s2">"2"</span><span class="p">,</span> <span class="n">boundaries</span><span class="o">=</span><span class="p">[</span><span class="n">surface</span><span class="p">])])})</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-5" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-5" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-0-5"></a><span class="o">&gt;&gt;&gt;</span> <span class="nb">print</span><span class="p">(</span><span class="n">write_obj</span><span class="p">(</span><span class="n">model</span><span class="p">))</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-6" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-6" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-0-6"></a><span class="c1"># OBJ generated by pyramids-citymodels</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-7" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-7" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-0-7"></a><span class="n">v</span> <span class="mf">0.0</span> <span class="mf">0.0</span> <span class="mf">0.0</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-8" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-8" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-0-8"></a><span class="n">v</span> <span class="mf">1.0</span> <span class="mf">0.0</span> <span class="mf">0.0</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-9" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-9" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-0-9"></a><span class="n">v</span> <span class="mf">1.0</span> <span class="mf">1.0</span> <span class="mf">0.0</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-10" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-10" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-0-10"></a><span class="n">o</span> <span class="n">b</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-11" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-11" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-0-11"></a><span class="n">f</span> <span class="mi">1</span> <span class="mi">2</span> <span class="mi">3</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-12" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-0-12" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-0-12"></a><span class="o">&lt;</span><span class="n">BLANKLINE</span><span class="o">&gt;</span>
+</code></pre></div></li>
+<li>A repeated vertex is pooled once, so two adjacent faces share indices:
+    <div class="highlight"><pre><span></span><code><a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-1" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-1" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-1-1"></a><span class="o">&gt;&gt;&gt;</span> <span class="kn">from</span><span class="w"> </span><span class="nn">pyramids_citymodels.ir</span><span class="w"> </span><span class="kn">import</span> <span class="n">CityModel</span><span class="p">,</span> <span class="n">CityObject</span><span class="p">,</span> <span class="n">Geometry</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-2" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-2" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-1-2"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">shared</span> <span class="o">=</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-3" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-3" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-1-3"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">a</span> <span class="o">=</span> <span class="p">[[</span><span class="n">shared</span><span class="p">,</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)]]</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-4" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-4" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-1-4"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">b</span> <span class="o">=</span> <span class="p">[[</span><span class="n">shared</span><span class="p">,</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)]]</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-5" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-5" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-1-5"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">model</span> <span class="o">=</span> <span class="n">CityModel</span><span class="p">(</span><span class="n">objects</span><span class="o">=</span><span class="p">{</span><span class="s2">"b"</span><span class="p">:</span> <span class="n">CityObject</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="s2">"b"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">"Building"</span><span class="p">,</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-6" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-6" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-1-6"></a><span class="o">...</span>     <span class="n">geometries</span><span class="o">=</span><span class="p">[</span><span class="n">Geometry</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s2">"MultiSurface"</span><span class="p">,</span> <span class="n">lod</span><span class="o">=</span><span class="s2">"2"</span><span class="p">,</span> <span class="n">boundaries</span><span class="o">=</span><span class="p">[</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">])])})</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-7" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-7" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-1-7"></a><span class="o">&gt;&gt;&gt;</span> <span class="p">[</span><span class="n">line</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">write_obj</span><span class="p">(</span><span class="n">model</span><span class="p">)</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span> <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"v "</span><span class="p">)]</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-8" name="pyramids_citymodels.writers.obj.write_obj--__codelineno-1-8" href="#pyramids_citymodels.writers.obj.write_obj--__codelineno-1-8"></a><span class="p">[</span><span class="s1">'v 0.0 0.0 0.0'</span><span class="p">,</span> <span class="s1">'v 1.0 0.0 0.0'</span><span class="p">,</span> <span class="s1">'v 1.0 1.0 0.0'</span><span class="p">,</span> <span class="s1">'v 0.0 1.0 0.0'</span><span class="p">]</span>
+</code></pre></div></li>
+</ul>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/pyramids_citymodels/writers/obj.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-66"> 66</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-67"> 67</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-68"> 68</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-69"> 69</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-70"> 70</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-71"> 71</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-72"> 72</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-73"> 73</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-74"> 74</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-75"> 75</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-76"> 76</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-77"> 77</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-78"> 78</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-79"> 79</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-80"> 80</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-81"> 81</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-82"> 82</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-83"> 83</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-84"> 84</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-85"> 85</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-86"> 86</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-87"> 87</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-88"> 88</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-89"> 89</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-90"> 90</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-91"> 91</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-92"> 92</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-93"> 93</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-94"> 94</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-95"> 95</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-96"> 96</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-97"> 97</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-98"> 98</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-99"> 99</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-100">100</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-101">101</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-102">102</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-103">103</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-104">104</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-105">105</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-106">106</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-107">107</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-108">108</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-109">109</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-110">110</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-111">111</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-112">112</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-113">113</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-114">114</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-115">115</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-116">116</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-117">117</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-118">118</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-119">119</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-120">120</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-121">121</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-122">122</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-123">123</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-124">124</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-125">125</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-126">126</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-127">127</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-128">128</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-129">129</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-130">130</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-131">131</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-132">132</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-133">133</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-134">134</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-135">135</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-136">136</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-137">137</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-66" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-66"></a><span class="k">def</span><span class="w"> </span><span class="nf">write_obj</span><span class="p">(</span><span class="n">model</span><span class="p">:</span> <span class="n">CityModel</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-67" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-67"></a><span class="w">    </span><span class="sd">"""Serialize a :class:`~pyramids_citymodels.ir.CityModel` to Wavefront OBJ.</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-68" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-68"></a>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-69" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-69"></a><span class="sd">    Each surface's exterior ring becomes one face; vertices are shared across the whole model.</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-70" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-70"></a><span class="sd">    Objects are written in document order, each preceded by an ``o &lt;id&gt;`` group marker. See the</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-71" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-71"></a><span class="sd">    module docstring for the (documented) limits: exterior rings only, n-gon faces, no appearance.</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-72" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-72"></a>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-73" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-73"></a><span class="sd">    Args:</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-74" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-74"></a><span class="sd">        model: The city model to serialize.</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-75" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-75"></a><span class="sd">        path: A filesystem path to write the ``.obj`` text to, or ``None`` to return it as a string.</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-76" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-76"></a>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-77" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-77"></a><span class="sd">    Returns:</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-78" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-78"></a><span class="sd">        The OBJ text as a ``str`` when ``path`` is ``None``; otherwise ``None`` (written to ``path``).</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-79" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-79"></a>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-80" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-80"></a><span class="sd">    Examples:</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-81" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-81"></a><span class="sd">        - A one-triangle building yields three ``v`` lines and one ``f`` under its ``o`` group:</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-82" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-82"></a><span class="sd">            ```python</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-83" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-83"></a><span class="sd">            &gt;&gt;&gt; from pyramids_citymodels.ir import CityModel, CityObject, Geometry</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-84" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-84"></a><span class="sd">            &gt;&gt;&gt; surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-85" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-85"></a><span class="sd">            &gt;&gt;&gt; model = CityModel(objects={"b": CityObject(id="b", type="Building",</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-86" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-86"></a><span class="sd">            ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-87" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-87"></a><span class="sd">            &gt;&gt;&gt; print(write_obj(model))</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-88" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-88"></a><span class="sd">            # OBJ generated by pyramids-citymodels</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-89" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-89"></a><span class="sd">            v 0.0 0.0 0.0</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-90" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-90"></a><span class="sd">            v 1.0 0.0 0.0</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-91" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-91"></a><span class="sd">            v 1.0 1.0 0.0</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-92" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-92"></a><span class="sd">            o b</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-93" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-93"></a><span class="sd">            f 1 2 3</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-94" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-94"></a><span class="sd">            &lt;BLANKLINE&gt;</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-95" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-95"></a>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-96" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-96"></a><span class="sd">            ```</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-97" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-97"></a><span class="sd">        - A repeated vertex is pooled once, so two adjacent faces share indices:</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-98" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-98"></a><span class="sd">            ```python</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-99" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-99"></a><span class="sd">            &gt;&gt;&gt; from pyramids_citymodels.ir import CityModel, CityObject, Geometry</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-100" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-100"></a><span class="sd">            &gt;&gt;&gt; shared = (0.0, 0.0, 0.0)</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-101" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-101"></a><span class="sd">            &gt;&gt;&gt; a = [[shared, (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-102" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-102"></a><span class="sd">            &gt;&gt;&gt; b = [[shared, (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]]</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-103" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-103"></a><span class="sd">            &gt;&gt;&gt; model = CityModel(objects={"b": CityObject(id="b", type="Building",</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-104" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-104"></a><span class="sd">            ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[a, b])])})</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-105" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-105"></a><span class="sd">            &gt;&gt;&gt; [line for line in write_obj(model).splitlines() if line.startswith("v ")]</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-106" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-106"></a><span class="sd">            ['v 0.0 0.0 0.0', 'v 1.0 0.0 0.0', 'v 1.0 1.0 0.0', 'v 0.0 1.0 0.0']</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-107" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-107"></a>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-108" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-108"></a><span class="sd">            ```</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-109" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-109"></a><span class="sd">    """</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-110" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-110"></a>    <span class="n">pool</span> <span class="o">=</span> <span class="n">_VertexPool</span><span class="p">()</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-111" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-111"></a>    <span class="n">faces_by_object</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]]</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-112" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-112"></a>    <span class="k">for</span> <span class="n">object_id</span><span class="p">,</span> <span class="n">city_object</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-113" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-113"></a>        <span class="n">faces</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-114" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-114"></a>        <span class="k">for</span> <span class="n">geometry</span> <span class="ow">in</span> <span class="n">city_object</span><span class="o">.</span><span class="n">geometries</span><span class="p">:</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-115" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-115"></a>            <span class="k">for</span> <span class="n">surface</span><span class="p">,</span> <span class="n">_value</span> <span class="ow">in</span> <span class="n">iter_surfaces</span><span class="p">(</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-116" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-116"></a>                <span class="n">geometry</span><span class="o">.</span><span class="n">boundaries</span><span class="p">,</span> <span class="n">geometry</span><span class="o">.</span><span class="n">semantic_values</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-117" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-117"></a>            <span class="p">):</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-118" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-118"></a>                <span class="n">ring</span> <span class="o">=</span> <span class="n">_open_ring</span><span class="p">(</span><span class="n">surface</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="k">if</span> <span class="n">surface</span> <span class="k">else</span> <span class="p">[]</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-119" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-119"></a>                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ring</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-120" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-120"></a>                    <span class="k">continue</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-121" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-121"></a>                <span class="n">faces</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">pool</span><span class="o">.</span><span class="n">intern</span><span class="p">(</span><span class="n">coordinate</span><span class="p">)</span> <span class="k">for</span> <span class="n">coordinate</span> <span class="ow">in</span> <span class="n">ring</span><span class="p">])</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-122" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-122"></a>        <span class="n">faces_by_object</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">object_id</span><span class="p">,</span> <span class="n">faces</span><span class="p">))</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-123" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-123"></a>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-124" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-124"></a>    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"# OBJ generated by pyramids-citymodels"</span><span class="p">]</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-125" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-125"></a>    <span class="n">lines</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="sa">f</span><span class="s2">"v </span><span class="si">{</span><span class="n">x</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">y</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">z</span><span class="si">}</span><span class="s2">"</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span> <span class="ow">in</span> <span class="n">pool</span><span class="o">.</span><span class="n">vertices</span><span class="p">)</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-126" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-126"></a>    <span class="k">for</span> <span class="n">object_id</span><span class="p">,</span> <span class="n">faces</span> <span class="ow">in</span> <span class="n">faces_by_object</span><span class="p">:</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-127" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-127"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="n">faces</span><span class="p">:</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-128" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-128"></a>            <span class="k">continue</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-129" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-129"></a>        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"o </span><span class="si">{</span><span class="n">object_id</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-130" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-130"></a>        <span class="n">lines</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="s2">"f "</span> <span class="o">+</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">index</span><span class="p">)</span> <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="n">face</span><span class="p">)</span> <span class="k">for</span> <span class="n">face</span> <span class="ow">in</span> <span class="n">faces</span><span class="p">)</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-131" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-131"></a>    <span class="n">text</span> <span class="o">=</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-132" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-132"></a>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-133" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-133"></a>    <span class="k">if</span> <span class="n">path</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-134" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-134"></a>        <span class="k">return</span> <span class="n">text</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-135" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-135"></a>    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">handle</span><span class="p">:</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-136" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-136"></a>        <span class="n">handle</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+<a id="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-137" name="pyramids_citymodels.writers.obj.write_obj--source--__codelineno-0-137"></a>    <span class="k">return</span> <span class="kc">None</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-module">
+
+
+
+<h3 id="pyramids_citymodels.writers.gltf" class="doc doc-heading"><a href="#pyramids_citymodels.writers.gltf" class="toclink">
+            <code>pyramids_citymodels.writers.gltf</code>
+
+
+</a><a href="#pyramids_citymodels.writers.gltf" class="headerlink" title="Permanent link">#</a></h3>
+
+    <div class="doc doc-contents first">
+
+        <p>Serialize the IR to glTF 2.0 (feature #14 — export to meshes).</p>
+<p>glTF is the runtime-oriented mesh format web and game engines consume. This writer triangulates
+every surface's exterior ring (a fan from its first vertex) into one indexed triangle mesh and emits
+a single-file <code>.gltf</code>: a JSON document whose one buffer is embedded as a base64 <code>data:</code> URI, so
+the result is self-contained with no sidecar <code>.bin</code>.</p>
+<p>Because glTF stores positions as 32-bit floats — which lose precision at the large magnitudes of a
+projected CRS (metre eastings in the hundreds of thousands) — every position is shifted by the
+model's per-axis minimum and that minimum is written back as the node's <code>translation</code>, so the
+rendered mesh sits in the right place while the stored floats stay small and precise.</p>
+<p>Deliberate, documented limits (plain geometry, like the OBJ writer):</p>
+<ul>
+<li><strong>Exterior rings only</strong>, triangulated as a fan — interior rings (holes) are dropped, and a strongly
+  non-convex polygon's fan can self-overlap (fan triangulation is not ear-clipping).</li>
+<li><strong>One mesh, positions only</strong> — no normals, materials or textures; appearance round-trips through
+  the CityJSON writer, not here.</li>
+<li>An empty model (no areal surface) yields a valid glTF with an empty scene.</li>
+</ul>
+<p>Only the standard library (<code>json</code> + <code>struct</code> + <code>base64</code>) is used.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="pyramids_citymodels.writers.gltf.write_gltf" class="doc doc-heading"><a href="#pyramids_citymodels.writers.gltf.write_gltf" class="toclink">
+            <code class="highlight language-python"><span class="n">write_gltf</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">path</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+</a><a href="#pyramids_citymodels.writers.gltf.write_gltf" class="headerlink" title="Permanent link">#</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Serialize a :class:<code>~pyramids_citymodels.ir.CityModel</code> to a self-contained glTF 2.0 document.</p>
+<p>Every surface's exterior ring is triangulated (a fan) into one positions-only mesh, shifted by
+the model's per-axis minimum (written as the node <code>translation</code> for float32 precision) and
+embedded as a base64 buffer. See the module docstring for the documented limits.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>model</code>
+            </td>
+            <td>
+                  <code><span title="pyramids_citymodels.ir.CityModel">CityModel</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The city model to serialize.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>path</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A path to write the <code>.gltf</code> JSON to, or <code>None</code> to return the document dict.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The glTF document as a <code>dict</code> when <code>path</code> is <code>None</code>; otherwise <code>None</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <ul>
+<li>A one-triangle building yields a positions-only triangle mesh:
+    <div class="highlight"><pre><span></span><code><a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-1" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-1" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-1"></a><span class="o">&gt;&gt;&gt;</span> <span class="kn">from</span><span class="w"> </span><span class="nn">pyramids_citymodels.ir</span><span class="w"> </span><span class="kn">import</span> <span class="n">CityModel</span><span class="p">,</span> <span class="n">CityObject</span><span class="p">,</span> <span class="n">Geometry</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-2" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-2" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-2"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">surface</span> <span class="o">=</span> <span class="p">[[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)]]</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-3" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-3" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-3"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">model</span> <span class="o">=</span> <span class="n">CityModel</span><span class="p">(</span><span class="n">objects</span><span class="o">=</span><span class="p">{</span><span class="s2">"b"</span><span class="p">:</span> <span class="n">CityObject</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="s2">"b"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">"Building"</span><span class="p">,</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-4" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-4" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-4"></a><span class="o">...</span>     <span class="n">geometries</span><span class="o">=</span><span class="p">[</span><span class="n">Geometry</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s2">"MultiSurface"</span><span class="p">,</span> <span class="n">lod</span><span class="o">=</span><span class="s2">"2"</span><span class="p">,</span> <span class="n">boundaries</span><span class="o">=</span><span class="p">[</span><span class="n">surface</span><span class="p">])])})</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-5" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-5" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-5"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">gltf</span> <span class="o">=</span> <span class="n">write_gltf</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-6" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-6" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-6"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">gltf</span><span class="p">[</span><span class="s2">"accessors"</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">"count"</span><span class="p">]</span>  <span class="c1"># three positions</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-7" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-7" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-7"></a><span class="mi">3</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-8" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-8" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-8"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">gltf</span><span class="p">[</span><span class="s2">"accessors"</span><span class="p">][</span><span class="mi">1</span><span class="p">][</span><span class="s2">"count"</span><span class="p">]</span>  <span class="c1"># one triangle -&gt; three indices</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-9" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-9" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-9"></a><span class="mi">3</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-10" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-10" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-10"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">gltf</span><span class="p">[</span><span class="s2">"meshes"</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">"primitives"</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">"mode"</span><span class="p">]</span>  <span class="c1"># TRIANGLES</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-11" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-11" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-0-11"></a><span class="mi">4</span>
+</code></pre></div></li>
+<li>Positions are shifted and the shift recorded as the node translation:
+    <div class="highlight"><pre><span></span><code><a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-1" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-1" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-1"></a><span class="o">&gt;&gt;&gt;</span> <span class="kn">from</span><span class="w"> </span><span class="nn">pyramids_citymodels.ir</span><span class="w"> </span><span class="kn">import</span> <span class="n">CityModel</span><span class="p">,</span> <span class="n">CityObject</span><span class="p">,</span> <span class="n">Geometry</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-2" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-2" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-2"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">surface</span> <span class="o">=</span> <span class="p">[[(</span><span class="mf">100.0</span><span class="p">,</span> <span class="mf">200.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">101.0</span><span class="p">,</span> <span class="mf">200.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="p">(</span><span class="mf">101.0</span><span class="p">,</span> <span class="mf">201.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)]]</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-3" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-3" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-3"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">model</span> <span class="o">=</span> <span class="n">CityModel</span><span class="p">(</span><span class="n">objects</span><span class="o">=</span><span class="p">{</span><span class="s2">"b"</span><span class="p">:</span> <span class="n">CityObject</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="s2">"b"</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">"Building"</span><span class="p">,</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-4" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-4" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-4"></a><span class="o">...</span>     <span class="n">geometries</span><span class="o">=</span><span class="p">[</span><span class="n">Geometry</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s2">"MultiSurface"</span><span class="p">,</span> <span class="n">lod</span><span class="o">=</span><span class="s2">"2"</span><span class="p">,</span> <span class="n">boundaries</span><span class="o">=</span><span class="p">[</span><span class="n">surface</span><span class="p">])])})</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-5" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-5" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-5"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">write_gltf</span><span class="p">(</span><span class="n">model</span><span class="p">)[</span><span class="s2">"nodes"</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">"translation"</span><span class="p">]</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-6" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-6" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-1-6"></a><span class="p">[</span><span class="mf">100.0</span><span class="p">,</span> <span class="mf">200.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">]</span>
+</code></pre></div></li>
+<li>An empty model is a valid, mesh-less glTF:
+    <div class="highlight"><pre><span></span><code><a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-2-1" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-2-1" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-2-1"></a><span class="o">&gt;&gt;&gt;</span> <span class="n">write_gltf</span><span class="p">(</span><span class="n">CityModel</span><span class="p">())[</span><span class="s2">"scenes"</span><span class="p">]</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-2-2" name="pyramids_citymodels.writers.gltf.write_gltf--__codelineno-2-2" href="#pyramids_citymodels.writers.gltf.write_gltf--__codelineno-2-2"></a><span class="p">[{</span><span class="s1">'nodes'</span><span class="p">:</span> <span class="p">[]}]</span>
+</code></pre></div></li>
+</ul>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/pyramids_citymodels/writers/gltf.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-172">172</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-173">173</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-174">174</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-175">175</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-176">176</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-177">177</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-178">178</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-179">179</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-180">180</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-181">181</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-182">182</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-183">183</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-184">184</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-185">185</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-186">186</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-187">187</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-188">188</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-189">189</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-190">190</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-191">191</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-192">192</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-193">193</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-194">194</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-195">195</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-196">196</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-197">197</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-198">198</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-199">199</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-200">200</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-201">201</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-202">202</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-203">203</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-204">204</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-205">205</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-206">206</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-207">207</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-208">208</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-209">209</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-210">210</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-211">211</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-212">212</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-213">213</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-214">214</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-215">215</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-216">216</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-217">217</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-218">218</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-219">219</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-220">220</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-221">221</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-222">222</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-223">223</a></span>
+<span class="normal"><a href="#pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-224">224</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-172" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-172"></a><span class="k">def</span><span class="w"> </span><span class="nf">write_gltf</span><span class="p">(</span><span class="n">model</span><span class="p">:</span> <span class="n">CityModel</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-173" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-173"></a><span class="w">    </span><span class="sd">"""Serialize a :class:`~pyramids_citymodels.ir.CityModel` to a self-contained glTF 2.0 document.</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-174" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-174"></a>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-175" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-175"></a><span class="sd">    Every surface's exterior ring is triangulated (a fan) into one positions-only mesh, shifted by</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-176" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-176"></a><span class="sd">    the model's per-axis minimum (written as the node ``translation`` for float32 precision) and</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-177" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-177"></a><span class="sd">    embedded as a base64 buffer. See the module docstring for the documented limits.</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-178" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-178"></a>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-179" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-179"></a><span class="sd">    Args:</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-180" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-180"></a><span class="sd">        model: The city model to serialize.</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-181" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-181"></a><span class="sd">        path: A path to write the ``.gltf`` JSON to, or ``None`` to return the document dict.</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-182" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-182"></a>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-183" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-183"></a><span class="sd">    Returns:</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-184" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-184"></a><span class="sd">        The glTF document as a ``dict`` when ``path`` is ``None``; otherwise ``None``.</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-185" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-185"></a>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-186" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-186"></a><span class="sd">    Examples:</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-187" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-187"></a><span class="sd">        - A one-triangle building yields a positions-only triangle mesh:</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-188" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-188"></a><span class="sd">            ```python</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-189" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-189"></a><span class="sd">            &gt;&gt;&gt; from pyramids_citymodels.ir import CityModel, CityObject, Geometry</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-190" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-190"></a><span class="sd">            &gt;&gt;&gt; surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-191" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-191"></a><span class="sd">            &gt;&gt;&gt; model = CityModel(objects={"b": CityObject(id="b", type="Building",</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-192" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-192"></a><span class="sd">            ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-193" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-193"></a><span class="sd">            &gt;&gt;&gt; gltf = write_gltf(model)</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-194" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-194"></a><span class="sd">            &gt;&gt;&gt; gltf["accessors"][0]["count"]  # three positions</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-195" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-195"></a><span class="sd">            3</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-196" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-196"></a><span class="sd">            &gt;&gt;&gt; gltf["accessors"][1]["count"]  # one triangle -&gt; three indices</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-197" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-197"></a><span class="sd">            3</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-198" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-198"></a><span class="sd">            &gt;&gt;&gt; gltf["meshes"][0]["primitives"][0]["mode"]  # TRIANGLES</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-199" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-199"></a><span class="sd">            4</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-200" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-200"></a>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-201" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-201"></a><span class="sd">            ```</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-202" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-202"></a><span class="sd">        - Positions are shifted and the shift recorded as the node translation:</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-203" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-203"></a><span class="sd">            ```python</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-204" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-204"></a><span class="sd">            &gt;&gt;&gt; from pyramids_citymodels.ir import CityModel, CityObject, Geometry</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-205" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-205"></a><span class="sd">            &gt;&gt;&gt; surface = [[(100.0, 200.0, 0.0), (101.0, 200.0, 0.0), (101.0, 201.0, 0.0)]]</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-206" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-206"></a><span class="sd">            &gt;&gt;&gt; model = CityModel(objects={"b": CityObject(id="b", type="Building",</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-207" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-207"></a><span class="sd">            ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-208" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-208"></a><span class="sd">            &gt;&gt;&gt; write_gltf(model)["nodes"][0]["translation"]</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-209" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-209"></a><span class="sd">            [100.0, 200.0, 0.0]</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-210" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-210"></a>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-211" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-211"></a><span class="sd">            ```</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-212" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-212"></a><span class="sd">        - An empty model is a valid, mesh-less glTF:</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-213" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-213"></a><span class="sd">            ```python</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-214" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-214"></a><span class="sd">            &gt;&gt;&gt; write_gltf(CityModel())["scenes"]</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-215" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-215"></a><span class="sd">            [{'nodes': []}]</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-216" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-216"></a>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-217" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-217"></a><span class="sd">            ```</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-218" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-218"></a><span class="sd">    """</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-219" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-219"></a>    <span class="n">document</span> <span class="o">=</span> <span class="n">_build_gltf</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-220" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-220"></a>    <span class="k">if</span> <span class="n">path</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-221" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-221"></a>        <span class="k">return</span> <span class="n">document</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-222" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-222"></a>    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">handle</span><span class="p">:</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-223" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-223"></a>        <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">document</span><span class="p">,</span> <span class="n">handle</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<a id="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-224" name="pyramids_citymodels.writers.gltf.write_gltf--source--__codelineno-0-224"></a>    <span class="k">return</span> <span class="kc">None</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
@@ -6212,7 +6957,14 @@ furniture, vegetation, water bodies, land use, relief and transportation (:data:
 
     <div class="doc doc-contents ">
 
-        <p>Parse a CityGML document's LOD2 buildings into a :class:<code>~pyramids_citymodels.ir.CityModel</code>.</p>
+        <p>Parse a CityGML document's city objects into a :class:<code>~pyramids_citymodels.ir.CityModel</code>.</p>
+<p>Reads the common top-level city objects (:data:<code>_CITY_OBJECT_NAMES</code> — buildings, bridges,
+tunnels, city furniture, vegetation, water, land use, relief, transportation, …), each as a
+:class:<code>~pyramids_citymodels.ir.CityObject</code> carrying one <code>"MultiSurface"</code> geometry. A feature's
+polygons come from its semantic <strong>boundary surfaces</strong> (tagged with the surface's local name, at
+LOD 2) and/or from a <code>lodX</code> container it holds <strong>directly</strong> (no semantic type, LOD read from
+the container). <code>app:X3DMaterial</code> appearances are read into the model's appearance pool and a
+per-geometry material map (matched by <code>app:target</code> polygon id); textures are a follow-up.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -6257,10 +7009,10 @@ furniture, vegetation, water bodies, land use, relief and transportation (:data:
             <td>
               <div class="doc-md-description">
                 <p>An optional :class:<code>~pyramids_citymodels.options.ObjectFilter</code>. When given, only
-matching <code>Building</code>/<code>BuildingPart</code> features (by id/type/attributes, and — for a
-feature with a <code>gml:Envelope</code> — a bbox prefilter) are read; a dropped feature's
-boundary surfaces are not parsed, and — per the filter's contract — any surfaces under
-it roll up to the nearest <em>kept</em> ancestor feature. <code>None</code> reads every feature.</p>
+matching features (by id/type/attributes, and — for a feature with a <code>gml:Envelope</code> — a
+bbox prefilter) are read; a dropped feature's surfaces are not parsed, and — per the
+filter's contract — any surfaces under it roll up to the nearest <em>kept</em> ancestor feature.
+<code>None</code> reads every feature.</p>
               </div>
             </td>
             <td>
@@ -6286,7 +7038,7 @@ it roll up to the nearest <em>kept</em> ancestor feature. <code>None</code> read
             </td>
             <td>
               <div class="doc-md-description">
-                <p>A city model with one :class:<code>~pyramids_citymodels.ir.CityObject</code> per <code>Building</code> and per</p>
+                <p>A city model with one :class:<code>~pyramids_citymodels.ir.CityObject</code> per recognized feature (a</p>
               </div>
             </td>
           </tr>
@@ -6296,7 +7048,7 @@ it roll up to the nearest <em>kept</em> ancestor feature. <code>None</code> read
             </td>
             <td>
               <div class="doc-md-description">
-                <p><code>BuildingPart</code>; each carries a single <code>"MultiSurface"</code> geometry whose surfaces are its</p>
+                <p>nested <code>BuildingPart</code> / <code>BridgePart</code> / <code>TunnelPart</code> becomes its own object linked to</p>
               </div>
             </td>
           </tr>
@@ -6306,7 +7058,7 @@ it roll up to the nearest <em>kept</em> ancestor feature. <code>None</code> read
             </td>
             <td>
               <div class="doc-md-description">
-                <p>boundary polygons, tagged with their boundary-surface semantic type.</p>
+                <p>its parent); each carries a single <code>"MultiSurface"</code> geometry of its polygons.</p>
               </div>
             </td>
           </tr>
@@ -6444,103 +7196,119 @@ shared geometry). Within one feature a polygon reachable from two boundary surfa
 <span class="normal"><a href="#pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-803">803</a></span>
 <span class="normal"><a href="#pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-804">804</a></span>
 <span class="normal"><a href="#pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-805">805</a></span>
-<span class="normal"><a href="#pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-806">806</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-710" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-710"></a><span class="k">def</span><span class="w"> </span><span class="nf">parse_citygml</span><span class="p">(</span><span class="n">source</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">selector</span><span class="p">:</span> <span class="s2">"ObjectFilter | None"</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CityModel</span><span class="p">:</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-711" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-711"></a><span class="w">    </span><span class="sd">"""Parse a CityGML document's LOD2 buildings into a :class:`~pyramids_citymodels.ir.CityModel`.</span>
+<span class="normal"><a href="#pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-806">806</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-807">807</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-808">808</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-809">809</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-810">810</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-811">811</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-812">812</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-813">813</a></span>
+<span class="normal"><a href="#pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-814">814</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-710" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-710"></a><span class="k">def</span><span class="w"> </span><span class="nf">parse_citygml</span><span class="p">(</span><span class="n">source</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">selector</span><span class="p">:</span> <span class="s2">"ObjectFilter | None"</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CityModel</span><span class="p">:</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-711" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-711"></a><span class="w">    </span><span class="sd">"""Parse a CityGML document's city objects into a :class:`~pyramids_citymodels.ir.CityModel`.</span>
 <a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-712" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-712"></a>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-713" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-713"></a><span class="sd">    Args:</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-714" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-714"></a><span class="sd">        source: A path to a ``.gml``/``.xml`` file, an open file, or an XML string/bytes.</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-715" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-715"></a><span class="sd">        selector: An optional :class:`~pyramids_citymodels.options.ObjectFilter`. When given, only</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-716" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-716"></a><span class="sd">            matching ``Building``/``BuildingPart`` features (by id/type/attributes, and — for a</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-717" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-717"></a><span class="sd">            feature with a ``gml:Envelope`` — a bbox prefilter) are read; a dropped feature's</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-718" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-718"></a><span class="sd">            boundary surfaces are not parsed, and — per the filter's contract — any surfaces under</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-719" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-719"></a><span class="sd">            it roll up to the nearest *kept* ancestor feature. ``None`` reads every feature.</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-713" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-713"></a><span class="sd">    Reads the common top-level city objects (:data:`_CITY_OBJECT_NAMES` — buildings, bridges,</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-714" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-714"></a><span class="sd">    tunnels, city furniture, vegetation, water, land use, relief, transportation, …), each as a</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-715" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-715"></a><span class="sd">    :class:`~pyramids_citymodels.ir.CityObject` carrying one ``"MultiSurface"`` geometry. A feature's</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-716" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-716"></a><span class="sd">    polygons come from its semantic **boundary surfaces** (tagged with the surface's local name, at</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-717" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-717"></a><span class="sd">    LOD 2) and/or from a ``lodX`` container it holds **directly** (no semantic type, LOD read from</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-718" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-718"></a><span class="sd">    the container). ``app:X3DMaterial`` appearances are read into the model's appearance pool and a</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-719" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-719"></a><span class="sd">    per-geometry material map (matched by ``app:target`` polygon id); textures are a follow-up.</span>
 <a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-720" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-720"></a>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-721" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-721"></a><span class="sd">    Returns:</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-722" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-722"></a><span class="sd">        A city model with one :class:`~pyramids_citymodels.ir.CityObject` per ``Building`` and per</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-723" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-723"></a><span class="sd">        ``BuildingPart``; each carries a single ``"MultiSurface"`` geometry whose surfaces are its</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-724" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-724"></a><span class="sd">        boundary polygons, tagged with their boundary-surface semantic type.</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-725" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-725"></a>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-726" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-726"></a><span class="sd">    Note:</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-727" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-727"></a><span class="sd">        Shared geometry (``xlink:href``) is resolved against a document-wide ``gml:id`` index, so a</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-728" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-728"></a><span class="sd">        polygon referenced by href is attributed to **every** referencing feature (legitimate CityGML</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-729" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-729"></a><span class="sd">        shared geometry). Within one feature a polygon reachable from two boundary surfaces is taken</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-730" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-730"></a><span class="sd">        **once**, keeping the first (document-order) surface's semantic type.</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-731" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-731"></a>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-732" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-732"></a><span class="sd">    Examples:</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-733" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-733"></a><span class="sd">        - Parse an in-memory CityGML building and read its reconstructed semantic surface:</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-734" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-734"></a><span class="sd">            ```python</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-735" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-735"></a><span class="sd">            &gt;&gt;&gt; xml = '''&lt;core:CityModel</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-736" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-736"></a><span class="sd">            ...   xmlns:core="http://www.opengis.net/citygml/2.0"</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-737" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-737"></a><span class="sd">            ...   xmlns:bldg="http://www.opengis.net/citygml/building/2.0"</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-738" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-738"></a><span class="sd">            ...   xmlns:gml="http://www.opengis.net/gml"&gt;</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-739" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-739"></a><span class="sd">            ...   &lt;core:cityObjectMember&gt;&lt;bldg:Building gml:id="B"&gt;</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-740" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-740"></a><span class="sd">            ...     &lt;bldg:boundedBy&gt;&lt;bldg:RoofSurface&gt;</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-741" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-741"></a><span class="sd">            ...       &lt;bldg:lod2MultiSurface&gt;&lt;gml:MultiSurface&gt;&lt;gml:surfaceMember&gt;</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-742" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-742"></a><span class="sd">            ...         &lt;gml:Polygon&gt;&lt;gml:exterior&gt;&lt;gml:LinearRing&gt;</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-743" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-743"></a><span class="sd">            ...           &lt;gml:posList srsDimension="3"&gt;0 0 1 1 0 1 1 1 1&lt;/gml:posList&gt;</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-744" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-744"></a><span class="sd">            ...         &lt;/gml:LinearRing&gt;&lt;/gml:exterior&gt;&lt;/gml:Polygon&gt;</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-745" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-745"></a><span class="sd">            ...       &lt;/gml:surfaceMember&gt;&lt;/gml:MultiSurface&gt;&lt;/bldg:lod2MultiSurface&gt;</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-746" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-746"></a><span class="sd">            ...     &lt;/bldg:RoofSurface&gt;&lt;/bldg:boundedBy&gt;</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-747" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-747"></a><span class="sd">            ...   &lt;/bldg:Building&gt;&lt;/core:cityObjectMember&gt;</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-748" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-748"></a><span class="sd">            ... &lt;/core:CityModel&gt;'''</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-749" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-749"></a><span class="sd">            &gt;&gt;&gt; model = parse_citygml(xml)</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-750" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-750"></a><span class="sd">            &gt;&gt;&gt; model.objects["B"].geometries[0].semantics[0].type</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-751" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-751"></a><span class="sd">            'RoofSurface'</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-752" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-752"></a>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-753" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-753"></a><span class="sd">            ```</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-754" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-754"></a><span class="sd">    """</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-755" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-755"></a>    <span class="n">root</span> <span class="o">=</span> <span class="n">_read_tree</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-756" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-756"></a>    <span class="n">parent_of</span> <span class="o">=</span> <span class="p">{</span><span class="n">child</span><span class="p">:</span> <span class="n">parent</span> <span class="k">for</span> <span class="n">parent</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">iter</span><span class="p">()</span> <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">parent</span><span class="p">}</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-757" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-757"></a>    <span class="n">feature_ids</span><span class="p">,</span> <span class="n">attributes_by_element</span> <span class="o">=</span> <span class="n">_assign_feature_ids</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">selector</span><span class="p">)</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-758" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-758"></a>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-759" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-759"></a>    <span class="n">model</span> <span class="o">=</span> <span class="n">CityModel</span><span class="p">(</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-760" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-760"></a>        <span class="n">crs</span><span class="o">=</span><span class="n">_detect_crs</span><span class="p">(</span><span class="n">root</span><span class="p">),</span> <span class="n">source_format</span><span class="o">=</span><span class="s2">"CityGML"</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="n">_detect_version</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-761" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-761"></a>    <span class="p">)</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-762" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-762"></a>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-763" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-763"></a>    <span class="c1"># Create a city object per feature, with parent/child links between a part and its building.</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-764" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-764"></a>    <span class="k">for</span> <span class="n">element</span><span class="p">,</span> <span class="n">identifier</span> <span class="ow">in</span> <span class="n">feature_ids</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-765" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-765"></a>        <span class="n">parent_feature_id</span> <span class="o">=</span> <span class="n">_nearest_feature_id</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="n">parent_of</span><span class="p">,</span> <span class="n">feature_ids</span><span class="p">)</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-766" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-766"></a>        <span class="n">model</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">identifier</span><span class="p">]</span> <span class="o">=</span> <span class="n">CityObject</span><span class="p">(</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-767" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-767"></a>            <span class="nb">id</span><span class="o">=</span><span class="n">identifier</span><span class="p">,</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-768" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-768"></a>            <span class="nb">type</span><span class="o">=</span><span class="n">_local</span><span class="p">(</span><span class="n">element</span><span class="o">.</span><span class="n">tag</span><span class="p">),</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-769" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-769"></a>            <span class="n">attributes</span><span class="o">=</span><span class="n">attributes_by_element</span><span class="p">[</span><span class="n">element</span><span class="p">],</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-770" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-770"></a>            <span class="n">parents</span><span class="o">=</span><span class="p">[</span><span class="n">parent_feature_id</span><span class="p">]</span> <span class="k">if</span> <span class="n">parent_feature_id</span> <span class="k">else</span> <span class="p">[],</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-771" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-771"></a>        <span class="p">)</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-772" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-772"></a>        <span class="k">if</span> <span class="n">parent_feature_id</span><span class="p">:</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-773" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-773"></a>            <span class="n">model</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">parent_feature_id</span><span class="p">]</span><span class="o">.</span><span class="n">children</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">identifier</span><span class="p">)</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-774" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-774"></a>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-775" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-775"></a>    <span class="n">surfaces_by_feature</span><span class="p">,</span> <span class="n">lod_by_feature</span><span class="p">,</span> <span class="n">polygon_ids_by_feature</span> <span class="o">=</span> <span class="n">_gather_surfaces</span><span class="p">(</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-776" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-776"></a>        <span class="n">root</span><span class="p">,</span> <span class="n">parent_of</span><span class="p">,</span> <span class="n">feature_ids</span><span class="p">,</span> <span class="n">_index_polygons</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-777" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-777"></a>    <span class="p">)</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-778" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-778"></a>    <span class="n">appearance_pool</span><span class="p">,</span> <span class="n">appearance_by_feature</span> <span class="o">=</span> <span class="n">_gather_appearances</span><span class="p">(</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-779" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-779"></a>        <span class="n">root</span><span class="p">,</span> <span class="n">polygon_ids_by_feature</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-780" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-780"></a>    <span class="p">)</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-781" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-781"></a>    <span class="k">if</span> <span class="n">appearance_pool</span><span class="p">:</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-782" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-782"></a>        <span class="n">model</span><span class="o">.</span><span class="n">appearances</span> <span class="o">=</span> <span class="n">appearance_pool</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-783" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-783"></a>    <span class="k">for</span> <span class="n">identifier</span><span class="p">,</span> <span class="p">(</span><span class="n">boundaries</span><span class="p">,</span> <span class="n">semantics</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span> <span class="ow">in</span> <span class="n">surfaces_by_feature</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-784" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-784"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="n">boundaries</span><span class="p">:</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-785" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-785"></a>            <span class="k">continue</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-786" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-786"></a>        <span class="c1"># A feature with boundary surfaces is LOD 2 (the semantic-surface level) and keeps its</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-787" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-787"></a>        <span class="c1"># values; a feature with only direct geometry takes the LOD read from its lodX container</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-788" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-788"></a>        <span class="c1"># (None when none was found) and carries no semantics.</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-789" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-789"></a>        <span class="k">if</span> <span class="n">semantics</span><span class="p">:</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-790" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-790"></a>            <span class="n">lod</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">"2"</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-791" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-791"></a>            <span class="n">semantic_values</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">values</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-792" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-792"></a>        <span class="k">else</span><span class="p">:</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-793" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-793"></a>            <span class="n">lod</span> <span class="o">=</span> <span class="n">lod_by_feature</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">identifier</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-794" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-794"></a>            <span class="n">semantic_values</span> <span class="o">=</span> <span class="kc">None</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-795" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-795"></a>        <span class="n">model</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">identifier</span><span class="p">]</span><span class="o">.</span><span class="n">geometries</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-796" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-796"></a>            <span class="n">Geometry</span><span class="p">(</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-797" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-797"></a>                <span class="nb">type</span><span class="o">=</span><span class="s2">"MultiSurface"</span><span class="p">,</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-798" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-798"></a>                <span class="n">lod</span><span class="o">=</span><span class="n">lod</span><span class="p">,</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-799" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-799"></a>                <span class="n">boundaries</span><span class="o">=</span><span class="n">boundaries</span><span class="p">,</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-800" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-800"></a>                <span class="n">semantics</span><span class="o">=</span><span class="n">semantics</span><span class="p">,</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-801" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-801"></a>                <span class="n">semantic_values</span><span class="o">=</span><span class="n">semantic_values</span><span class="p">,</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-802" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-802"></a>                <span class="n">appearance</span><span class="o">=</span><span class="n">appearance_by_feature</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">identifier</span><span class="p">),</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-803" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-803"></a>            <span class="p">)</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-804" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-804"></a>        <span class="p">)</span>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-805" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-805"></a>
-<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-806" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-806"></a>    <span class="k">return</span> <span class="n">model</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-721" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-721"></a><span class="sd">    Args:</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-722" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-722"></a><span class="sd">        source: A path to a ``.gml``/``.xml`` file, an open file, or an XML string/bytes.</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-723" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-723"></a><span class="sd">        selector: An optional :class:`~pyramids_citymodels.options.ObjectFilter`. When given, only</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-724" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-724"></a><span class="sd">            matching features (by id/type/attributes, and — for a feature with a ``gml:Envelope`` — a</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-725" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-725"></a><span class="sd">            bbox prefilter) are read; a dropped feature's surfaces are not parsed, and — per the</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-726" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-726"></a><span class="sd">            filter's contract — any surfaces under it roll up to the nearest *kept* ancestor feature.</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-727" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-727"></a><span class="sd">            ``None`` reads every feature.</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-728" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-728"></a>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-729" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-729"></a><span class="sd">    Returns:</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-730" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-730"></a><span class="sd">        A city model with one :class:`~pyramids_citymodels.ir.CityObject` per recognized feature (a</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-731" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-731"></a><span class="sd">        nested ``BuildingPart`` / ``BridgePart`` / ``TunnelPart`` becomes its own object linked to</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-732" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-732"></a><span class="sd">        its parent); each carries a single ``"MultiSurface"`` geometry of its polygons.</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-733" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-733"></a>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-734" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-734"></a><span class="sd">    Note:</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-735" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-735"></a><span class="sd">        Shared geometry (``xlink:href``) is resolved against a document-wide ``gml:id`` index, so a</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-736" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-736"></a><span class="sd">        polygon referenced by href is attributed to **every** referencing feature (legitimate CityGML</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-737" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-737"></a><span class="sd">        shared geometry). Within one feature a polygon reachable from two boundary surfaces is taken</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-738" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-738"></a><span class="sd">        **once**, keeping the first (document-order) surface's semantic type.</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-739" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-739"></a>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-740" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-740"></a><span class="sd">    Examples:</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-741" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-741"></a><span class="sd">        - Parse an in-memory CityGML building and read its reconstructed semantic surface:</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-742" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-742"></a><span class="sd">            ```python</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-743" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-743"></a><span class="sd">            &gt;&gt;&gt; xml = '''&lt;core:CityModel</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-744" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-744"></a><span class="sd">            ...   xmlns:core="http://www.opengis.net/citygml/2.0"</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-745" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-745"></a><span class="sd">            ...   xmlns:bldg="http://www.opengis.net/citygml/building/2.0"</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-746" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-746"></a><span class="sd">            ...   xmlns:gml="http://www.opengis.net/gml"&gt;</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-747" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-747"></a><span class="sd">            ...   &lt;core:cityObjectMember&gt;&lt;bldg:Building gml:id="B"&gt;</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-748" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-748"></a><span class="sd">            ...     &lt;bldg:boundedBy&gt;&lt;bldg:RoofSurface&gt;</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-749" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-749"></a><span class="sd">            ...       &lt;bldg:lod2MultiSurface&gt;&lt;gml:MultiSurface&gt;&lt;gml:surfaceMember&gt;</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-750" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-750"></a><span class="sd">            ...         &lt;gml:Polygon&gt;&lt;gml:exterior&gt;&lt;gml:LinearRing&gt;</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-751" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-751"></a><span class="sd">            ...           &lt;gml:posList srsDimension="3"&gt;0 0 1 1 0 1 1 1 1&lt;/gml:posList&gt;</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-752" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-752"></a><span class="sd">            ...         &lt;/gml:LinearRing&gt;&lt;/gml:exterior&gt;&lt;/gml:Polygon&gt;</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-753" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-753"></a><span class="sd">            ...       &lt;/gml:surfaceMember&gt;&lt;/gml:MultiSurface&gt;&lt;/bldg:lod2MultiSurface&gt;</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-754" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-754"></a><span class="sd">            ...     &lt;/bldg:RoofSurface&gt;&lt;/bldg:boundedBy&gt;</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-755" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-755"></a><span class="sd">            ...   &lt;/bldg:Building&gt;&lt;/core:cityObjectMember&gt;</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-756" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-756"></a><span class="sd">            ... &lt;/core:CityModel&gt;'''</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-757" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-757"></a><span class="sd">            &gt;&gt;&gt; model = parse_citygml(xml)</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-758" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-758"></a><span class="sd">            &gt;&gt;&gt; model.objects["B"].geometries[0].semantics[0].type</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-759" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-759"></a><span class="sd">            'RoofSurface'</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-760" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-760"></a>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-761" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-761"></a><span class="sd">            ```</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-762" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-762"></a><span class="sd">    """</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-763" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-763"></a>    <span class="n">root</span> <span class="o">=</span> <span class="n">_read_tree</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-764" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-764"></a>    <span class="n">parent_of</span> <span class="o">=</span> <span class="p">{</span><span class="n">child</span><span class="p">:</span> <span class="n">parent</span> <span class="k">for</span> <span class="n">parent</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">iter</span><span class="p">()</span> <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">parent</span><span class="p">}</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-765" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-765"></a>    <span class="n">feature_ids</span><span class="p">,</span> <span class="n">attributes_by_element</span> <span class="o">=</span> <span class="n">_assign_feature_ids</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">selector</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-766" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-766"></a>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-767" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-767"></a>    <span class="n">model</span> <span class="o">=</span> <span class="n">CityModel</span><span class="p">(</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-768" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-768"></a>        <span class="n">crs</span><span class="o">=</span><span class="n">_detect_crs</span><span class="p">(</span><span class="n">root</span><span class="p">),</span> <span class="n">source_format</span><span class="o">=</span><span class="s2">"CityGML"</span><span class="p">,</span> <span class="n">version</span><span class="o">=</span><span class="n">_detect_version</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-769" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-769"></a>    <span class="p">)</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-770" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-770"></a>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-771" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-771"></a>    <span class="c1"># Create a city object per feature, with parent/child links between a part and its building.</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-772" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-772"></a>    <span class="k">for</span> <span class="n">element</span><span class="p">,</span> <span class="n">identifier</span> <span class="ow">in</span> <span class="n">feature_ids</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-773" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-773"></a>        <span class="n">parent_feature_id</span> <span class="o">=</span> <span class="n">_nearest_feature_id</span><span class="p">(</span><span class="n">element</span><span class="p">,</span> <span class="n">parent_of</span><span class="p">,</span> <span class="n">feature_ids</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-774" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-774"></a>        <span class="n">model</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">identifier</span><span class="p">]</span> <span class="o">=</span> <span class="n">CityObject</span><span class="p">(</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-775" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-775"></a>            <span class="nb">id</span><span class="o">=</span><span class="n">identifier</span><span class="p">,</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-776" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-776"></a>            <span class="nb">type</span><span class="o">=</span><span class="n">_local</span><span class="p">(</span><span class="n">element</span><span class="o">.</span><span class="n">tag</span><span class="p">),</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-777" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-777"></a>            <span class="n">attributes</span><span class="o">=</span><span class="n">attributes_by_element</span><span class="p">[</span><span class="n">element</span><span class="p">],</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-778" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-778"></a>            <span class="n">parents</span><span class="o">=</span><span class="p">[</span><span class="n">parent_feature_id</span><span class="p">]</span> <span class="k">if</span> <span class="n">parent_feature_id</span> <span class="k">else</span> <span class="p">[],</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-779" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-779"></a>        <span class="p">)</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-780" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-780"></a>        <span class="k">if</span> <span class="n">parent_feature_id</span><span class="p">:</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-781" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-781"></a>            <span class="n">model</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">parent_feature_id</span><span class="p">]</span><span class="o">.</span><span class="n">children</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">identifier</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-782" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-782"></a>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-783" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-783"></a>    <span class="n">surfaces_by_feature</span><span class="p">,</span> <span class="n">lod_by_feature</span><span class="p">,</span> <span class="n">polygon_ids_by_feature</span> <span class="o">=</span> <span class="n">_gather_surfaces</span><span class="p">(</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-784" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-784"></a>        <span class="n">root</span><span class="p">,</span> <span class="n">parent_of</span><span class="p">,</span> <span class="n">feature_ids</span><span class="p">,</span> <span class="n">_index_polygons</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-785" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-785"></a>    <span class="p">)</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-786" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-786"></a>    <span class="n">appearance_pool</span><span class="p">,</span> <span class="n">appearance_by_feature</span> <span class="o">=</span> <span class="n">_gather_appearances</span><span class="p">(</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-787" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-787"></a>        <span class="n">root</span><span class="p">,</span> <span class="n">polygon_ids_by_feature</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-788" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-788"></a>    <span class="p">)</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-789" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-789"></a>    <span class="k">if</span> <span class="n">appearance_pool</span><span class="p">:</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-790" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-790"></a>        <span class="n">model</span><span class="o">.</span><span class="n">appearances</span> <span class="o">=</span> <span class="n">appearance_pool</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-791" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-791"></a>    <span class="k">for</span> <span class="n">identifier</span><span class="p">,</span> <span class="p">(</span><span class="n">boundaries</span><span class="p">,</span> <span class="n">semantics</span><span class="p">,</span> <span class="n">values</span><span class="p">)</span> <span class="ow">in</span> <span class="n">surfaces_by_feature</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-792" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-792"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="n">boundaries</span><span class="p">:</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-793" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-793"></a>            <span class="k">continue</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-794" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-794"></a>        <span class="c1"># A feature with boundary surfaces is LOD 2 (the semantic-surface level) and keeps its</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-795" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-795"></a>        <span class="c1"># values; a feature with only direct geometry takes the LOD read from its lodX container</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-796" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-796"></a>        <span class="c1"># (None when none was found) and carries no semantics.</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-797" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-797"></a>        <span class="k">if</span> <span class="n">semantics</span><span class="p">:</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-798" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-798"></a>            <span class="n">lod</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s2">"2"</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-799" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-799"></a>            <span class="n">semantic_values</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="n">values</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-800" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-800"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-801" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-801"></a>            <span class="n">lod</span> <span class="o">=</span> <span class="n">lod_by_feature</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">identifier</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-802" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-802"></a>            <span class="n">semantic_values</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-803" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-803"></a>        <span class="n">model</span><span class="o">.</span><span class="n">objects</span><span class="p">[</span><span class="n">identifier</span><span class="p">]</span><span class="o">.</span><span class="n">geometries</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-804" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-804"></a>            <span class="n">Geometry</span><span class="p">(</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-805" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-805"></a>                <span class="nb">type</span><span class="o">=</span><span class="s2">"MultiSurface"</span><span class="p">,</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-806" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-806"></a>                <span class="n">lod</span><span class="o">=</span><span class="n">lod</span><span class="p">,</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-807" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-807"></a>                <span class="n">boundaries</span><span class="o">=</span><span class="n">boundaries</span><span class="p">,</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-808" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-808"></a>                <span class="n">semantics</span><span class="o">=</span><span class="n">semantics</span><span class="p">,</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-809" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-809"></a>                <span class="n">semantic_values</span><span class="o">=</span><span class="n">semantic_values</span><span class="p">,</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-810" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-810"></a>                <span class="n">appearance</span><span class="o">=</span><span class="n">appearance_by_feature</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">identifier</span><span class="p">),</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-811" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-811"></a>            <span class="p">)</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-812" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-812"></a>        <span class="p">)</span>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-813" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-813"></a>
+<a id="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-814" name="pyramids_citymodels.readers.citygml.parse_citygml--source--__codelineno-0-814"></a>    <span class="k">return</span> <span class="n">model</span>
 </code></pre></div></td></tr></table></div>
             </details>
     </div>
