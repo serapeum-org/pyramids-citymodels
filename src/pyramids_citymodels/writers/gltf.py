@@ -29,6 +29,8 @@ import struct
 from typing import Any
 
 from pyramids_citymodels.ir import CityModel, iter_surfaces
+from pyramids_citymodels.writers._geometry import open_ring as _open_ring
+from pyramids_citymodels.writers._geometry import xyz as _xyz
 
 __all__ = ["write_gltf"]
 
@@ -36,21 +38,6 @@ __all__ = ["write_gltf"]
 _FLOAT, _UINT = 5126, 5125
 _ARRAY_BUFFER, _ELEMENT_ARRAY_BUFFER = 34962, 34963
 _TRIANGLES = 4
-
-
-def _open_ring(ring: Any) -> list[Any]:
-    """Drop a ring's closing duplicate vertex (``last == first``)."""
-    if len(ring) > 1 and tuple(ring[0]) == tuple(ring[-1]):
-        return list(ring[:-1])
-    return list(ring)
-
-
-def _xyz(coordinate: Any) -> tuple[float, float, float]:
-    """A coordinate as an ``(x, y, z)`` float triple, filling ``z = 0.0`` for a 2-D point."""
-    x = float(coordinate[0])
-    y = float(coordinate[1])
-    z = float(coordinate[2]) if len(coordinate) > 2 else 0.0
-    return (x, y, z)
 
 
 def _rings(model: CityModel) -> list[list[tuple[float, float, float]]]:
