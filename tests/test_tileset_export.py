@@ -235,7 +235,8 @@ def test_coordinates_are_placed_in_world_frame() -> None:
         for ring in surface
         for point in ring
     ]
-    assert min(xs) >= 1000.0 and max(xs) <= 1010.0
+    assert min(xs) >= 1000.0
+    assert max(xs) <= 1010.0
 
 
 def test_empty_model_writes_a_valid_contentless_tileset() -> None:
