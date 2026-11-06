@@ -171,7 +171,9 @@ def test_degenerate_surfaces_are_skipped_but_valid_ones_kept() -> None:
     geometry = Geometry(
         type="MultiSurface",
         lod="2",
-        boundaries=[[], [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]], _square(0.0, 0.0)[0]],
+        # surfaces: an empty one, a two-vertex (sub-areal) one, then a valid square surface
+        # (_square returns one surface = a list of one ring).
+        boundaries=[[], [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]], _square(0.0, 0.0)],
     )
     model = CityModel(
         objects={"b": CityObject(id="b", type="Building", geometries=[geometry])}
