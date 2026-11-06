@@ -65,6 +65,14 @@ def test_cityjson_appearance_is_a_fixed_point() -> None:
     assert parse_cityjson(write_cityjson(once)) == once
 
 
+def test_cityjson_reader_carries_the_appearance_pool_verbatim() -> None:
+    # The round-trip docs promise materials/textures/vertices-texture survive; that rests on the
+    # reader carrying the whole appearance object unchanged. Guard against a future normalization
+    # that would silently break the texture round-trip (review R2-N1).
+    model = parse_cityjson(_CITYJSON_WITH_APPEARANCE)
+    assert model.appearances == _CITYJSON_WITH_APPEARANCE["appearance"]
+
+
 # --- CityGML X3DMaterial reading ----------------------------------------------------------------
 
 _NS = (
