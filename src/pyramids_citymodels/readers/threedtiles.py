@@ -581,14 +581,18 @@ def _batch_table_rows(
 
     Only JSON-array properties are read (the common case for hand-authored and most exported
     tilesets); a binary-backed property (a ``{byteOffset, componentType, type}`` descriptor) is
-    skipped rather than mis-decoded, so an unknown binary column never corrupts attributes.
+    skipped rather than mis-decoded, so an unknown binary column never corrupts attributes. A
+    ``null`` entry is skipped too: a columnar batch table must give every column a value per batch,
+    so an attribute present on one feature but not another is ``null`` for the others — reading that
+    ``null`` as an attribute would inject a spurious key, so the key is simply absent on that row.
     """
     rows: list[dict[str, Any]] = [{} for _ in range(length)]
     for key, values in batch_table_json.items():
         if key in ("extensions", "extras") or not isinstance(values, list):
             continue
         for index in range(min(length, len(values))):
-            rows[index][key] = values[index]
+            if values[index] is not None:
+                rows[index][key] = values[index]
     return rows
 
 

@@ -130,6 +130,17 @@ def test_batch_table_attributes_round_trip() -> None:
     assert back.objects["houseA"].type == "Building"
 
 
+def test_sparse_attribute_keys_do_not_inject_null_on_other_objects() -> None:
+    # houseA has a "name" attribute, houseB does not; houseB must not come back with name=None.
+    model = _two_buildings()
+    model.objects["houseA"].attributes["name"] = "A"
+    back = parse_3dtiles(_write(model) / "tileset.json")
+    assert back.objects["houseA"].attributes["name"] == "A"
+    assert "name" not in back.objects["houseB"].attributes
+    # the object's own value for a shared key still round-trips
+    assert back.objects["houseB"].attributes["height"] == 7
+
+
 def test_coordinates_are_placed_in_world_frame() -> None:
     # z-up + node translation means the read-back footprint sits at the original coordinates, not
     # rotated (which a mis-declared up-axis would do).

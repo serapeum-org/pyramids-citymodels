@@ -15,8 +15,12 @@ positions mesh — but with two additions that make it a *batched* model:
 - a **batch table** carrying each object's ``id``, ``type`` and attributes as parallel columns.
 
 So the tileset round-trips through this package's own 3D-Tiles reader back to one footprint
-:class:`CityObject` per batch, attributes and all. The tileset declares ``asset.gltfUpAxis = "Z"`` (the
-IR is z-up), so a reader applies no up-axis rotation and footprints are the true plan view.
+:class:`CityObject` per batch — each recovering its id, type and attribute **values**. Note the
+batch table is *columnar*: the identity columns (``id``/``type``) surface as attribute keys on read,
+and an attribute present on only some objects is ``null`` for the rest (the reader drops those
+``null``\\ s), so the read-back ``attributes`` dict is not byte-identical to the input. The tileset
+declares ``asset.gltfUpAxis = "Z"`` (the IR is z-up), so a reader applies no up-axis rotation and
+footprints are the true plan view.
 
 Deliberate, documented limits (plain geometry, like the OBJ/glTF writers):
 
