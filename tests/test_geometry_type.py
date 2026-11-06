@@ -101,3 +101,26 @@ def test_cityjson_solid_round_trips_through_cityjson_unchanged() -> None:
     model = _cityjson_solid()
     out = model.to_cityjson()
     assert out["CityObjects"]["b"]["geometry"][0]["type"] == "Solid"
+
+
+def test_material_on_a_solid_is_nested_one_shell_deeper() -> None:
+    # A lodXSolid polygon painted by an X3DMaterial: the geometry is a Solid, so its material map
+    # values are nested one shell deeper (parallel to the Solid's [[surfaces]] boundaries).
+    xml = (
+        f"<core:CityModel {_NS} "
+        'xmlns:app="http://www.opengis.net/citygml/appearance/2.0">'
+        "<core:cityObjectMember><bldg:Building gml:id='B1'>"
+        "<bldg:lod2Solid><gml:Solid><gml:exterior><gml:CompositeSurface><gml:surfaceMember>"
+        "<gml:Polygon gml:id='sp'><gml:exterior><gml:LinearRing>"
+        "<gml:posList srsDimension='3'>0 0 0 1 0 0 1 1 0 0 0 0</gml:posList>"
+        "</gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:CompositeSurface>"
+        "</gml:exterior></gml:Solid></bldg:lod2Solid></bldg:Building></core:cityObjectMember>"
+        "<app:appearanceMember><app:Appearance><app:theme>wall</app:theme>"
+        "<app:surfaceDataMember><app:X3DMaterial><app:diffuseColor>1 0 0</app:diffuseColor>"
+        "<app:target>#sp</app:target></app:X3DMaterial></app:surfaceDataMember>"
+        "</app:Appearance></app:appearanceMember></core:CityModel>"
+    ).replace("'", '"')
+    geometry = parse_citygml(xml).objects["B1"].geometries[0]
+    assert geometry.type == "Solid"
+    # values nest one level deeper than a MultiSurface's per-surface [idx] list.
+    assert geometry.appearance["material"]["wall"]["values"] == [[0]]

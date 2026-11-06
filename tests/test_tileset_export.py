@@ -138,3 +138,54 @@ def test_build_tileset_has_no_content_without_geometry() -> None:
     tileset = build_tileset(CityModel(), None)
     assert "content" not in tileset["root"]
     assert tileset["geometricError"] == 0.0
+
+
+def test_attribute_named_id_or_type_does_not_clobber_identity_columns() -> None:
+    # An attribute literally called "id"/"type" must not overwrite the batch table's identity
+    # columns, which carry the object's own id and type.
+    model = CityModel(
+        objects={
+            "real": CityObject(
+                id="real",
+                type="Building",
+                attributes={"id": "attr-id", "type": "attr-type", "height": 3},
+                geometries=[
+                    Geometry(
+                        type="MultiSurface", lod="2", boundaries=[_square(0.0, 0.0)]
+                    )
+                ],
+            )
+        }
+    )
+    tileset = build_tileset(model, "content.b3dm")
+    assert tileset["root"]["content"]["uri"] == "content.b3dm"
+    back = parse_3dtiles(_write(model) / "tileset.json")
+    # The object keeps its own id (the batch table's id column wins over the attribute column).
+    assert "real" in back.objects
+    assert back.objects["real"].attributes["height"] == 3
+
+
+def test_degenerate_surfaces_are_skipped_but_valid_ones_kept() -> None:
+    # An empty surface and a two-vertex (sub-areal) surface contribute no geometry; a valid surface
+    # on the same object still makes it a batch.
+    geometry = Geometry(
+        type="MultiSurface",
+        lod="2",
+        boundaries=[[], [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]], _square(0.0, 0.0)[0]],
+    )
+    model = CityModel(
+        objects={"b": CityObject(id="b", type="Building", geometries=[geometry])}
+    )
+    assert build_b3dm(model) is not None  # the valid surface still produces a tile
+    back = parse_3dtiles(_write(model) / "tileset.json")
+    assert "b" in back.objects
+
+
+def test_object_with_only_degenerate_surfaces_contributes_no_tile() -> None:
+    geometry = Geometry(
+        type="MultiSurface", lod="2", boundaries=[[], [[(0.0, 0.0, 0.0)]]]
+    )
+    model = CityModel(
+        objects={"b": CityObject(id="b", type="Building", geometries=[geometry])}
+    )
+    assert build_b3dm(model) is None

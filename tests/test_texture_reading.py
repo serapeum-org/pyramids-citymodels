@@ -110,3 +110,82 @@ def test_uv_count_mismatch_falls_back_to_untextured_ring() -> None:
     )
     values = geometry.appearance["texture"]["rgbTexture"]["values"]
     assert values == [[[None]]]
+
+
+def test_parameterized_texture_without_image_is_skipped() -> None:
+    xml = (
+        f"<core:CityModel {_NS}><core:cityObjectMember><bldg:Building gml:id='B1'>"
+        "<bldg:lod2MultiSurface><gml:MultiSurface><gml:surfaceMember>"
+        "<gml:Polygon gml:id='poly1'><gml:exterior><gml:LinearRing>"
+        "<gml:posList srsDimension='3'>0 0 0 1 0 0 1 1 0 0 0 0</gml:posList>"
+        "</gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:MultiSurface>"
+        "</bldg:lod2MultiSurface></bldg:Building></core:cityObjectMember>"
+        "<app:appearanceMember><app:Appearance><app:theme>t</app:theme>"
+        "<app:surfaceDataMember><app:ParameterizedTexture>"  # no app:imageURI
+        "<app:target uri='#poly1'><app:TexCoordList>"
+        "<app:textureCoordinates ring='#r'>0 0 1 0 1 1 0 0</app:textureCoordinates>"
+        "</app:TexCoordList></app:target></app:ParameterizedTexture>"
+        "</app:surfaceDataMember></app:Appearance></app:appearanceMember></core:CityModel>"
+    ).replace("'", '"')
+    model = parse_citygml(xml)
+    assert "textures" not in (model.appearances or {})
+    assert model.objects["B1"].geometries[0].appearance is None
+
+
+def test_malformed_texture_coordinates_are_skipped() -> None:
+    # Non-numeric texcoords → that ring is dropped; with no resolvable UVs the surface is unpainted,
+    # so the texture is still pooled but the geometry carries no appearance.
+    model = parse_citygml(_textured("wall.png", "nope nope nope"))
+    assert model.appearances["textures"] == [{"type": "PNG", "image": "wall.png"}]
+    assert model.objects["B1"].geometries[0].appearance is None
+
+
+def test_target_without_uri_is_ignored() -> None:
+    xml = (
+        f"<core:CityModel {_NS}><core:cityObjectMember><bldg:Building gml:id='B1'>"
+        "<bldg:lod2MultiSurface><gml:MultiSurface><gml:surfaceMember>"
+        "<gml:Polygon gml:id='poly1'><gml:exterior><gml:LinearRing>"
+        "<gml:posList srsDimension='3'>0 0 0 1 0 0 1 1 0 0 0 0</gml:posList>"
+        "</gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:MultiSurface>"
+        "</bldg:lod2MultiSurface></bldg:Building></core:cityObjectMember>"
+        "<app:appearanceMember><app:Appearance><app:theme>t</app:theme>"
+        "<app:surfaceDataMember><app:ParameterizedTexture><app:imageURI>w.png</app:imageURI>"
+        "<app:target><app:TexCoordList>"  # target with no uri attribute
+        "<app:textureCoordinates ring='#r'>0 0 1 0 1 1 0 0</app:textureCoordinates>"
+        "</app:TexCoordList></app:target></app:ParameterizedTexture>"
+        "</app:surfaceDataMember></app:Appearance></app:appearanceMember></core:CityModel>"
+    ).replace("'", '"')
+    model = parse_citygml(xml)
+    # The texture object is still pooled, but no geometry is painted (no resolvable target).
+    assert model.appearances["textures"] == [{"type": "PNG", "image": "w.png"}]
+    assert model.objects["B1"].geometries[0].appearance is None
+
+
+def test_partially_textured_multi_surface_fills_unpainted_surface() -> None:
+    # Two surfaces, only the first textured; the second is filled with an untextured ring.
+    xml = (
+        f"<core:CityModel {_NS}><core:cityObjectMember><bldg:Building gml:id='B1'>"
+        "<bldg:lod2MultiSurface><gml:MultiSurface>"
+        "<gml:surfaceMember><gml:Polygon gml:id='poly1'><gml:exterior><gml:LinearRing>"
+        "<gml:posList srsDimension='3'>0 0 0 1 0 0 1 1 0 0 0 0</gml:posList>"
+        "</gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember>"
+        "<gml:surfaceMember><gml:Polygon gml:id='poly2'><gml:exterior><gml:LinearRing>"
+        "<gml:posList srsDimension='3'>0 0 9 1 0 9 1 1 9 0 0 9</gml:posList>"
+        "</gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember>"
+        "</gml:MultiSurface></bldg:lod2MultiSurface></bldg:Building></core:cityObjectMember>"
+        "<app:appearanceMember><app:Appearance><app:theme>t</app:theme>"
+        "<app:surfaceDataMember><app:ParameterizedTexture><app:imageURI>w.png</app:imageURI>"
+        "<app:target uri='#poly1'><app:TexCoordList>"
+        "<app:textureCoordinates ring='#r'>0 0 1 0 1 1 0 0</app:textureCoordinates>"
+        "</app:TexCoordList></app:target></app:ParameterizedTexture>"
+        "</app:surfaceDataMember></app:Appearance></app:appearanceMember></core:CityModel>"
+    ).replace("'", '"')
+    values = (
+        parse_citygml(xml)
+        .objects["B1"]
+        .geometries[0]
+        .appearance["texture"]["t"]["values"]
+    )
+    assert len(values) == 2  # one value per surface
+    assert values[0][0][0] == 0  # first surface painted (texture index 0)
+    assert values[1] == [[None]]  # second surface filled, untextured
