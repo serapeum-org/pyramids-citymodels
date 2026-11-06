@@ -535,7 +535,7 @@ def _gather_surfaces(
     parent_of: dict[ElementTree.Element, ElementTree.Element],
     feature_ids: dict[ElementTree.Element, str],
     polygons_by_id: dict[str, ElementTree.Element],
-) -> "tuple[dict[str, tuple[list[Any], list[SemanticSurface], list[int | None]]], dict[str, str]]":
+) -> "tuple[dict[str, tuple[list[Any], list[SemanticSurface], list[int | None]]], dict[str, str], dict[str, list[str | None]]]":
     """Collect each feature's polygons — boundary-surface (semantic) and direct (geometry) alike.
 
     Two passes. **Pass 1** walks boundary-surface elements and, resolving ``xlink:href`` against the
@@ -548,15 +548,20 @@ def _gather_surfaces(
     keeps the first surface's type — SF1); pass 2 skips polygons pass 1 already took.
 
     Returns:
-        ``(surfaces_by_feature, lod_by_feature)`` — each feature's ``(boundaries, semantics,
-        values)`` (``values`` entries are an index into ``semantics`` or ``None`` for a direct
-        surface), and the LOD inferred for features that carry only direct geometry.
+        ``(surfaces_by_feature, lod_by_feature, polygon_ids_by_feature)`` — each feature's
+        ``(boundaries, semantics, values)`` (``values`` entries are an index into ``semantics`` or
+        ``None`` for a direct surface), the LOD inferred for features that carry only direct
+        geometry, and the source ``gml:id`` of each collected polygon (parallel to ``boundaries``,
+        ``None`` for an anonymous one) so appearance targets can be matched to surfaces.
     """
     surfaces_by_feature: dict[
         str, tuple[list[Any], list[SemanticSurface], list[int | None]]
     ] = {identifier: ([], [], []) for identifier in feature_ids.values()}
     seen_by_feature: dict[str, set[int]] = {
         identifier: set() for identifier in feature_ids.values()
+    }
+    polygon_ids_by_feature: dict[str, list[str | None]] = {
+        identifier: [] for identifier in feature_ids.values()
     }
     lod_by_feature: dict[str, str] = {}
 
@@ -580,6 +585,7 @@ def _gather_surfaces(
             values.append(len(semantics))
             semantics.append(SemanticSurface(type=local))
             boundaries.append(surface)
+            polygon_ids_by_feature[feature_id].append(_gml_id(polygon))
 
     for polygon in root.iter():
         if _local(polygon.tag) != "Polygon":
@@ -599,11 +605,106 @@ def _gather_surfaces(
             continue
         values.append(None)  # direct geometry carries no semantic surface
         boundaries.append(surface)
+        polygon_ids_by_feature[feature_id].append(_gml_id(polygon))
         lod_by_feature.setdefault(
             feature_id,
             _lod_from_ancestors(polygon, parent_of, feature_ids) or "",
         )
-    return surfaces_by_feature, lod_by_feature
+    return surfaces_by_feature, lod_by_feature, polygon_ids_by_feature
+
+
+#: X3DMaterial children read as colour vectors ([r, g, b] floats) and as scalar floats.
+_MATERIAL_COLORS = frozenset({"diffuseColor", "emissiveColor", "specularColor"})
+_MATERIAL_SCALARS = frozenset({"ambientIntensity", "shininess", "transparency"})
+
+
+def _parse_x3d_material(
+    element: ElementTree.Element,
+) -> "tuple[dict[str, Any], list[str]]":
+    """Read a ``app:X3DMaterial`` into a CityJSON-shaped material dict plus its target polygon ids.
+
+    Colour members become ``[r, g, b]`` float lists and the scalar members floats, matching the
+    CityJSON material object; ``app:target`` references (``#poly_id``) become the surfaces the
+    material paints. The element's ``gml:id`` seeds the material ``name`` when present.
+    """
+    material: dict[str, Any] = {}
+    targets: list[str] = []
+    for child in element:
+        name = _local(child.tag)
+        text = (child.text or "").strip()
+        if name == "target" and text:
+            targets.append(text.lstrip("#"))
+        elif name in _MATERIAL_COLORS and text:
+            try:
+                material[name] = [float(component) for component in text.split()]
+            except ValueError:
+                pass
+        elif name in _MATERIAL_SCALARS and text:
+            material[name] = _coerce_number(text, float)
+        elif name == "isSmooth" and text:
+            material["isSmooth"] = text.lower() in ("true", "1")
+    gml_identifier = _gml_id(element)
+    if gml_identifier:
+        material.setdefault("name", gml_identifier)
+    return material, targets
+
+
+def _gather_appearances(
+    root: ElementTree.Element,
+    polygon_ids_by_feature: dict[str, list[str | None]],
+) -> "tuple[dict[str, Any], dict[str, dict[str, Any]]]":
+    """Read CityGML ``app:X3DMaterial`` appearances into a CityJSON appearance pool + per-geometry maps.
+
+    Builds a document ``materials`` list and, matching each material's ``app:target`` polygon
+    ``gml:id`` to the surfaces gathered for each feature, a per-feature
+    ``{"material": {<theme>: {"values": [...]}}}`` map whose values are parallel to that feature's
+    surfaces (a material index, or ``None`` for an unpainted surface). Textures
+    (``app:ParameterizedTexture``) are **not** read yet — their UV coordinates need the
+    ``vertices-texture`` pool rebuilt from ``textureCoordinates`` (a documented follow-up); CityJSON
+    textures, by contrast, already round-trip (they ride along in the appearance pool).
+
+    Returns:
+        ``(appearance_pool, appearance_by_feature)`` — both empty when the document has no
+        X3DMaterial appearances.
+    """
+    materials: list[dict[str, Any]] = []
+    target_to_material: dict[str, int] = {}
+    theme_of: dict[int, str] = {}
+    for appearance in root.iter():
+        if _local(appearance.tag) != "Appearance":
+            continue
+        theme = next(
+            (
+                (child.text or "").strip()
+                for child in appearance
+                if _local(child.tag) == "theme" and (child.text or "").strip()
+            ),
+            "default",
+        )
+        for node in appearance.iter():
+            if _local(node.tag) != "X3DMaterial":
+                continue
+            material, targets = _parse_x3d_material(node)
+            index = len(materials)
+            materials.append(material)
+            theme_of[index] = theme
+            for target in targets:
+                target_to_material[target] = index
+
+    if not materials:
+        return {}, {}
+
+    appearance_by_feature: dict[str, dict[str, Any]] = {}
+    for feature_id, polygon_ids in polygon_ids_by_feature.items():
+        values = [
+            target_to_material.get(polygon_id or "") for polygon_id in polygon_ids
+        ]
+        painted = [value for value in values if value is not None]
+        if not painted:
+            continue
+        theme = theme_of[painted[0]]
+        appearance_by_feature[feature_id] = {"material": {theme: {"values": values}}}
+    return {"materials": materials}, appearance_by_feature
 
 
 def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityModel:
@@ -671,9 +772,14 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
         if parent_feature_id:
             model.objects[parent_feature_id].children.append(identifier)
 
-    surfaces_by_feature, lod_by_feature = _gather_surfaces(
+    surfaces_by_feature, lod_by_feature, polygon_ids_by_feature = _gather_surfaces(
         root, parent_of, feature_ids, _index_polygons(root)
     )
+    appearance_pool, appearance_by_feature = _gather_appearances(
+        root, polygon_ids_by_feature
+    )
+    if appearance_pool:
+        model.appearances = appearance_pool
     for identifier, (boundaries, semantics, values) in surfaces_by_feature.items():
         if not boundaries:
             continue
@@ -693,6 +799,7 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
                 boundaries=boundaries,
                 semantics=semantics,
                 semantic_values=semantic_values,
+                appearance=appearance_by_feature.get(identifier),
             )
         )
 
