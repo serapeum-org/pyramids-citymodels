@@ -263,16 +263,32 @@ def _glb_document(
 
 def _pad(blob: bytes, boundary: int, fill: bytes) -> bytes:
     """Pad ``blob`` with ``fill`` up to the next ``boundary``-byte multiple."""
-    remainder = len(blob) % boundary
+    return _pad_to(blob, 0, boundary, fill)
+
+
+def _pad_to(blob: bytes, start: int, boundary: int, fill: bytes) -> bytes:
+    """Pad ``blob`` with ``fill`` so that ``start + len(blob)`` lands on a ``boundary`` multiple.
+
+    ``start`` is the byte offset at which ``blob`` begins in the surrounding container, so a section
+    that follows a header of non-multiple size (e.g. the b3dm's 28-byte header) can still be aligned.
+    """
+    remainder = (start + len(blob)) % boundary
     return blob if remainder == 0 else blob + fill * (boundary - remainder)
 
 
 def _encode_glb(document: dict[str, Any], buffer: bytes) -> bytes:
-    """Pack a glTF document and its single binary buffer into a glTF 2.0 ``glb`` container."""
+    """Pack a glTF document and its single binary buffer into a glTF 2.0 ``glb`` container.
+
+    The JSON chunk is space-padded to 4 (glTF requires 4-byte chunk alignment); the BIN chunk is
+    zero-padded so the **whole glb** length is a multiple of 8, which lets the b3dm start *and* end
+    the embedded glb on 8-byte boundaries (the 3D Tiles b3dm requirement).
+    """
     json_chunk = _pad(
         json.dumps(document, separators=(",", ":")).encode("utf-8"), 4, b" "
     )
-    binary_chunk = _pad(buffer, 4, b"\x00")
+    # Pad the BIN chunk so (12 header + 8 json-chunk-header + json + 8 bin-chunk-header + bin) is a
+    # multiple of 8 — i.e. the glb's total declared length is 8-aligned.
+    binary_chunk = _pad_to(buffer, 12 + 8 + len(json_chunk) + 8, 8, b"\x00")
     total = 12 + 8 + len(json_chunk) + 8 + len(binary_chunk)
     out = struct.pack("<III", _GLB_MAGIC, 2, total)
     out += struct.pack("<II", len(json_chunk), _GLB_CHUNK_JSON) + json_chunk
@@ -283,18 +299,28 @@ def _encode_glb(document: dict[str, Any], buffer: bytes) -> bytes:
 def _encode_b3dm(glb: bytes, batch_length: int, batch_table: dict[str, Any]) -> bytes:
     """Wrap a ``glb`` in a ``b3dm`` tile with a ``BATCH_LENGTH`` feature table and a batch table.
 
-    The feature-table and batch-table JSON are padded to 8-byte boundaries (and the glb to 8) so the
-    binary body stays 8-aligned, per the b3dm spec; the reader keys off the declared lengths either
-    way.
+    The 28-byte b3dm header is itself ``4 (mod 8)``, so the feature-table and batch-table JSON are
+    padded **accounting for that offset** — ``28 + len(feature_table)`` and
+    ``28 + len(feature_table) + len(batch_table)`` are each driven to an 8-byte boundary — and
+    ``_encode_glb`` already made the glb's length a multiple of 8. The embedded glb therefore both
+    starts and ends on an 8-byte boundary and the whole tile length is a multiple of 8, as the b3dm
+    spec requires (and the reader, which keys off the declared lengths, is unaffected).
     """
-    feature_table = _pad(
-        json.dumps({"BATCH_LENGTH": batch_length}).encode("utf-8"), 8, b" "
+    header_size = _B3DM_HEADER.size
+    feature_table = _pad_to(
+        json.dumps({"BATCH_LENGTH": batch_length}).encode("utf-8"), header_size, 8, b" "
     )
     batch_table_json = (
-        _pad(json.dumps(batch_table).encode("utf-8"), 8, b" ") if batch_table else b""
+        _pad_to(
+            json.dumps(batch_table).encode("utf-8"),
+            header_size + len(feature_table),
+            8,
+            b" ",
+        )
+        if batch_table
+        else b""
     )
-    glb = _pad(glb, 8, b"\x00")
-    total = _B3DM_HEADER.size + len(feature_table) + len(batch_table_json) + len(glb)
+    total = header_size + len(feature_table) + len(batch_table_json) + len(glb)
     header = _B3DM_HEADER.pack(
         b"b3dm", 1, total, len(feature_table), 0, len(batch_table_json), 0
     )

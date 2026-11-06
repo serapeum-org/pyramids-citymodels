@@ -7,6 +7,7 @@ to one footprint per batch, so the writer and reader agree on the b3dm/glb conta
 """
 
 import json
+import struct
 import tempfile
 from pathlib import Path
 
@@ -14,7 +15,12 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 
 from pyramids_citymodels.ir import CityModel, CityObject, Geometry
 from pyramids_citymodels.readers.threedtiles import looks_like_3dtiles, parse_3dtiles
-from pyramids_citymodels.writers.threedtiles import build_b3dm, build_tileset
+from pyramids_citymodels.writers.threedtiles import (
+    _B3DM_HEADER,
+    _GLB_MAGIC,
+    build_b3dm,
+    build_tileset,
+)
 
 
 def _square(x: float, y: float) -> list[list[tuple[float, float, float]]]:
@@ -88,6 +94,25 @@ def test_b3dm_has_the_b3dm_magic_and_is_recognised() -> None:
     assert data[:4] == b"b3dm"
     assert looks_like_3dtiles(directory / "content.b3dm")
     assert looks_like_3dtiles(directory / "tileset.json")
+
+
+def test_b3dm_is_8_byte_aligned() -> None:
+    # The b3dm spec requires the embedded glb to start and end on 8-byte boundaries, and the tile
+    # length to be a multiple of 8. The 28-byte header is 4 mod 8, so the padding must account for it.
+    data = build_b3dm(_two_buildings())
+    assert data is not None
+    _magic, _ver, length, ft_json, ft_bin, bt_json, bt_bin = _B3DM_HEADER.unpack_from(
+        data, 0
+    )
+    glb_offset = _B3DM_HEADER.size + ft_json + ft_bin + bt_json + bt_bin
+    assert glb_offset % 8 == 0, f"glb must start 8-aligned, starts at {glb_offset}"
+    assert len(data) % 8 == 0, f"tile length must be 8-aligned, is {len(data)}"
+    assert length == len(data)
+    glb = data[glb_offset:]
+    glb_magic, _glb_ver, glb_length = struct.unpack_from("<III", glb, 0)
+    assert glb_magic == _GLB_MAGIC
+    assert glb_length % 8 == 0, f"glb length must be 8-aligned, is {glb_length}"
+    assert glb_length == len(glb), "no trailing bytes after the glb"
 
 
 def test_round_trips_back_to_one_footprint_per_building() -> None:
