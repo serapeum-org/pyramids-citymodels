@@ -126,6 +126,28 @@ def test_material_on_a_solid_is_nested_one_shell_deeper() -> None:
     assert geometry.appearance["material"]["wall"]["values"] == [[0]]
 
 
+def test_citygml_to_cityjson_rings_are_open() -> None:
+    # CityJSON requires OPEN rings (no repeated closing vertex). A CityGML LinearRing is closed, so
+    # the reader must open it; otherwise external CityJSON validators flag the duplicate vertex (L1).
+    xml = (
+        f"<core:CityModel {_NS}><core:cityObjectMember><bldg:Building gml:id='B1'>"
+        "<bldg:lod2MultiSurface><gml:MultiSurface><gml:surfaceMember>"
+        "<gml:Polygon><gml:exterior><gml:LinearRing>"
+        "<gml:posList srsDimension='3'>0 0 0 1 0 0 1 1 0 0 1 0 0 0 0</gml:posList>"  # closed: 5 positions
+        "</gml:LinearRing></gml:exterior></gml:Polygon></gml:surfaceMember></gml:MultiSurface>"
+        "</bldg:lod2MultiSurface></bldg:Building></core:cityObjectMember></core:CityModel>"
+    ).replace("'", '"')
+    model = parse_citygml(xml)
+    ring = model.objects["B1"].geometries[0].boundaries[0][0]
+    assert len(ring) == 4  # 4 distinct vertices, closing vertex dropped
+    assert ring[0] != ring[-1]  # open
+    # The CityJSON vertex indices for the ring also carry no repeated closing index.
+    cityjson = model.to_cityjson()
+    indices = cityjson["CityObjects"]["B1"]["geometry"][0]["boundaries"][0][0]
+    assert len(indices) == 4
+    assert indices[0] != indices[-1]
+
+
 def test_multisolid_is_not_emitted_as_a_single_solid() -> None:
     # A MultiSolid must not be collapsed into one gml:Solid (which would mislabel it Solid on read).
     # It is written as its surfaces instead: type is not preserved, but it is never mislabelled.

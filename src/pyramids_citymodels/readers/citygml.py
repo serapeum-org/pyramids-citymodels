@@ -298,22 +298,40 @@ def _srs_dimension(element: ElementTree.Element, default: int) -> int:
     return default
 
 
+def _open_ring(coordinates: list[tuple[float, ...]]) -> list[tuple[float, ...]]:
+    """Drop a ring's trailing vertex that repeats the first.
+
+    GML ``LinearRing``\\ s are **closed** (first position repeated as last), but the IR is CityJSON-
+    shaped and CityJSON rings are **open** (the closing edge is implicit). Opening the ring here keeps
+    the IR conformant, so a CityGML→CityJSON conversion does not emit a duplicate closing vertex that
+    external validators (cjio/ninja) flag; the CityGML writer re-closes on output (:func:`_pos_list`).
+    """
+    if len(coordinates) > 1 and coordinates[0] == coordinates[-1]:
+        return coordinates[:-1]
+    return coordinates
+
+
 def _ring_from_linear_ring(
     linear_ring: ElementTree.Element, dimension: int
 ) -> list[tuple[float, ...]]:
-    """Extract a ring's coordinates from a ``gml:LinearRing`` (``posList`` or repeated ``pos``)."""
+    """Extract a ring's coordinates from a ``gml:LinearRing`` (``posList`` or repeated ``pos``).
+
+    The returned ring is **open** (the GML closing vertex is dropped) — see :func:`_open_ring`.
+    """
     for child in linear_ring.iter():
         if _local(child.tag) == "posList" and child.text:
             dim = _srs_dimension(child, dimension)
             numbers = [float(token) for token in child.text.split()]
-            return [tuple(numbers[i : i + dim]) for i in range(0, len(numbers), dim)]
+            return _open_ring(
+                [tuple(numbers[i : i + dim]) for i in range(0, len(numbers), dim)]
+            )
     coordinates: list[tuple[float, ...]] = []
     for child in linear_ring.iter():
         if _local(child.tag) == "pos" and child.text:
             dim = _srs_dimension(child, dimension)
             numbers = [float(token) for token in child.text.split()]
             coordinates.append(tuple(numbers[:dim]))
-    return coordinates
+    return _open_ring(coordinates)
 
 
 def _surfaces_from_polygon(
@@ -996,23 +1014,20 @@ def _material_map(
 
 
 def _reconcile_ring_uvs(uvs: "list[int] | None", ring: list[Any]) -> "list[int] | None":
-    """The UV-index list to paint ``ring`` with — closed to the ring's length — or ``None``.
+    """The UV-index list to paint an **open** ``ring`` with — sized to the ring — or ``None``.
 
-    Accepts a UV list already matching the (stored, closed) ring length, and a list sized to the
-    *open* ring (``len(ring) - 1`` when the ring is closed), which it closes by repeating the first
-    UV index. Any other length is irreconcilable and yields ``None`` (the caller warns and leaves the
+    Rings are stored open (``N`` distinct vertices). Accepts a UV list already ``N`` long, and a
+    ``N + 1`` list — the closed form a schema-conformant CityGML ``textureCoordinates`` carries, one
+    pair per *closed* ring position — whose trailing (closing) index is dropped to match the open
+    ring. Any other length is irreconcilable and yields ``None`` (the caller warns and leaves the
     ring untextured).
     """
     if uvs is None:
         return None
     if len(uvs) == len(ring):
         return uvs
-    if (
-        len(ring) > 1
-        and tuple(ring[0]) == tuple(ring[-1])
-        and len(uvs) == len(ring) - 1
-    ):
-        return [*uvs, uvs[0]]
+    if len(uvs) == len(ring) + 1:
+        return uvs[:-1]  # drop the closing UV index to match the open ring
     return None
 
 

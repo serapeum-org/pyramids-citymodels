@@ -73,14 +73,15 @@ def test_image_suffix_maps_to_cityjson_texture_type() -> None:
 
 
 def test_per_geometry_texture_values_parallel_the_ring() -> None:
-    # 5-vertex closed ring → ring value is [textureIndex, uv0, uv1, uv2, uv3, uv4].
+    # The ring is stored OPEN (4 distinct vertices); the 5 closed UV pairs reconcile by dropping the
+    # closing index, so the ring value is [textureIndex, uv0, uv1, uv2, uv3].
     geometry = (
         parse_citygml(_textured("wall.png", "0 0 1 0 1 1 0 1 0 0"))
         .objects["B1"]
         .geometries[0]
     )
     values = geometry.appearance["texture"]["rgbTexture"]["values"]
-    assert values == [[[0, 0, 1, 2, 3, 4]]]  # one surface, one ring
+    assert values == [[[0, 0, 1, 2, 3]]]  # one surface, one open ring
 
 
 def test_texture_rides_into_cityjson() -> None:
@@ -115,16 +116,16 @@ def test_uv_count_mismatch_falls_back_to_untextured_ring_with_warning() -> None:
     assert geometry.appearance["texture"]["rgbTexture"]["values"] == [[[None]]]
 
 
-def test_open_length_uv_list_is_closed_to_match_the_ring() -> None:
-    # 4 UV pairs (one per distinct vertex) for a stored closed 5-vertex ring: the texture survives,
-    # with the UV list closed by repeating the first index (0,1,2,3 -> 0,1,2,3,0).
+def test_open_length_uv_list_matches_the_open_ring_directly() -> None:
+    # 4 UV pairs (one per distinct vertex) line up exactly with the stored OPEN 4-vertex ring, so the
+    # texture survives with no trimming: [textureIndex, uv0, uv1, uv2, uv3].
     geometry = (
         parse_citygml(_textured("wall.png", "0 0 1 0 1 1 0 1"))
         .objects["B1"]
         .geometries[0]
     )
     values = geometry.appearance["texture"]["rgbTexture"]["values"]
-    assert values == [[[0, 0, 1, 2, 3, 0]]]  # [textureIndex, uv0..uv3, uv0 repeated]
+    assert values == [[[0, 0, 1, 2, 3]]]
 
 
 def test_parameterized_texture_without_image_is_skipped() -> None:
@@ -227,5 +228,5 @@ def test_texture_on_a_solid_is_nested_one_shell_deeper() -> None:
     geometry = parse_citygml(xml).objects["B1"].geometries[0]
     assert geometry.type == "Solid"
     values = geometry.appearance["texture"]["t"]["values"]
-    # one shell, one surface, one ring of [textureIndex, uv0..uv4]
-    assert values == [[[[0, 0, 1, 2, 3, 4]]]]
+    # one shell, one surface, one OPEN ring of [textureIndex, uv0..uv3]
+    assert values == [[[[0, 0, 1, 2, 3]]]]
