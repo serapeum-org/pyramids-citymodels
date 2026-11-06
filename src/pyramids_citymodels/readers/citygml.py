@@ -1,4 +1,4 @@
-"""Parse CityGML city objects into the shared IR (issues #7, #40 reader breadth).
+"""Parse CityGML city objects into the shared IR (issue #7; reader breadth, feature §3).
 
 CityGML is schema-heavy GML/XML: a feature such as a ``bldg:Building`` (with optional
 ``bldg:BuildingPart`` children) carries geometry either through **boundary surfaces**
