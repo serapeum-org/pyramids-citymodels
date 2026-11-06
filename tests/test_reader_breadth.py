@@ -1,0 +1,155 @@
+"""Tests for CityGML reader breadth — city objects beyond LOD2 buildings (reader-breadth feature).
+
+The reader recognizes the common top-level city objects (bridges, tunnels, furniture, vegetation,
+water, land use, relief, transportation, …) and reads geometry both from boundary surfaces (semantic)
+and directly from ``lodX`` containers (furniture/vegetation/etc.), inferring the LOD from the
+container.
+"""
+
+import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
+
+import pytest
+
+from pyramids_citymodels.drivers.citygml import CityGmlDriver
+from pyramids_citymodels.readers.citygml import parse_citygml
+
+_NS = (
+    'xmlns:core="http://www.opengis.net/citygml/2.0" '
+    'xmlns:bldg="http://www.opengis.net/citygml/building/2.0" '
+    'xmlns:frn="http://www.opengis.net/citygml/cityfurniture/2.0" '
+    'xmlns:veg="http://www.opengis.net/citygml/vegetation/2.0" '
+    'xmlns:brid="http://www.opengis.net/citygml/bridge/2.0" '
+    'xmlns:tun="http://www.opengis.net/citygml/tunnel/2.0" '
+    'xmlns:wtr="http://www.opengis.net/citygml/waterbody/2.0" '
+    'xmlns:gen="http://www.opengis.net/citygml/generics/2.0" '
+    'xmlns:gml="http://www.opengis.net/gml"'
+)
+_RING = '<gml:Polygon><gml:exterior><gml:LinearRing><gml:posList srsDimension="3">{}</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon>'
+_TRI = _RING.format("0 0 0 1 0 0 1 1 0 0 0 0")
+
+
+def _direct(element: str, container: str, gml_id: str) -> str:
+    """A city object ``element`` carrying one triangle directly in a ``lodX`` ``container``."""
+    return (
+        f"<core:CityModel {_NS}><core:cityObjectMember>"
+        f'<{element} gml:id="{gml_id}">'
+        f"<{container}><gml:MultiSurface><gml:surfaceMember>{_TRI}"
+        f"</gml:surfaceMember></gml:MultiSurface></{container}>"
+        f"</{element}></core:cityObjectMember></core:CityModel>"
+    )
+
+
+def _boundary(element: str, surface: str, gml_id: str) -> str:
+    """A city object ``element`` carrying one ``surface`` boundary surface (a triangle)."""
+    return (
+        f"<core:CityModel {_NS}><core:cityObjectMember>"
+        f'<{element} gml:id="{gml_id}">'
+        f"<bldg:boundedBy><bldg:{surface}><bldg:lod2MultiSurface><gml:MultiSurface>"
+        f"<gml:surfaceMember>{_TRI}</gml:surfaceMember>"
+        f"</gml:MultiSurface></bldg:lod2MultiSurface></bldg:{surface}></bldg:boundedBy>"
+        f"</{element}></core:cityObjectMember></core:CityModel>"
+    )
+
+
+@pytest.mark.parametrize(
+    "element,container,gml_id,expected_lod",
+    [
+        ("frn:CityFurniture", "frn:lod1Geometry", "F1", "1"),
+        ("veg:SolitaryVegetationObject", "veg:lod2Geometry", "V1", "2"),
+        ("veg:PlantCover", "veg:lod1MultiSurface", "P1", "1"),
+        ("wtr:WaterBody", "wtr:lod1MultiSurface", "W1", "1"),
+        ("gen:GenericCityObject", "gen:lod2Geometry", "G1", "2"),
+    ],
+)
+def test_direct_geometry_object_types_are_read_with_inferred_lod(
+    element: str, container: str, gml_id: str, expected_lod: str
+) -> None:
+    model = parse_citygml(_direct(element, container, gml_id))
+    assert set(model.objects) == {gml_id}
+    geometry = model.objects[gml_id].geometries[0]
+    assert len(geometry.boundaries) == 1  # the one triangle
+    assert geometry.lod == expected_lod  # read from the lodX container
+    assert geometry.semantics == []  # direct geometry has no semantic surface
+    assert geometry.semantic_values is None
+
+
+def test_direct_geometry_object_type_is_the_feature_type() -> None:
+    model = parse_citygml(_direct("frn:CityFurniture", "frn:lod1Geometry", "F1"))
+    assert model.objects["F1"].type == "CityFurniture"
+
+
+@pytest.mark.parametrize(
+    "element,gml_id",
+    [("brid:Bridge", "BR1"), ("tun:Tunnel", "T1")],
+)
+def test_bridge_and_tunnel_boundary_surfaces_are_read_with_semantics(
+    element: str, gml_id: str
+) -> None:
+    model = parse_citygml(_boundary(element, "RoofSurface", gml_id))
+    geometry = model.objects[gml_id].geometries[0]
+    assert geometry.lod == "2"  # the semantic-surface level
+    assert [surface.type for surface in geometry.semantics] == ["RoofSurface"]
+
+
+def test_water_surface_is_tagged_as_a_semantic_boundary_surface() -> None:
+    xml = (
+        f"<core:CityModel {_NS}><core:cityObjectMember>"
+        '<wtr:WaterBody gml:id="W1"><wtr:boundedBy><wtr:WaterSurface>'
+        f"<wtr:lod2Surface><gml:MultiSurface><gml:surfaceMember>{_TRI}"
+        "</gml:surfaceMember></gml:MultiSurface></wtr:lod2Surface>"
+        "</wtr:WaterSurface></wtr:boundedBy></wtr:WaterBody>"
+        "</core:cityObjectMember></core:CityModel>"
+    )
+    geometry = parse_citygml(xml).objects["W1"].geometries[0]
+    assert [surface.type for surface in geometry.semantics] == ["WaterSurface"]
+
+
+def test_nested_part_of_a_non_building_links_to_its_parent() -> None:
+    xml = (
+        f"<core:CityModel {_NS}><core:cityObjectMember>"
+        '<brid:Bridge gml:id="BR1"><brid:consistsOfBridgePart>'
+        '<brid:BridgePart gml:id="BP1">'
+        f"<brid:lod2MultiSurface><gml:MultiSurface><gml:surfaceMember>{_TRI}"
+        "</gml:surfaceMember></gml:MultiSurface></brid:lod2MultiSurface>"
+        "</brid:BridgePart></brid:consistsOfBridgePart></brid:Bridge>"
+        "</core:cityObjectMember></core:CityModel>"
+    )
+    model = parse_citygml(xml)
+    assert set(model.objects) == {"BR1", "BP1"}
+    assert model.objects["BP1"].parents == ["BR1"]
+    assert "BP1" in model.objects["BR1"].children
+
+
+def test_building_behaviour_is_unchanged() -> None:
+    # The existing LOD2 semantic-building path must be untouched by the breadth generalization.
+    model = parse_citygml(_boundary("bldg:Building", "RoofSurface", "B1"))
+    geometry = model.objects["B1"].geometries[0]
+    assert geometry.lod == "2"
+    assert [surface.type for surface in geometry.semantics] == ["RoofSurface"]
+
+
+def test_breadth_objects_flatten_to_a_feature_collection() -> None:
+    # A furniture object reaches a FeatureCollection through the driver (direct geometry included).
+    frame = CityGmlDriver().read(_direct("frn:CityFurniture", "frn:lod1Geometry", "F1"))
+    assert len(frame) >= 1
+    assert "F1" in set(frame["city_object_id"])
+
+
+def test_mixed_types_in_one_document_all_read() -> None:
+    xml = (
+        f"<core:CityModel {_NS}>"
+        '<core:cityObjectMember><frn:CityFurniture gml:id="F1">'
+        f"<frn:lod1Geometry><gml:MultiSurface><gml:surfaceMember>{_TRI}"
+        "</gml:surfaceMember></gml:MultiSurface></frn:lod1Geometry>"
+        "</frn:CityFurniture></core:cityObjectMember>"
+        '<core:cityObjectMember><bldg:Building gml:id="B1">'
+        "<bldg:boundedBy><bldg:RoofSurface><bldg:lod2MultiSurface><gml:MultiSurface>"
+        f"<gml:surfaceMember>{_TRI}</gml:surfaceMember></gml:MultiSurface>"
+        "</bldg:lod2MultiSurface></bldg:RoofSurface></bldg:boundedBy>"
+        "</bldg:Building></core:cityObjectMember></core:CityModel>"
+    )
+    model = parse_citygml(xml)
+    assert {model.objects["F1"].type, model.objects["B1"].type} == {
+        "CityFurniture",
+        "Building",
+    }

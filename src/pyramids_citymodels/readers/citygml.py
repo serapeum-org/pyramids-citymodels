@@ -1,24 +1,32 @@
-"""Parse CityGML LOD2 semantic buildings into the shared IR (issue #7).
+"""Parse CityGML city objects into the shared IR (issues #7, #40 reader breadth).
 
-CityGML is schema-heavy GML/XML: a ``bldg:Building`` has optional ``bldg:BuildingPart`` children,
-each carrying **boundary surfaces** (``WallSurface``, ``RoofSurface``, ``GroundSurface``, …) that
-in turn carry ``gml:Polygon`` rings. This reader reconstructs that LOD2 *semantic* model —
-``Building → BuildingPart → boundary surface → polygon`` — because the raw geometry is already
-reachable through GDAL's GML driver; the semantics are what is missing (issue #1384).
+CityGML is schema-heavy GML/XML: a feature such as a ``bldg:Building`` (with optional
+``bldg:BuildingPart`` children) carries geometry either through **boundary surfaces**
+(``WallSurface``, ``RoofSurface``, ``GroundSurface``, …) that hold ``gml:Polygon`` rings, or
+**directly** on the feature in a ``lodXMultiSurface`` / ``lodXSolid`` / ``lodXGeometry`` container.
+This reader reconstructs both, because the semantics (and, for many object types, the geometry
+itself) are what is missing once a file is flattened (issue #1384).
 
 It parses with the standard-library ``xml.etree.ElementTree`` (no ``lxml``, no new dependency) and
 matches elements by **local name**, ignoring the namespace, so one code path handles CityGML 1.0
-(``.../1.0``), 2.0 (``.../2.0``) and 3.0 (``.../3.0``) rather than hardcoding a version's
-namespace URIs. A building (or part) becomes one :class:`~pyramids_citymodels.ir.Geometry` of
-type ``"MultiSurface"`` whose surfaces are its boundary polygons, each tagged with the local name
-of its boundary-surface element as the semantic ``type``. A ``BuildingPart`` becomes its own city
-object, linked to its parent building.
+(``.../1.0``), 2.0 (``.../2.0``) and 3.0 (``.../3.0``) rather than hardcoding a version's namespace
+URIs. A feature becomes one :class:`~pyramids_citymodels.ir.Geometry` of type ``"MultiSurface"``
+whose surfaces are its polygons: those under a boundary surface are tagged with that surface's local
+name as the semantic ``type`` (and the geometry is LOD 2, the semantic-surface LOD); those taken
+directly from a ``lodX`` container carry no semantic type and the geometry's LOD is read from the
+container (``lod1Solid`` → ``"1"``). A nested part (``BuildingPart`` / ``BridgePart`` /
+``TunnelPart``) becomes its own city object, linked to its parent.
+
+Beyond buildings, the reader recognizes the common top-level city objects — bridges, tunnels, city
+furniture, vegetation, water bodies, land use, relief and transportation (:data:`_CITY_OBJECT_NAMES`)
+— so a whole city file, not only its LOD2 buildings, reaches the IR.
 """
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
 import io
 import os
+import re
 from typing import Any
 from xml.etree import ElementTree
 
@@ -36,7 +44,39 @@ __all__ = ["looks_like_citygml", "parse_citygml"]
 #: Default coordinate dimension assumed when a geometry declares no ``srsDimension``.
 _DEFAULT_SRS_DIMENSION = 3
 
-#: Local names of ``bldg`` boundary-surface elements that carry a semantic surface type.
+#: Local names of the top-level CityGML city objects this reader turns into city objects — buildings
+#: and their relatives across the thematic modules. A nested part (``BuildingPart`` / ``BridgePart``
+#: / ``TunnelPart``) is included so it becomes its own object linked to its parent. Boundary-surface
+#: elements (:data:`_BOUNDARY_SURFACE_NAMES`) are deliberately *not* here: they are geometry carriers
+#: of a feature, not features in their own right.
+_CITY_OBJECT_NAMES = frozenset(
+    {
+        "Building",
+        "BuildingPart",
+        "Bridge",
+        "BridgePart",
+        "Tunnel",
+        "TunnelPart",
+        "CityFurniture",
+        "SolitaryVegetationObject",
+        "PlantCover",
+        "WaterBody",
+        "LandUse",
+        "ReliefFeature",
+        "TINRelief",
+        "TransportationComplex",
+        "Road",
+        "Railway",
+        "Track",
+        "Square",
+        "GenericCityObject",
+        "CityObjectGroup",
+    }
+)
+
+#: Local names of boundary-surface elements that carry a semantic surface type — building/bridge/
+#: tunnel thematic surfaces plus the water-body ones. A polygon under one of these is tagged with
+#: the surface's local name; a polygon reached directly from a ``lodX`` container is not.
 _BOUNDARY_SURFACE_NAMES = frozenset(
     {
         "WallSurface",
@@ -48,8 +88,15 @@ _BOUNDARY_SURFACE_NAMES = frozenset(
         "CeilingSurface",
         "FloorSurface",
         "InteriorWallSurface",
+        "WaterSurface",
+        "WaterGroundSurface",
+        "WaterClosureSurface",
     }
 )
+
+#: A ``lodX...`` geometry-container local name (``lod1Solid``, ``lod2MultiSurface``, …); group 1 is
+#: the LOD digit, used to label a feature's directly-held geometry.
+_LOD_CONTAINER_RE = re.compile(r"^lod(\d)", re.IGNORECASE)
 
 #: Building attributes coerced from text to a number so the IR carries the same types the
 #: CityJSON reader does (which keeps JSON ``float``/``int``), rather than raw strings (SF5).
@@ -379,7 +426,7 @@ def _citygml_candidate_features(
     candidates: list[tuple[ElementTree.Element, str | None]] = []
     attributes_by_element: dict[ElementTree.Element, dict[str, Any]] = {}
     for element in root.iter():
-        if _local(element.tag) not in ("Building", "BuildingPart"):
+        if _local(element.tag) not in _CITY_OBJECT_NAMES:
             continue
         gml_identifier = _gml_id(element)
         attributes = _collect_building_attributes(element)
@@ -449,24 +496,70 @@ def _resolve_polygon(
     return polygons_by_id.get(referenced) if referenced else None
 
 
-def _gather_boundary_surfaces(
+def _under_boundary_surface(
+    element: ElementTree.Element,
+    parent_of: dict[ElementTree.Element, ElementTree.Element],
+    feature_ids: dict[ElementTree.Element, str],
+) -> bool:
+    """Whether ``element`` sits inside a boundary-surface element, within its own feature.
+
+    Walks ancestors up to (but not past) the nearest feature; returns ``True`` if a boundary-surface
+    element is met first. Used to tell a feature's *direct* geometry (no boundary surface) from
+    geometry owned by a semantic boundary surface, which is gathered separately.
+    """
+    current = parent_of.get(element)
+    while current is not None and current not in feature_ids:
+        if _local(current.tag) in _BOUNDARY_SURFACE_NAMES:
+            return True
+        current = parent_of.get(current)
+    return False
+
+
+def _lod_from_ancestors(
+    element: ElementTree.Element,
+    parent_of: dict[ElementTree.Element, ElementTree.Element],
+    feature_ids: dict[ElementTree.Element, str],
+) -> str | None:
+    """The LOD digit of the nearest ``lodX`` container above ``element`` (within its feature), or ``None``."""
+    current = parent_of.get(element)
+    while current is not None and current not in feature_ids:
+        match = _LOD_CONTAINER_RE.match(_local(current.tag))
+        if match:
+            return match.group(1)
+        current = parent_of.get(current)
+    return None
+
+
+def _gather_surfaces(
     root: ElementTree.Element,
     parent_of: dict[ElementTree.Element, ElementTree.Element],
     feature_ids: dict[ElementTree.Element, str],
     polygons_by_id: dict[str, ElementTree.Element],
-) -> "dict[str, tuple[list[Any], list[SemanticSurface], list[int]]]":
-    """Collect each feature's boundary polygons (resolving ``xlink:href``), tagged by semantic type.
+) -> "tuple[dict[str, tuple[list[Any], list[SemanticSurface], list[int | None]]], dict[str, str]]":
+    """Collect each feature's polygons — boundary-surface (semantic) and direct (geometry) alike.
 
-    A polygon reachable from two boundary surfaces of one feature (inline in one, referenced by
-    ``xlink:href`` from another) is collected **once**, keeping the first (document-order) surface's
-    semantic type — so the seen-set is scoped to the feature, not reset per boundary surface (SF1).
+    Two passes. **Pass 1** walks boundary-surface elements and, resolving ``xlink:href`` against the
+    polygon index, attributes each polygon to its nearest feature with that surface's local name as
+    its semantic type (LOD 2, the semantic-surface level). **Pass 2** walks every other polygon — a
+    feature's *directly*-held geometry (``lodXMultiSurface`` / ``lodXSolid`` / ``lodXGeometry`` on
+    city furniture, vegetation, water, relief, …) — attributing it to its nearest feature with no
+    semantic type and recording the feature's LOD from the ``lodX`` container. A polygon is collected
+    once per feature (``seen`` is feature-scoped, so a polygon shared between two boundary surfaces
+    keeps the first surface's type — SF1); pass 2 skips polygons pass 1 already took.
+
+    Returns:
+        ``(surfaces_by_feature, lod_by_feature)`` — each feature's ``(boundaries, semantics,
+        values)`` (``values`` entries are an index into ``semantics`` or ``None`` for a direct
+        surface), and the LOD inferred for features that carry only direct geometry.
     """
     surfaces_by_feature: dict[
-        str, tuple[list[Any], list[SemanticSurface], list[int]]
+        str, tuple[list[Any], list[SemanticSurface], list[int | None]]
     ] = {identifier: ([], [], []) for identifier in feature_ids.values()}
     seen_by_feature: dict[str, set[int]] = {
         identifier: set() for identifier in feature_ids.values()
     }
+    lod_by_feature: dict[str, str] = {}
+
     for element in root.iter():
         local = _local(element.tag)
         if local not in _BOUNDARY_SURFACE_NAMES:
@@ -487,7 +580,30 @@ def _gather_boundary_surfaces(
             values.append(len(semantics))
             semantics.append(SemanticSurface(type=local))
             boundaries.append(surface)
-    return surfaces_by_feature
+
+    for polygon in root.iter():
+        if _local(polygon.tag) != "Polygon":
+            continue
+        if _under_boundary_surface(polygon, parent_of, feature_ids):
+            continue  # pass 1 owns boundary-surface polygons
+        feature_id = _nearest_feature_id(polygon, parent_of, feature_ids)
+        if feature_id is None:
+            continue
+        boundaries, semantics, values = surfaces_by_feature[feature_id]
+        seen = seen_by_feature[feature_id]
+        if id(polygon) in seen:
+            continue
+        seen.add(id(polygon))
+        surface = _surfaces_from_polygon(polygon, _DEFAULT_SRS_DIMENSION)
+        if not surface or len(surface[0]) < 3:
+            continue
+        values.append(None)  # direct geometry carries no semantic surface
+        boundaries.append(surface)
+        lod_by_feature.setdefault(
+            feature_id,
+            _lod_from_ancestors(polygon, parent_of, feature_ids) or "",
+        )
+    return surfaces_by_feature, lod_by_feature
 
 
 def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityModel:
@@ -555,19 +671,29 @@ def parse_citygml(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
         if parent_feature_id:
             model.objects[parent_feature_id].children.append(identifier)
 
-    surfaces_by_feature = _gather_boundary_surfaces(
+    surfaces_by_feature, lod_by_feature = _gather_surfaces(
         root, parent_of, feature_ids, _index_polygons(root)
     )
     for identifier, (boundaries, semantics, values) in surfaces_by_feature.items():
-        if boundaries:
-            model.objects[identifier].geometries.append(
-                Geometry(
-                    type="MultiSurface",
-                    lod="2",
-                    boundaries=boundaries,
-                    semantics=semantics,
-                    semantic_values=values,
-                )
+        if not boundaries:
+            continue
+        # A feature with boundary surfaces is LOD 2 (the semantic-surface level) and keeps its
+        # values; a feature with only direct geometry takes the LOD read from its lodX container
+        # (None when none was found) and carries no semantics.
+        if semantics:
+            lod: str | None = "2"
+            semantic_values: list[int | None] | None = values
+        else:
+            lod = lod_by_feature.get(identifier) or None
+            semantic_values = None
+        model.objects[identifier].geometries.append(
+            Geometry(
+                type="MultiSurface",
+                lod=lod,
+                boundaries=boundaries,
+                semantics=semantics,
+                semantic_values=semantic_values,
             )
+        )
 
     return model
