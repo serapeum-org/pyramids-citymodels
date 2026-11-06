@@ -99,6 +99,11 @@ _BOUNDARY_SURFACE_NAMES = frozenset(
 #: the LOD digit, used to label a feature's directly-held geometry.
 _LOD_CONTAINER_RE = re.compile(r"^lod(\d)", re.IGNORECASE)
 
+#: GML surface elements read as a feature's directly-held geometry. A ``gml:Triangle`` (a TIN patch,
+#: the usual relief/terrain encoding) has the same ``exterior``/``LinearRing`` shape as a
+#: ``gml:Polygon``, so it is extracted the same way.
+_DIRECT_SURFACE_NAMES = frozenset({"Polygon", "Triangle"})
+
 #: Building attributes coerced from text to a number so the IR carries the same types the
 #: CityJSON reader does (which keeps JSON ``float``/``int``), rather than raw strings (SF5).
 _FLOAT_BUILDING_ATTRIBUTES = frozenset({"measuredHeight"})
@@ -618,7 +623,7 @@ def _gather_surfaces(
             group.polygon_ids.append(_gml_id(polygon))
 
     for polygon in root.iter():
-        if _local(polygon.tag) != "Polygon":
+        if _local(polygon.tag) not in _DIRECT_SURFACE_NAMES:
             continue
         if _under_boundary_surface(polygon, parent_of, feature_ids):
             continue  # pass 1 owns boundary-surface polygons

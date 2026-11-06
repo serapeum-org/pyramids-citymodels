@@ -227,6 +227,26 @@ def test_dual_encoded_surface_is_not_double_counted() -> None:
     assert total == 1  # the dual-encoded roof is kept once
 
 
+def test_tin_relief_triangles_are_read() -> None:
+    # A TINRelief whose geometry is a gml:TriangulatedSurface of gml:Triangle patches must be read,
+    # not silently dropped (review L1 — the type was advertised but only gml:Polygon was collected).
+    tri = (
+        "<gml:Triangle><gml:exterior><gml:LinearRing>"
+        '<gml:posList srsDimension="3">0 0 0 1 0 0 1 1 0 0 0 0</gml:posList>'
+        "</gml:LinearRing></gml:exterior></gml:Triangle>"
+    )
+    xml = (
+        f"<core:CityModel {_NS} xmlns:dem=\"http://www.opengis.net/citygml/relief/2.0\">"
+        '<core:cityObjectMember><dem:TINRelief gml:id="T1"><dem:tin>'
+        f"<gml:TriangulatedSurface><gml:trianglePatches>{tri}</gml:trianglePatches>"
+        "</gml:TriangulatedSurface></dem:tin></dem:TINRelief></core:cityObjectMember>"
+        "</core:CityModel>"
+    )
+    geometries = parse_citygml(xml).objects["T1"].geometries
+    assert len(geometries) == 1
+    assert len(geometries[0].boundaries) == 1  # the one triangle, read as a surface
+
+
 def test_mixed_types_in_one_document_all_read() -> None:
     xml = (
         f"<core:CityModel {_NS}>"
