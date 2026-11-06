@@ -221,7 +221,8 @@ def test_direct_lod1_geometry_is_separate_from_lod2_boundary_surfaces() -> None:
         "RoofSurface"
     ]  # LOD2 keeps its semantics
     assert by_lod["1"].semantics == []  # the LOD1 block carries none
-    assert len(by_lod["1"].boundaries) == 1 and len(by_lod["2"].boundaries) == 1
+    assert len(by_lod["1"].boundaries) == 1
+    assert len(by_lod["2"].boundaries) == 1
 
 
 def test_identical_surface_at_two_lods_survives_in_both() -> None:
@@ -238,7 +239,8 @@ def test_identical_surface_at_two_lods_survives_in_both() -> None:
     ).replace("'", '"')
     by_lod = {g.lod: g for g in parse_citygml(xml).objects["B1"].geometries}
     assert sorted(by_lod) == ["1", "2"]
-    assert len(by_lod["1"].boundaries) == 1 and len(by_lod["2"].boundaries) == 1
+    assert len(by_lod["1"].boundaries) == 1
+    assert len(by_lod["2"].boundaries) == 1
 
 
 def test_dual_encoded_surface_is_not_double_counted() -> None:

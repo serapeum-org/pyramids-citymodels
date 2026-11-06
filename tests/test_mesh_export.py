@@ -80,7 +80,8 @@ def test_obj_groups_objects_under_o_markers() -> None:
         }
     )
     lines = write_obj(model).splitlines()
-    assert "o a" in lines and "o c" in lines
+    assert "o a" in lines
+    assert "o c" in lines
 
 
 def test_obj_fills_z_for_a_2d_coordinate() -> None:
@@ -111,7 +112,8 @@ def test_obj_writes_to_a_path(tmp_path: Path) -> None:
 def test_to_file_routes_obj(tmp_path: Path) -> None:
     out = tmp_path / "m.obj"
     _model(_QUAD).to_file(out)
-    assert out.exists() and "f 1 2 3 4" in out.read_text()
+    assert out.exists()
+    assert "f 1 2 3 4" in out.read_text()
 
 
 # --- glTF ---------------------------------------------------------------------------------------

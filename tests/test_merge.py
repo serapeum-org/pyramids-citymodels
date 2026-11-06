@@ -27,7 +27,8 @@ def test_merge_returns_a_new_model_and_leaves_inputs_untouched() -> None:
     a = _model(a="Building")
     b = _model(b="Bridge")
     merged = a.merge(b)
-    assert merged is not a and merged is not b
+    assert merged is not a
+    assert merged is not b
     assert sorted(a.objects) == ["a"]
     assert sorted(b.objects) == ["b"]  # inputs are not mutated
 
