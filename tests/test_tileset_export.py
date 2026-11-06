@@ -17,10 +17,53 @@ from pyramids_citymodels.ir import CityModel, CityObject, Geometry
 from pyramids_citymodels.readers.threedtiles import looks_like_3dtiles, parse_3dtiles
 from pyramids_citymodels.writers.threedtiles import (
     _B3DM_HEADER,
+    _GLB_CHUNK_BIN,
+    _GLB_CHUNK_JSON,
     _GLB_MAGIC,
     build_b3dm,
     build_tileset,
 )
+
+
+def _polygon(
+    x: float, y: float, vertices: int
+) -> list[list[tuple[float, float, float]]]:
+    """A closed ``vertices``-gon surface centred near ``(x, y)`` (varied size exercises padding)."""
+    import math
+
+    ring = [
+        (
+            x + math.cos(2 * math.pi * i / vertices),
+            y + math.sin(2 * math.pi * i / vertices),
+            0.0,
+        )
+        for i in range(vertices)
+    ]
+    return [ring + [ring[0]]]
+
+
+def _model(objects: int, vertices: int, surfaces: int) -> CityModel:
+    """A model of ``objects`` buildings, each with ``surfaces`` ``vertices``-gon surfaces."""
+    return CityModel(
+        objects={
+            f"o{o}": CityObject(
+                id=f"o{o}",
+                type="Building",
+                attributes={"h": o},
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[
+                            _polygon(o * 10.0, s * 10.0, vertices)
+                            for s in range(surfaces)
+                        ],
+                    )
+                ],
+            )
+            for o in range(objects)
+        }
+    )
 
 
 def _square(x: float, y: float) -> list[list[tuple[float, float, float]]]:
@@ -96,23 +139,64 @@ def test_b3dm_has_the_b3dm_magic_and_is_recognised() -> None:
     assert looks_like_3dtiles(directory / "tileset.json")
 
 
-def test_b3dm_is_8_byte_aligned() -> None:
-    # The b3dm spec requires the embedded glb to start and end on 8-byte boundaries, and the tile
-    # length to be a multiple of 8. The 28-byte header is 4 mod 8, so the padding must account for it.
-    data = build_b3dm(_two_buildings())
-    assert data is not None
-    _magic, _ver, length, ft_json, ft_bin, bt_json, bt_bin = _B3DM_HEADER.unpack_from(
-        data, 0
-    )
-    glb_offset = _B3DM_HEADER.size + ft_json + ft_bin + bt_json + bt_bin
-    assert glb_offset % 8 == 0, f"glb must start 8-aligned, starts at {glb_offset}"
-    assert len(data) % 8 == 0, f"tile length must be 8-aligned, is {len(data)}"
-    assert length == len(data)
-    glb = data[glb_offset:]
-    glb_magic, _glb_ver, glb_length = struct.unpack_from("<III", glb, 0)
-    assert glb_magic == _GLB_MAGIC
-    assert glb_length % 8 == 0, f"glb length must be 8-aligned, is {glb_length}"
-    assert glb_length == len(glb), "no trailing bytes after the glb"
+def _parse_glb_chunks(glb: bytes) -> tuple[dict, int]:
+    """Return the glb's parsed JSON document and the BIN chunk's declared length."""
+    offset = 12
+    document: dict = {}
+    bin_length = 0
+    while offset + 8 <= len(glb):
+        chunk_length, chunk_type = struct.unpack_from("<II", glb, offset)
+        offset += 8
+        chunk = glb[offset : offset + chunk_length]
+        offset += chunk_length
+        if chunk_type == _GLB_CHUNK_JSON:
+            document = json.loads(chunk.decode("utf-8"))
+            assert chunk_length % 4 == 0, "JSON chunk must be 4-aligned"
+        elif chunk_type == _GLB_CHUNK_BIN:
+            bin_length = chunk_length
+            assert chunk_length % 4 == 0, "BIN chunk must be 4-aligned"
+    return document, bin_length
+
+
+def test_b3dm_is_8_byte_aligned_and_glb_is_spec_valid() -> None:
+    # The b3dm spec wants the embedded glb to start and end on 8-byte boundaries and the tile length a
+    # multiple of 8 (the 28-byte header is 4 mod 8, so padding must account for it). The glTF GLB spec
+    # ALSO caps the BIN chunk at 3 bytes over buffers[0].byteLength — the check that would have caught
+    # the incomplete first alignment fix. The overhang is input-dependent, so test several shapes.
+    for objects, vertices, surfaces in [
+        (1, 3, 1),
+        (2, 4, 1),
+        (3, 5, 2),
+        (5, 7, 3),
+        (7, 6, 2),
+    ]:
+        data = build_b3dm(_model(objects, vertices, surfaces))
+        assert data is not None
+        _magic, _ver, length, ft_json, ft_bin, bt_json, bt_bin = (
+            _B3DM_HEADER.unpack_from(data, 0)
+        )
+        glb_offset = _B3DM_HEADER.size + ft_json + ft_bin + bt_json + bt_bin
+        shape = f"(objects={objects}, vertices={vertices}, surfaces={surfaces})"
+        assert glb_offset % 8 == 0, (
+            f"glb must start 8-aligned {shape}, starts at {glb_offset}"
+        )
+        assert len(data) % 8 == 0, (
+            f"tile length must be 8-aligned {shape}, is {len(data)}"
+        )
+        assert length == len(data)
+        glb = data[glb_offset:]
+        glb_magic, _glb_ver, glb_length = struct.unpack_from("<III", glb, 0)
+        assert glb_magic == _GLB_MAGIC
+        assert glb_length % 8 == 0, (
+            f"glb length must be 8-aligned {shape}, is {glb_length}"
+        )
+        assert glb_length == len(glb), f"no trailing bytes after the glb {shape}"
+        document, bin_length = _parse_glb_chunks(glb)
+        byte_length = document["buffers"][0]["byteLength"]
+        overhang = bin_length - byte_length
+        assert 0 <= overhang <= 3, (
+            f"BIN chunk may exceed buffers[0].byteLength by at most 3 {shape}, overhang={overhang}"
+        )
 
 
 def test_round_trips_back_to_one_footprint_per_building() -> None:

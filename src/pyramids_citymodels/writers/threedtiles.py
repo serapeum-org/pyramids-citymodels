@@ -283,16 +283,23 @@ def _pad_to(blob: bytes, start: int, boundary: int, fill: bytes) -> bytes:
 def _encode_glb(document: dict[str, Any], buffer: bytes) -> bytes:
     """Pack a glTF document and its single binary buffer into a glTF 2.0 ``glb`` container.
 
-    The JSON chunk is space-padded to 4 (glTF requires 4-byte chunk alignment); the BIN chunk is
-    zero-padded so the **whole glb** length is a multiple of 8, which lets the b3dm start *and* end
-    the embedded glb on 8-byte boundaries (the 3D Tiles b3dm requirement).
+    Both chunks are 4-aligned (the glTF requirement): the BIN chunk is zero-padded only to 4, so it
+    exceeds ``buffers[0].byteLength`` by at most 3 bytes (glTF caps that overhang at 3). The whole
+    glb is then 8-aligned by extending the **JSON** chunk with trailing spaces — JSON-chunk padding is
+    unconstrained by any declared length — so the b3dm can start *and* end the embedded glb on 8-byte
+    boundaries without over-padding the BIN chunk past spec.
     """
     json_chunk = _pad(
         json.dumps(document, separators=(",", ":")).encode("utf-8"), 4, b" "
     )
-    # Pad the BIN chunk so (12 header + 8 json-chunk-header + json + 8 bin-chunk-header + bin) is a
-    # multiple of 8 — i.e. the glb's total declared length is 8-aligned.
-    binary_chunk = _pad_to(buffer, 12 + 8 + len(json_chunk) + 8, 8, b"\x00")
+    binary_chunk = _pad(
+        buffer, 4, b"\x00"
+    )  # <= 3 bytes over buffers[0].byteLength (glTF-legal)
+    # 12 header + 8 json-chunk-header + json + 8 bin-chunk-header + bin. Everything but the chunk
+    # bodies sums to 28 (4 mod 8) and both bodies are 4-aligned, so any misalignment is exactly 4;
+    # add one 4-space group to the JSON chunk (keeps it 4-aligned) to reach 8-alignment.
+    if (12 + 8 + len(json_chunk) + 8 + len(binary_chunk)) % 8 != 0:
+        json_chunk += b" " * 4
     total = 12 + 8 + len(json_chunk) + 8 + len(binary_chunk)
     out = struct.pack("<III", _GLB_MAGIC, 2, total)
     out += struct.pack("<II", len(json_chunk), _GLB_CHUNK_JSON) + json_chunk
