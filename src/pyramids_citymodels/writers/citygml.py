@@ -45,6 +45,7 @@ so there is no new dependency and no optional ``extra``.
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
 import warnings
+from collections.abc import Iterable
 from typing import Any
 from xml.etree import ElementTree
 
@@ -123,30 +124,51 @@ _MATERIAL_COLORS = ("diffuseColor", "emissiveColor", "specularColor")
 _MATERIAL_SCALARS = ("ambientIntensity", "shininess", "transparency")
 
 
+class _UniqueIds:
+    """Hands out ``gml:id``\\ s unique within one document.
+
+    ``gml:id`` is an ``xsd:ID`` and must be unique per document, so the generated polygon ids and the
+    material-``name`` ids are drawn from here, seeded with the ids already in use (the city-object
+    ids). A preferred id that is taken gets a ``_2``/``_3``/… suffix.
+    """
+
+    def __init__(self, reserved: Iterable[str]):
+        self._used: set[str] = set(reserved)
+
+    def allocate(self, preferred: str) -> str:
+        """Return ``preferred`` if free, else ``preferred_2``/``_3``/…; the result is then reserved."""
+        candidate = preferred
+        suffix = 2
+        while candidate in self._used:
+            candidate = f"{preferred}_{suffix}"
+            suffix += 1
+        self._used.add(candidate)
+        return candidate
+
+
 class _MaterialTargets:
     """Collects, while geometry is emitted, which polygon ``gml:id``\\ s each material paints per theme.
 
-    The CityGML writer assigns every emitted ``gml:Polygon`` a ``gml:id`` and, for a painted surface,
-    records that id under the material's theme; :meth:`appearance_members` then builds the
-    ``app:Appearance`` elements that target those ids — so a CityJSON material survives ``to_citygml``.
+    The CityGML writer assigns every emitted ``gml:Polygon`` a document-unique ``gml:id`` and, for a
+    painted surface, records that id under the material's theme; :meth:`appearance_members` then builds
+    the ``app:Appearance`` elements that target those ids — so a CityJSON material survives
+    ``to_citygml``. All ids come from a shared :class:`_UniqueIds`, so the document stays valid even
+    when a material is reused across themes or a name/object-id would otherwise collide.
     """
 
-    def __init__(self, materials: list[dict[str, Any]]):
+    def __init__(self, materials: list[dict[str, Any]], ids: _UniqueIds):
         self._materials = materials
+        self._ids = ids
         self._targets: dict[str, dict[int, list[str]]] = {}
-        self._counter = 0
 
     def paint(
         self,
         ns: dict[str, str],
-        polygon: ElementTree.Element | None,
+        polygon: ElementTree.Element,
         material_by_theme: dict[str, int],
     ) -> None:
-        """Give ``polygon`` a fresh ``gml:id`` and record it as a target of each theme's material."""
-        if polygon is None:
-            return
-        self._counter += 1
-        polygon_id = f"poly_{self._counter}"
+        """Give ``polygon`` a document-unique ``gml:id`` and record it as a target of each theme's material."""
+        polygon_id = self._ids.allocate("poly")
         polygon.set(_q(ns, "gml", "id"), polygon_id)
         for theme, index in material_by_theme.items():
             self._targets.setdefault(theme, {}).setdefault(index, []).append(polygon_id)
@@ -160,13 +182,19 @@ class _MaterialTargets:
             theme_element = ElementTree.SubElement(appearance, _q(ns, "app", "theme"))
             theme_element.text = theme
             for index, polygon_ids in by_index.items():
-                material = (
-                    self._materials[index] if index < len(self._materials) else {}
-                )
+                if not 0 <= index < len(self._materials):
+                    warnings.warn(
+                        f"CityGML writer: material index {index} is out of range for the "
+                        f"{len(self._materials)}-material pool; those surfaces are left unpainted",
+                        stacklevel=2,
+                    )
+                    continue
                 surface_data = ElementTree.SubElement(
                     appearance, _q(ns, "app", "surfaceDataMember")
                 )
-                self._x3d_material(ns, surface_data, material, polygon_ids)
+                self._x3d_material(
+                    ns, surface_data, self._materials[index], polygon_ids
+                )
             members.append(member)
         return members
 
@@ -181,7 +209,7 @@ class _MaterialTargets:
         x3d = ElementTree.SubElement(surface_data, _q(ns, "app", "X3DMaterial"))
         name = material.get("name")
         if name:
-            x3d.set(_q(ns, "gml", "id"), str(name))
+            x3d.set(_q(ns, "gml", "id"), self._ids.allocate(str(name)))
         for member_name in _MATERIAL_COLORS:
             if member_name in material:
                 element = ElementTree.SubElement(x3d, _q(ns, "app", member_name))
@@ -212,10 +240,12 @@ def _surface_materials(geometry: Geometry) -> list[dict[str, int]]:
         values = (spec or {}).get("values")
         if values is None:
             continue
+        # iter_surfaces walks ``boundaries`` (the first arg), so it yields exactly ``count`` surfaces
+        # regardless of ``values`` — ``position`` is always a valid index into ``per_surface``.
         for position, (_surface, index) in enumerate(
             iter_surfaces(geometry.boundaries, values)
         ):
-            if position < count and index is not None:
+            if index is not None:
                 per_surface[position][theme] = index
     return per_surface
 
@@ -617,7 +647,9 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
     _add_envelope(ns, root, model)
 
     materials = (model.appearances or {}).get("materials") or []
-    targets = _MaterialTargets(materials)
+    # Seed the id allocator with the city-object ids so generated polygon/material ids never collide
+    # with them (gml:id is an xsd:ID — unique per document).
+    targets = _MaterialTargets(materials, _UniqueIds(model.objects))
     visited: set[str] = set()
     for city_object in model.objects.values():
         if city_object.parents:
