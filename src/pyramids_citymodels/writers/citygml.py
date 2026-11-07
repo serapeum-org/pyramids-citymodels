@@ -67,27 +67,71 @@ __all__ = ["write_citygml"]
 #: other version (e.g. 3.0, which restructures geometry) is emitted as 2.0.
 _MATCHED_VERSIONS = frozenset({"1.0", "2.0"})
 
-#: Object types the CityGML reader reconstructs. A top-level object of any other type is written but
-#: not read back by this package's semantic reader, so writing one warns rather than losing it silently.
-_READABLE_OBJECT_TYPES = frozenset({"Building", "BuildingPart"})
-
 #: The GML namespace, constant across CityGML versions this writer emits.
 _GML_NS = "http://www.opengis.net/gml"
 
+#: Thematic module prefix → the module path segment of its ``.../citygml/<module>/<version>`` URI.
+_MODULE_PATHS = {
+    "bldg": "building",
+    "gen": "generics",
+    "app": "appearance",
+    "brid": "bridge",
+    "tun": "tunnel",
+    "frn": "cityfurniture",
+    "veg": "vegetation",
+    "wtr": "waterbody",
+    "luse": "landuse",
+    "dem": "relief",
+    "tran": "transportation",
+    "grp": "cityobjectgroup",
+}
+
+#: City-object type → the thematic-module prefix its element and ``consistsOf…`` wrapper belong to, so
+#: a non-Building object is emitted in its correct (schema-valid) namespace, e.g. ``frn:CityFurniture``
+#: rather than an invalid ``bldg:CityFurniture``. Any type absent here falls back to ``bldg`` + a warning.
+_TYPE_NAMESPACE_PREFIX = {
+    "Building": "bldg",
+    "BuildingPart": "bldg",
+    "Bridge": "brid",
+    "BridgePart": "brid",
+    "Tunnel": "tun",
+    "TunnelPart": "tun",
+    "CityFurniture": "frn",
+    "SolitaryVegetationObject": "veg",
+    "PlantCover": "veg",
+    "WaterBody": "wtr",
+    "LandUse": "luse",
+    "ReliefFeature": "dem",
+    "TINRelief": "dem",
+    "TransportationComplex": "tran",
+    "Road": "tran",
+    "Railway": "tran",
+    "Track": "tran",
+    "Square": "tran",
+    "GenericCityObject": "gen",
+    "CityObjectGroup": "grp",
+}
+
+#: Object types this writer emits in a schema-valid namespace (and the reader reads back). A type not
+#: here is written under ``bldg:`` with a warning (best-effort, not conformant).
+_READABLE_OBJECT_TYPES = frozenset(_TYPE_NAMESPACE_PREFIX)
+
 
 def _namespaces(version: str) -> dict[str, str]:
-    """The ``prefix → URI`` map for a CityGML ``version`` (``core``/``bldg``/``gen`` carry it).
+    """The ``prefix → URI`` map for a CityGML ``version`` (``core`` and every thematic module).
 
     Returned fresh per call and threaded through element construction, so the writer holds **no**
     mutable module state — concurrent writes of different-version models cannot corrupt each other.
+    Unused namespaces are not serialized (ElementTree emits an ``xmlns`` only for a namespace a
+    document actually uses), so declaring every module here does not bloat the output.
     """
-    return {
-        "core": f"http://www.opengis.net/citygml/{version}",
-        "bldg": f"http://www.opengis.net/citygml/building/{version}",
-        "gen": f"http://www.opengis.net/citygml/generics/{version}",
-        "app": f"http://www.opengis.net/citygml/appearance/{version}",
-        "gml": _GML_NS,
+    namespaces = {
+        prefix: f"http://www.opengis.net/citygml/{module}/{version}"
+        for prefix, module in _MODULE_PATHS.items()
     }
+    namespaces["core"] = f"http://www.opengis.net/citygml/{version}"
+    namespaces["gml"] = _GML_NS
+    return namespaces
 
 
 #: The default (CityGML 2.0) namespace map. Its prefixes are registered with ElementTree once at
@@ -735,20 +779,23 @@ def _append_children(
     visited: set[str],
     targets: _Appearances,
 ) -> None:
-    """Nest each child object: a ``BuildingPart`` under ``bldg:consistsOfBuildingPart``, else attached."""
+    """Nest a part child under its ``consistsOf…Part`` wrapper in the parent's module, else attach it."""
     for child_id in city_object.children:
         child = model.objects.get(child_id)
         if child is None or child_id in visited:
             continue
         child_element = _feature_element(ns, child, model, visited, targets)
-        if child.type == "BuildingPart":
+        if child.type.endswith("Part"):
+            # A <X>Part nests under <module>:consistsOf<X>Part in its own thematic module
+            # (bldg:consistsOfBuildingPart, brid:consistsOfBridgePart, tun:consistsOfTunnelPart).
+            prefix = _TYPE_NAMESPACE_PREFIX.get(child.type, "bldg")
             consists = ElementTree.SubElement(
-                feature, _q(ns, "bldg", "consistsOfBuildingPart")
+                feature, _q(ns, prefix, f"consistsOf{child.type}")
             )
             consists.append(child_element)
         else:
-            # A non-part child cannot nest in a building; attach it so its geometry is not lost,
-            # though this package's reader will not re-link it as a child.
+            # A non-part child cannot nest; attach it so its geometry is not lost, though this
+            # package's reader will not re-link it as a child.
             feature.append(child_element)
 
 
@@ -759,8 +806,9 @@ def _feature_element(
     visited: set[str],
     targets: _Appearances,
 ) -> ElementTree.Element:
-    """Build one ``bldg:<type>`` feature element: its id, attributes, surfaces and nested children."""
-    feature = ElementTree.Element(_q(ns, "bldg", city_object.type))
+    """Build one feature element in its thematic namespace: id, attributes, surfaces and children."""
+    prefix = _TYPE_NAMESPACE_PREFIX.get(city_object.type, "bldg")
+    feature = ElementTree.Element(_q(ns, prefix, city_object.type))
     feature.set(_q(ns, "gml", "id"), city_object.id)
     visited.add(city_object.id)
     _add_attributes(ns, feature, city_object.attributes, city_object.attribute_units)
@@ -928,8 +976,8 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
     if unreadable:
         warnings.warn(
             "CityGML writer: object type(s) "
-            f"{', '.join(unreadable)} are written but not reconstructed by this package's "
-            "CityGML reader (it reads only Building/BuildingPart), so they will not round-trip",
+            f"{', '.join(unreadable)} have no known thematic namespace and are written under bldg: "
+            "(not schema-valid), so they will not round-trip conformantly",
             stacklevel=2,
         )
 
