@@ -494,6 +494,58 @@ class CityModel:
 
         return write_gltf(self, path)
 
+    def translate(self, offset: "tuple[float, ...]") -> "CityModel":
+        """A new model with every coordinate shifted by ``offset`` per axis (geometry cleanup, #17).
+
+        See :func:`.transform.translate`. Semantics and appearance are preserved.
+
+        Examples:
+            - Shift a surface's heights up by 10:
+                ```python
+                >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+                >>> model.translate((0.0, 0.0, 10.0)).objects["b"].geometries[0].boundaries[0][0][0]
+                (0.0, 0.0, 10.0)
+
+                ```
+        """
+        from pyramids_citymodels.transform import translate
+
+        return translate(self, offset)
+
+    def quantize(self, digits: int = 3) -> "CityModel":
+        """A new model with every coordinate rounded to ``digits`` decimals (see :func:`.transform.quantize`)."""
+        from pyramids_citymodels.transform import quantize
+
+        return quantize(self, digits)
+
+    def clean_rings(self) -> "CityModel":
+        """A new model with consecutive duplicate ring vertices removed (see :func:`.transform.clean_rings`)."""
+        from pyramids_citymodels.transform import clean_rings
+
+        return clean_rings(self)
+
+    def triangulate(self) -> "CityModel":
+        """A new model with every surface fan-triangulated into triangles (see :func:`.transform.triangulate`).
+
+        Keeps each triangle's semantic value; drops interior rings (holes) and per-geometry appearance.
+
+        Examples:
+            - A quad surface becomes two triangles:
+                ```python
+                >>> quad = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[quad])])})
+                >>> len(model.triangulate().objects["b"].geometries[0].boundaries)
+                2
+
+                ```
+        """
+        from pyramids_citymodels.transform import triangulate
+
+        return triangulate(self)
+
     def to_collada(self, path: Any = None) -> str | None:
         """Serialize this model to COLLADA 1.4.1 ``.dae`` (see :func:`.writers.collada.write_collada`).
 
