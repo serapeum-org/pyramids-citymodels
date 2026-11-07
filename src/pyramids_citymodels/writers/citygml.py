@@ -226,29 +226,48 @@ class _Appearances:
         # the first theme's textureCoordinates reference a dangling ring (review R2-H1).
         ring_ids: dict[int, str] = {}
         for theme, surface_value in texture_by_theme.items():
-            by_texture: dict[int, list[tuple[str, str]]] = {}
-            for position, ring_element in enumerate(linear_rings):
-                if position >= len(kept):
-                    break
-                ring_index = kept[position]
-                if ring_index >= len(surface_value):
-                    continue
-                resolved = self._ring_texture(
-                    surface_value[ring_index], surface[ring_index]
-                )
-                if resolved is None:
-                    continue
-                texture_index, coordinates = resolved
-                if position not in ring_ids:
-                    ring_ids[position] = self._ids.allocate("ring")
-                    ring_element.set(_q(ns, "gml", "id"), ring_ids[position])
-                by_texture.setdefault(texture_index, []).append(
-                    (ring_ids[position], coordinates)
-                )
+            by_texture = self._ring_targets(
+                ns, linear_rings, kept, surface, surface_value, ring_ids
+            )
             for texture_index, ring_coords in by_texture.items():
                 self._texture_targets.setdefault(theme, {}).setdefault(
                     texture_index, []
                 ).append((polygon_id, ring_coords))
+
+    def _ring_targets(
+        self,
+        ns: dict[str, str],
+        linear_rings: list[ElementTree.Element],
+        kept: list[int],
+        surface: list[Any],
+        surface_value: list[Any],
+        ring_ids: dict[int, str],
+    ) -> dict[int, list[tuple[str, str]]]:
+        """Map texture index → ``[(ring_id, coords)]`` for one theme's value over ``linear_rings``.
+
+        ``kept[position]`` is the surface-ring index of the ``position``-th emitted ``LinearRing``;
+        ``ring_ids`` memoizes each ring's assigned ``gml:id`` so it is shared across themes.
+        """
+        by_texture: dict[int, list[tuple[str, str]]] = {}
+        for position, ring_element in enumerate(linear_rings):
+            if position >= len(kept):
+                break
+            ring_index = kept[position]
+            if ring_index >= len(surface_value):
+                continue
+            resolved = self._ring_texture(
+                surface_value[ring_index], surface[ring_index]
+            )
+            if resolved is None:
+                continue
+            texture_index, coordinates = resolved
+            if position not in ring_ids:
+                ring_ids[position] = self._ids.allocate("ring")
+                ring_element.set(_q(ns, "gml", "id"), ring_ids[position])
+            by_texture.setdefault(texture_index, []).append(
+                (ring_ids[position], coordinates)
+            )
+        return by_texture
 
     def _ring_texture(
         self, ring_value: Any, ring: list[Any]

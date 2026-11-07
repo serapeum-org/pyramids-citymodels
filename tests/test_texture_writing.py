@@ -224,7 +224,8 @@ def test_holed_surface_textures_both_rings() -> None:
     back = parse_citygml(xml).objects["b"].geometries[0]
     rings = back.appearance["texture"]["t"]["values"][0]
     assert len(rings) == 2  # the surface's two rings both carry a texture value
-    assert rings[0][0] == 0 and rings[1][0] == 0  # both painted by texture 0
+    assert rings[0][0] == 0  # exterior painted by texture 0
+    assert rings[1][0] == 0  # interior painted by texture 0
 
 
 def test_degenerate_ring_does_not_shift_uvs_onto_the_kept_ring() -> None:
