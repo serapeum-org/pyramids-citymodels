@@ -174,3 +174,117 @@ def test_extra_ring_values_beyond_the_polygon_rings_are_ignored() -> None:
     xml = model.to_citygml()
     assert xml.count("<app:textureCoordinates") == 1  # only the one real ring
     assert "ParameterizedTexture" in xml
+
+
+def _texcoords(xml: str) -> list[str]:
+    """Every ``app:textureCoordinates`` text in a CityGML document, in order."""
+    return re.findall(
+        r"<app:textureCoordinates[^>]*>([^<]*)</app:textureCoordinates>", xml
+    )
+
+
+def test_holed_surface_textures_both_rings() -> None:
+    # Exterior (4-vertex) + interior (3-vertex) rings, both painted by texture 0.
+    exterior = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+    interior = [(0.2, 0.2, 0.0), (0.4, 0.2, 0.0), (0.3, 0.4, 0.0)]
+    model = CityModel(
+        appearances={
+            "textures": [{"type": "PNG", "image": "wall.png"}],
+            "vertices-texture": [
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [1.0, 1.0],
+                [0.0, 1.0],  # exterior UVs 0–3
+                [0.2, 0.2],
+                [0.4, 0.2],
+                [0.3, 0.4],  # interior UVs 4–6
+            ],
+        },
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[[exterior, interior]],
+                        appearance={
+                            "texture": {
+                                "t": {"values": [[[0, 0, 1, 2, 3], [0, 4, 5, 6]]]}
+                            }
+                        },
+                    )
+                ],
+            )
+        },
+    )
+    xml = model.to_citygml()
+    assert len(_texcoords(xml)) == 2  # both rings textured
+    back = parse_citygml(xml).objects["b"].geometries[0]
+    rings = back.appearance["texture"]["t"]["values"][0]
+    assert len(rings) == 2  # the surface's two rings both carry a texture value
+    assert rings[0][0] == 0 and rings[1][0] == 0  # both painted by texture 0
+
+
+def test_degenerate_ring_does_not_shift_uvs_onto_the_kept_ring() -> None:
+    # Regression for the per-ring misalignment: a 2-vertex (dropped) ring precedes a valid 3-vertex
+    # ring. The kept ring must get its OWN UVs (4,5,6), not the dropped ring's (0,1).
+    degenerate = [
+        (0.0, 0.0, 0.0),
+        (1.0, 0.0, 0.0),
+    ]  # <3 vertices → dropped by the writer
+    valid = [(2.0, 2.0, 0.0), (4.0, 2.0, 0.0), (4.0, 4.0, 0.0)]
+    model = CityModel(
+        appearances={
+            "textures": [{"type": "PNG", "image": "wall.png"}],
+            "vertices-texture": [
+                [0.0, 0.0],
+                [1.0, 0.0],  # the dropped ring's UVs 0,1
+                [0.5, 0.5],
+                [0.6, 0.5],
+                [0.55, 0.6],  # the valid ring's UVs 2,3,4
+            ],
+        },
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[[degenerate, valid]],
+                        appearance={
+                            "texture": {"t": {"values": [[[0, 0, 1], [0, 2, 3, 4]]]}}
+                        },
+                    )
+                ],
+            )
+        },
+    )
+    coords = _texcoords(model.to_citygml())
+    assert len(coords) == 1  # only the valid ring is emitted
+    assert (
+        "0.5 0.5" in coords[0]
+    )  # the valid ring's own UV, not the dropped ring's (0.0 0.0)
+    assert "1.0 0.0" not in coords[0]
+
+
+def test_two_surfaces_each_textured_land_on_their_own_polygon() -> None:
+    model = _texture_model(values=[[[0, 0, 1, 2]], [[0, 0, 1, 2]]])
+    model.objects["b"].geometries[0].boundaries = [
+        [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]],
+        [[(0.0, 0.0, 9.0), (1.0, 0.0, 9.0), (1.0, 1.0, 9.0)]],
+    ]
+    xml = model.to_citygml()
+    assert xml.count('<app:target ') == 2  # one target per surface
+    back = parse_citygml(xml).objects["b"].geometries[0]
+    assert len(back.appearance["texture"]["t"]["values"]) == 2
+
+
+def test_non_integer_uv_index_warns_not_crash() -> None:
+    model = _texture_model(values=[[[0, 0, "x", 2]]])
+    with pytest.warns(UserWarning, match="non-integer UV index"):
+        xml = model.to_citygml()
+    assert "ParameterizedTexture" not in xml
