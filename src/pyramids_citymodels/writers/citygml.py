@@ -11,9 +11,12 @@ The writer targets exactly what that reader rebuilds, so the round-trip fidelity
   surface's geometry (rings, holes, coordinates) across ``MultiSurface`` and ``Solid``/``MultiSolid``
   alike, its semantic type, and the CRS. A plain (non-semantic) ``Solid`` round-trips **as a**
   ``Solid`` (emitted as ``bldg:lod{n}Solid``), and a surface's **material** (``app:X3DMaterial``, per
-  ``app:theme``) is written as an ``app:Appearance`` targeting that polygon's assigned ``gml:id``, so
-  materials read from CityJSON or CityGML survive the round-trip. The **version** round-trips for a
-  ``1.0`` or ``2.0`` source
+  ``app:theme``) is written as an ``app:Appearance`` targeting that polygon's assigned ``gml:id`` — so
+  the **painted colour per surface** survives the round-trip (and the material ``name``, carried in a
+  free-form ``gml:name``). What does **not** survive is the appearance *pool* itself: a material is
+  inlined once per theme that paints it, so an unpainted material is dropped and the material indices
+  are recompacted on re-read (the per-surface colour is unchanged, but the pool composition and index
+  values are not). The **version** round-trips for a ``1.0`` or ``2.0`` source
   (whose LOD2 building structure this writer matches element-for-element): the source version's
   namespaces are emitted. A ``3.0`` or unknown source is emitted as ``2.0`` (its version does *not*
   round-trip) — 3.0 restructures the geometry model, which this writer does not reproduce.
@@ -181,6 +184,7 @@ class _MaterialTargets:
             appearance = ElementTree.SubElement(member, _q(ns, "app", "Appearance"))
             theme_element = ElementTree.SubElement(appearance, _q(ns, "app", "theme"))
             theme_element.text = theme
+            painted = False
             for index, polygon_ids in by_index.items():
                 if not 0 <= index < len(self._materials):
                     warnings.warn(
@@ -195,7 +199,11 @@ class _MaterialTargets:
                 self._x3d_material(
                     ns, surface_data, self._materials[index], polygon_ids
                 )
-            members.append(member)
+                painted = True
+            # Only emit a theme's Appearance if it actually painted something — a theme whose every
+            # index was out of range must not leave an empty app:Appearance behind.
+            if painted:
+                members.append(member)
         return members
 
     def _x3d_material(
@@ -205,11 +213,18 @@ class _MaterialTargets:
         material: dict[str, Any],
         polygon_ids: list[str],
     ) -> None:
-        """Build one ``app:X3DMaterial`` with ``material``'s members and an ``app:target`` per id."""
+        """Build one ``app:X3DMaterial`` with ``material``'s members and an ``app:target`` per id.
+
+        The ``gml:id`` is a generated, document-unique ``mat`` id (always a valid ``NCName``); the
+        material's ``name`` rides in a free-form ``gml:name`` child instead, so it round-trips
+        verbatim even when two materials share a name or a name is not ``NCName``-safe.
+        """
         x3d = ElementTree.SubElement(surface_data, _q(ns, "app", "X3DMaterial"))
+        x3d.set(_q(ns, "gml", "id"), self._ids.allocate("mat"))
         name = material.get("name")
-        if name:
-            x3d.set(_q(ns, "gml", "id"), self._ids.allocate(str(name)))
+        if name is not None:
+            name_element = ElementTree.SubElement(x3d, _q(ns, "gml", "name"))
+            name_element.text = str(name)
         for member_name in _MATERIAL_COLORS:
             if member_name in material:
                 element = ElementTree.SubElement(x3d, _q(ns, "app", member_name))
@@ -245,8 +260,19 @@ def _surface_materials(geometry: Geometry) -> list[dict[str, int]]:
         for position, (_surface, index) in enumerate(
             iter_surfaces(geometry.boundaries, values)
         ):
-            if index is not None:
-                per_surface[position][theme] = index
+            if index is None:
+                continue
+            # A material index must be a plain int (``bool`` is an int subclass — exclude it). A
+            # malformed leaf (a list from mis-nested values, a str/float) is skipped with a warning
+            # rather than crashing to_citygml() downstream (unhashable key / bad comparison).
+            if not isinstance(index, int) or isinstance(index, bool):
+                warnings.warn(
+                    f"CityGML writer: non-integer material index {index!r} is ignored; "
+                    "that surface is left unpainted",
+                    stacklevel=2,
+                )
+                continue
+            per_surface[position][theme] = index
     return per_surface
 
 

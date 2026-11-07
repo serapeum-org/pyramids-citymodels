@@ -812,7 +812,9 @@ def _parse_x3d_material(
 
     Colour members become ``[r, g, b]`` float lists and the scalar members floats, matching the
     CityJSON material object; ``app:target`` references (``#poly_id``) become the surfaces the
-    material paints. The element's ``gml:id`` seeds the material ``name`` when present.
+    material paints. The material ``name`` is read from an explicit ``gml:name`` child when present
+    (free-form, so it survives even when the ``gml:id`` is suffixed for uniqueness), else it falls
+    back to the element's ``gml:id``.
     """
     material: dict[str, Any] = {}
     targets: list[str] = []
@@ -821,6 +823,8 @@ def _parse_x3d_material(
         text = (child.text or "").strip()
         if name == "target" and text:
             targets.append(text.lstrip("#"))
+        elif name == "name" and text:
+            material["name"] = text
         elif name in _MATERIAL_COLORS and text:
             try:
                 material[name] = [float(component) for component in text.split()]
