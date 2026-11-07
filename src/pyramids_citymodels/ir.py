@@ -494,6 +494,49 @@ class CityModel:
 
         return write_gltf(self, path)
 
+    def to_collada(self, path: Any = None) -> str | None:
+        """Serialize this model to COLLADA 1.4.1 ``.dae`` (see :func:`.writers.collada.write_collada`).
+
+        A triangulated, positions-only mesh export (feature #14). Returns the document string when
+        ``path`` is ``None``, else writes it.
+
+        Examples:
+            - A one-triangle model yields one COLLADA triangle:
+                ```python
+                >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+                >>> 'triangles count="1"' in model.to_collada()
+                True
+
+                ```
+        """
+        from pyramids_citymodels.writers.collada import write_collada
+
+        return write_collada(self, path)
+
+    def to_kml(self, path: Any = None) -> str | None:
+        """Serialize this model to KML (see :func:`.writers.kml.write_kml`).
+
+        A Placemark per object, each a MultiGeometry of one Polygon per surface (feature #14).
+        Coordinates are the model's own (no reprojection). Returns the KML string when ``path`` is
+        ``None``, else writes it.
+
+        Examples:
+            - A one-surface building becomes a Placemark with a Polygon:
+                ```python
+                >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+                >>> "<Placemark>" in model.to_kml()
+                True
+
+                ```
+        """
+        from pyramids_citymodels.writers.kml import write_kml
+
+        return write_kml(self, path)
+
     def to_3dtiles(self, directory: Any) -> "dict[str, Any]":
         """Write this model as a single-tile 3D Tiles tileset into ``directory``.
 
@@ -540,11 +583,14 @@ class CityModel:
         - ``.fg.json`` / ``.jsonfg`` → JSON-FG (:meth:`to_jsonfg`)
         - ``.obj`` → Wavefront OBJ (:meth:`to_obj`)
         - ``.gltf`` → glTF 2.0 (:meth:`to_gltf`)
+        - ``.dae`` → COLLADA 1.4.1 (:meth:`to_collada`)
+        - ``.kml`` → KML (:meth:`to_kml`)
 
         The CityJSON and CityGML suffixes are symmetric with :meth:`from_file`. The CityJSON Text
         Sequence (``.city.jsonl`` / ``.cityjsonseq`` / ``.jsonl``), JSON-FG (``.fg.json`` /
-        ``.jsonfg``), OBJ (``.obj``) and glTF (``.gltf``) suffixes are **write-only**: this package
-        ships no reader for them, so :meth:`from_file` cannot read them back.
+        ``.jsonfg``), OBJ (``.obj``), glTF (``.gltf``), COLLADA (``.dae``) and KML (``.kml``) suffixes
+        are **write-only**: this package ships no reader for them, so :meth:`from_file` cannot read
+        them back.
 
         Args:
             path: The output path; its suffix selects the format.
@@ -594,12 +640,16 @@ class CityModel:
             return self.to_obj(path)
         if name.endswith(".gltf"):
             return self.to_gltf(path)
+        if name.endswith(".dae"):
+            return self.to_collada(path)
+        if name.endswith(".kml"):
+            return self.to_kml(path)
         if name.endswith((".city.json", ".cityjson", ".json")):
             return self.to_cityjson(path)
         raise CityModelError(
             f"cannot infer a city-model writer from the suffix of {path!r}; expected one of "
             ".city.json/.cityjson/.json, .city.jsonl/.cityjsonseq/.jsonl, .gml/.xml/.citygml, "
-            ".fg.json/.jsonfg, .obj, .gltf"
+            ".fg.json/.jsonfg, .obj, .gltf, .dae, .kml"
         )
 
     def coordinates(self) -> Iterator[tuple[float, ...]]:
