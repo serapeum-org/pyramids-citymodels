@@ -111,12 +111,25 @@ class TestH3VersionPreserved:
 
 
 class TestM2NonBuildingWarning:
-    """M2 — writing an object the CityGML reader cannot read back must warn, not drop silently."""
+    """M2 — the writer warns only for a type it cannot emit in a conformant (schema-valid) namespace.
 
-    def test_non_building_object_warns(self) -> None:
-        """A top-level Bridge (unsupported by the semantic reader) triggers a warning."""
+    Updated for #49: a known non-Building type (e.g. ``Bridge``) is now written in its thematic
+    namespace and round-trips, so it no longer warns; only a type with no known namespace does.
+    """
+
+    def test_known_non_building_type_does_not_warn(self) -> None:
+        """A top-level Bridge is emitted conformantly (``brid:``), so it no longer warns."""
+        import warnings
+
         model = CityModel(objects={"x": CityObject(id="x", type="Bridge")})
-        with pytest.warns(UserWarning, match="Bridge"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            write_citygml(model)
+
+    def test_unknown_type_warns(self) -> None:
+        """A type with no known thematic namespace falls back to ``bldg:`` and warns."""
+        model = CityModel(objects={"x": CityObject(id="x", type="Nonsense")})
+        with pytest.warns(UserWarning, match="no known thematic namespace"):
             write_citygml(model)
 
 
