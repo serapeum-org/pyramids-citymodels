@@ -288,3 +288,42 @@ def test_non_integer_uv_index_warns_not_crash() -> None:
     with pytest.warns(UserWarning, match="non-integer UV index"):
         xml = model.to_citygml()
     assert "ParameterizedTexture" not in xml
+
+
+def test_multi_theme_texture_ring_refs_all_resolve() -> None:
+    # A surface textured under two themes keeps ONE gml:id on its ring; both themes' ring refs must
+    # resolve to an id present in the document (no dangling xlink from an overwritten id).
+    model = _texture_model()
+    model.objects["b"].geometries[0].appearance["texture"] = {
+        "day": {"values": [[[0, 0, 1, 2]]]},
+        "night": {"values": [[[0, 0, 1, 2]]]},
+    }
+    xml = model.to_citygml()
+    defined = set(re.findall(r'gml:id="([^"]*)"', xml))
+    referenced = set(re.findall(r'ring="#([^"]*)"', xml))
+    assert referenced, "expected ring references"
+    assert referenced <= defined, f"dangling ring refs: {referenced - defined}"
+    assert xml.count("<app:ParameterizedTexture") == 2  # one per theme
+
+
+def test_scalar_ring_value_warns_not_crash() -> None:
+    # A mis-nested scalar leaf (surface value [5]) must warn and skip, not crash to_citygml.
+    model = _texture_model(values=[[5]])
+    with pytest.warns(UserWarning, match="malformed texture ring value"):
+        xml = model.to_citygml()
+    assert "ParameterizedTexture" not in xml
+
+
+def test_texcoords_close_to_the_ring_even_when_first_and_last_uv_coincide() -> None:
+    # UV indices [0, 1, 0] make the first and last UV coincide; the texcoords must still close to the
+    # ring's 4 posList positions (4 pairs), not stay at 3.
+    coords = _texcoords(_texture_model(values=[[[0, 0, 1, 0]]]).to_citygml())
+    assert len(coords) == 1
+    assert len(coords[0].split()) == 8  # 4 (u, v) pairs = closed ring
+
+
+def test_texture_without_an_image_warns_and_is_skipped() -> None:
+    model = _texture_model(image="")
+    with pytest.warns(UserWarning, match="has no image URI"):
+        xml = model.to_citygml()
+    assert "ParameterizedTexture" not in xml
