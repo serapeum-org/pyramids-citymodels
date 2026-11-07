@@ -184,6 +184,7 @@ class _Appearances:
         self,
         ns: dict[str, str],
         polygon: ElementTree.Element,
+        surface: list[Any],
         material_by_theme: dict[str, int],
         texture_by_theme: dict[str, list[Any]],
     ) -> None:
@@ -195,16 +196,26 @@ class _Appearances:
                 polygon_id
             )
         if texture_by_theme:
-            self._paint_textures(ns, polygon, polygon_id, texture_by_theme)
+            self._paint_textures(ns, polygon, surface, polygon_id, texture_by_theme)
 
     def _paint_textures(
         self,
         ns: dict[str, str],
         polygon: ElementTree.Element,
+        surface: list[Any],
         polygon_id: str,
         texture_by_theme: dict[str, list[Any]],
     ) -> None:
-        """Assign painted-ring ids and record each theme's texture target for ``polygon``."""
+        """Assign painted-ring ids and record each theme's texture target for ``polygon``.
+
+        ``_polygon_element`` drops rings with fewer than three vertices, so the emitted
+        ``gml:LinearRing`` elements correspond to the surface's **kept** rings, not every ring. The
+        texture ``values`` are indexed over *all* surface rings, so the kept-ring indices bridge the
+        two — without this the UVs would shift onto the wrong ring when a degenerate ring is dropped.
+        ``polygon.iter()`` yields the LinearRings in document order (exterior then interiors), the same
+        order ``_polygon_element`` emitted the kept rings.
+        """
+        kept = [index for index, ring in enumerate(surface) if ring and len(ring) >= 3]
         linear_rings = [
             element
             for element in polygon.iter()
@@ -212,15 +223,18 @@ class _Appearances:
         ]
         for theme, surface_value in texture_by_theme.items():
             by_texture: dict[int, list[tuple[str, str]]] = {}
-            for ring_position, ring_value in enumerate(surface_value):
-                if ring_position >= len(linear_rings):
+            for position, ring_element in enumerate(linear_rings):
+                if position >= len(kept):
                     break
-                resolved = self._ring_texture(ring_value)
+                ring_index = kept[position]
+                if ring_index >= len(surface_value):
+                    continue
+                resolved = self._ring_texture(surface_value[ring_index])
                 if resolved is None:
                     continue
                 texture_index, coordinates = resolved
                 ring_id = self._ids.allocate("ring")
-                linear_rings[ring_position].set(_q(ns, "gml", "id"), ring_id)
+                ring_element.set(_q(ns, "gml", "id"), ring_id)
                 by_texture.setdefault(texture_index, []).append((ring_id, coordinates))
             for texture_index, ring_coords in by_texture.items():
                 self._texture_targets.setdefault(theme, {}).setdefault(
@@ -230,9 +244,10 @@ class _Appearances:
     def _ring_texture(self, ring_value: Any) -> "tuple[int, str] | None":
         """A painted ring's ``(texture index, closed textureCoordinates text)``, or ``None`` to skip.
 
-        A ``[None]`` (unpainted) ring, or one whose texture/UV indices are not valid ints in range of
-        the pools, is skipped with a warning (never crashes ``to_citygml``). The UV coordinates are
-        re-closed (first pair repeated) to match the closed GML ``LinearRing``.
+        An unpainted ring — ``[None]`` or an index with no UV coordinates — is skipped **silently**
+        (an unpainted ring is not an error). An **invalid** texture/UV index (not an int, or out of
+        range of its pool) is skipped **with a warning** (never crashes ``to_citygml``). The UV
+        coordinates are re-closed (first pair repeated) to match the closed GML ``LinearRing``.
         """
         if not ring_value or ring_value[0] is None:
             return None
@@ -252,13 +267,15 @@ class _Appearances:
             return None
         coordinates: list[list[float]] = []
         for uv in ring_value[1:]:
-            if (
-                not isinstance(uv, int)
-                or isinstance(uv, bool)
-                or not 0 <= uv < len(self._vertices_texture)
-            ):
+            if not isinstance(uv, int) or isinstance(uv, bool):
                 warnings.warn(
-                    f"CityGML writer: UV index {uv!r} is out of range for the "
+                    f"CityGML writer: non-integer UV index {uv!r} is ignored; ring untextured",
+                    stacklevel=2,
+                )
+                return None
+            if not 0 <= uv < len(self._vertices_texture):
+                warnings.warn(
+                    f"CityGML writer: UV index {uv} is out of range for the "
                     f"{len(self._vertices_texture)}-entry vertices-texture pool; ring untextured",
                     stacklevel=2,
                 )
@@ -498,7 +515,7 @@ def _bounded_by(
     polygon = _polygon_element(ns, surface)
     if polygon is None:
         return None
-    targets.paint(ns, polygon, material_by_theme, texture_by_theme)
+    targets.paint(ns, polygon, surface, material_by_theme, texture_by_theme)
     bounded_by = ElementTree.Element(_q(ns, "bldg", "boundedBy"))
     boundary_surface = ElementTree.SubElement(bounded_by, _q(ns, "bldg", semantic_type))
     multi_surface_property = ElementTree.SubElement(
@@ -562,7 +579,7 @@ def _append_plain_surface(
     plain = _polygon_element(ns, surface)
     if plain is None:
         return
-    targets.paint(ns, plain, material_by_theme, texture_by_theme)
+    targets.paint(ns, plain, surface, material_by_theme, texture_by_theme)
     multi_property = ElementTree.SubElement(
         feature, _q(ns, "bldg", f"lod{lod}MultiSurface")
     )
@@ -600,7 +617,7 @@ def _append_solid(
             surface_materials[position] if position < len(surface_materials) else {}
         )
         texture = surface_textures[position] if position < len(surface_textures) else {}
-        targets.paint(ns, polygon, material, texture)
+        targets.paint(ns, polygon, surface, material, texture)
         polygons.append(polygon)
     if not polygons:
         return
