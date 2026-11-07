@@ -221,6 +221,10 @@ class _Appearances:
             for element in polygon.iter()
             if element.tag == _q(ns, "gml", "LinearRing")
         ]
+        # Each kept ring's gml:id is allocated once and shared across themes: a ring textured under
+        # two themes must keep ONE id — otherwise the second theme overwrites the element's gml:id and
+        # the first theme's textureCoordinates reference a dangling ring (review R2-H1).
+        ring_ids: dict[int, str] = {}
         for theme, surface_value in texture_by_theme.items():
             by_texture: dict[int, list[tuple[str, str]]] = {}
             for position, ring_element in enumerate(linear_rings):
@@ -229,26 +233,41 @@ class _Appearances:
                 ring_index = kept[position]
                 if ring_index >= len(surface_value):
                     continue
-                resolved = self._ring_texture(surface_value[ring_index])
+                resolved = self._ring_texture(
+                    surface_value[ring_index], surface[ring_index]
+                )
                 if resolved is None:
                     continue
                 texture_index, coordinates = resolved
-                ring_id = self._ids.allocate("ring")
-                ring_element.set(_q(ns, "gml", "id"), ring_id)
-                by_texture.setdefault(texture_index, []).append((ring_id, coordinates))
+                if position not in ring_ids:
+                    ring_ids[position] = self._ids.allocate("ring")
+                    ring_element.set(_q(ns, "gml", "id"), ring_ids[position])
+                by_texture.setdefault(texture_index, []).append(
+                    (ring_ids[position], coordinates)
+                )
             for texture_index, ring_coords in by_texture.items():
                 self._texture_targets.setdefault(theme, {}).setdefault(
                     texture_index, []
                 ).append((polygon_id, ring_coords))
 
-    def _ring_texture(self, ring_value: Any) -> "tuple[int, str] | None":
+    def _ring_texture(
+        self, ring_value: Any, ring: list[Any]
+    ) -> "tuple[int, str] | None":
         """A painted ring's ``(texture index, closed textureCoordinates text)``, or ``None`` to skip.
 
         An unpainted ring — ``[None]`` or an index with no UV coordinates — is skipped **silently**
-        (an unpainted ring is not an error). An **invalid** texture/UV index (not an int, or out of
-        range of its pool) is skipped **with a warning** (never crashes ``to_citygml``). The UV
-        coordinates are re-closed (first pair repeated) to match the closed GML ``LinearRing``.
+        (an unpainted ring is not an error). A **malformed** ``ring_value`` (not a list) or an
+        **invalid** texture/UV index (not an int, or out of range of its pool) is skipped **with a
+        warning** (never crashes ``to_citygml``). The UV coordinates are re-closed to match the
+        emitted ``gml:LinearRing`` — closed exactly when :func:`_pos_list` closes the ``ring`` (an open
+        ring of ≥3 vertices), so the texture-coordinate count equals the ring's position count.
         """
+        if not isinstance(ring_value, (list, tuple)):
+            warnings.warn(
+                f"CityGML writer: malformed texture ring value {ring_value!r} is ignored",
+                stacklevel=2,
+            )
+            return None
         if not ring_value or ring_value[0] is None:
             return None
         texture_index = ring_value[0]
@@ -283,11 +302,11 @@ class _Appearances:
             coordinates.append(self._vertices_texture[uv])
         if not coordinates:
             return None
-        if coordinates[0] != coordinates[-1]:
-            coordinates = [
-                *coordinates,
-                coordinates[0],
-            ]  # close to match the GML LinearRing
+        # Close the UV list exactly when _pos_list closes the geometry ring (an open ring of ≥3
+        # vertices), so textureCoordinates has one pair per emitted ring position — regardless of
+        # whether the first and last UV coordinates happen to coincide (review R2-L1).
+        if len(ring) >= 3 and ring[0] != ring[-1]:
+            coordinates = [*coordinates, coordinates[0]]
         text = " ".join(repr(float(c)) for pair in coordinates for c in pair)
         return texture_index, text
 
@@ -334,12 +353,18 @@ class _Appearances:
         """Append this theme's ``app:ParameterizedTexture`` surface-data members; return whether any."""
         painted = False
         for texture_index, target_list in self._texture_targets.get(theme, {}).items():
+            texture = self._textures[texture_index]
+            if not texture.get("image"):
+                warnings.warn(
+                    f"CityGML writer: texture {texture_index} has no image URI; its surfaces are "
+                    "left untextured (an app:ParameterizedTexture needs an imageURI)",
+                    stacklevel=2,
+                )
+                continue
             surface_data = ElementTree.SubElement(
                 appearance, _q(ns, "app", "surfaceDataMember")
             )
-            self._parameterized_texture(
-                ns, surface_data, self._textures[texture_index], target_list
-            )
+            self._parameterized_texture(ns, surface_data, texture, target_list)
             painted = True
         return painted
 
