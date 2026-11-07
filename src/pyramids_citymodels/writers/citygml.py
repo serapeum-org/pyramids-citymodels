@@ -9,7 +9,14 @@ The writer targets exactly what that reader rebuilds, so the round-trip fidelity
 - **Preserved:** each object's id (written as ``gml:id``), its type (``Building`` / ``BuildingPart``),
   the parent/child hierarchy (children nested in ``bldg:consistsOfBuildingPart``), every boundary
   surface's geometry (rings, holes, coordinates) across ``MultiSurface`` and ``Solid``/``MultiSolid``
-  alike, its semantic type, and the CRS. The **version** round-trips for a ``1.0`` or ``2.0`` source
+  alike, its semantic type, and the CRS. A plain (non-semantic) ``Solid`` round-trips **as a**
+  ``Solid`` (emitted as ``bldg:lod{n}Solid``), and a surface's **material** (``app:X3DMaterial``, per
+  ``app:theme``) is written as an ``app:Appearance`` targeting that polygon's assigned ``gml:id`` — so
+  the **painted colour per surface** survives the round-trip (and the material ``name``, carried in a
+  free-form ``gml:name``). What does **not** survive is the appearance *pool* itself: a material is
+  inlined once per theme that paints it, so an unpainted material is dropped and the material indices
+  are recompacted on re-read (the per-surface colour is unchanged, but the pool composition and index
+  values are not). The **version** round-trips for a ``1.0`` or ``2.0`` source
   (whose LOD2 building structure this writer matches element-for-element): the source version's
   namespaces are emitted. A ``3.0`` or unknown source is emitted as ``2.0`` (its version does *not*
   round-trip) — 3.0 restructures the geometry model, which this writer does not reproduce.
@@ -30,10 +37,9 @@ The writer targets exactly what that reader rebuilds, so the round-trip fidelity
   which is **not schema-valid** (city furniture belongs to the ``frn:`` namespace): the geometry and
   attributes are preserved for a CityJSON/JSON-FG/mesh target, but a CityGML→CityGML round-trip of a
   non-building object is best-effort, not conformant (emitting the correct thematic namespace per
-  type is a follow-up).
-  The geometry **type** does not survive a conversion either: the reader always rebuilds a
-  ``MultiSurface``, so a CityJSON ``Solid``/``MultiSolid`` keeps its *surfaces* but comes back as a
-  ``MultiSurface``, not a ``Solid``.
+  type is a follow-up). CityGML **textures** (``app:ParameterizedTexture``) are not written yet
+  (materials are) — a documented follow-up (#44). A ``MultiSolid`` is written as its surfaces (its
+  N-solid partitioning is not preserved), though it is never mislabelled as a single ``Solid``.
 
 It writes with the standard-library :mod:`xml.etree.ElementTree` (no ``lxml``, matching the reader),
 so there is no new dependency and no optional ``extra``.
@@ -42,6 +48,7 @@ so there is no new dependency and no optional ``extra``.
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
 import warnings
+from collections.abc import Iterable
 from typing import Any
 from xml.etree import ElementTree
 
@@ -78,6 +85,7 @@ def _namespaces(version: str) -> dict[str, str]:
         "core": f"http://www.opengis.net/citygml/{version}",
         "bldg": f"http://www.opengis.net/citygml/building/{version}",
         "gen": f"http://www.opengis.net/citygml/generics/{version}",
+        "app": f"http://www.opengis.net/citygml/appearance/{version}",
         "gml": _GML_NS,
     }
 
@@ -112,6 +120,160 @@ def _coordinate(point: Any, dimension: int) -> list[float]:
     if len(values) < dimension:
         values = values + [0.0] * (dimension - len(values))
     return values[:dimension]
+
+
+#: X3DMaterial colour members ([r, g, b] floats) and scalar members, mirroring the reader's sets.
+_MATERIAL_COLORS = ("diffuseColor", "emissiveColor", "specularColor")
+_MATERIAL_SCALARS = ("ambientIntensity", "shininess", "transparency")
+
+
+class _UniqueIds:
+    """Hands out ``gml:id``\\ s unique within one document.
+
+    ``gml:id`` is an ``xsd:ID`` and must be unique per document, so the generated polygon ids and the
+    material-``name`` ids are drawn from here, seeded with the ids already in use (the city-object
+    ids). A preferred id that is taken gets a ``_2``/``_3``/… suffix.
+    """
+
+    def __init__(self, reserved: Iterable[str]):
+        self._used: set[str] = set(reserved)
+
+    def allocate(self, preferred: str) -> str:
+        """Return ``preferred`` if free, else ``preferred_2``/``_3``/…; the result is then reserved."""
+        candidate = preferred
+        suffix = 2
+        while candidate in self._used:
+            candidate = f"{preferred}_{suffix}"
+            suffix += 1
+        self._used.add(candidate)
+        return candidate
+
+
+class _MaterialTargets:
+    """Collects, while geometry is emitted, which polygon ``gml:id``\\ s each material paints per theme.
+
+    The CityGML writer assigns every emitted ``gml:Polygon`` a document-unique ``gml:id`` and, for a
+    painted surface, records that id under the material's theme; :meth:`appearance_members` then builds
+    the ``app:Appearance`` elements that target those ids — so a CityJSON material survives
+    ``to_citygml``. All ids come from a shared :class:`_UniqueIds`, so the document stays valid even
+    when a material is reused across themes or a name/object-id would otherwise collide.
+    """
+
+    def __init__(self, materials: list[dict[str, Any]], ids: _UniqueIds):
+        self._materials = materials
+        self._ids = ids
+        self._targets: dict[str, dict[int, list[str]]] = {}
+
+    def paint(
+        self,
+        ns: dict[str, str],
+        polygon: ElementTree.Element,
+        material_by_theme: dict[str, int],
+    ) -> None:
+        """Give ``polygon`` a document-unique ``gml:id`` and record it as a target of each theme's material."""
+        polygon_id = self._ids.allocate("poly")
+        polygon.set(_q(ns, "gml", "id"), polygon_id)
+        for theme, index in material_by_theme.items():
+            self._targets.setdefault(theme, {}).setdefault(index, []).append(polygon_id)
+
+    def appearance_members(self, ns: dict[str, str]) -> list[ElementTree.Element]:
+        """One ``app:appearanceMember``/``app:Appearance`` element per painted theme (``[]`` if none)."""
+        members: list[ElementTree.Element] = []
+        for theme, by_index in self._targets.items():
+            member = ElementTree.Element(_q(ns, "app", "appearanceMember"))
+            appearance = ElementTree.SubElement(member, _q(ns, "app", "Appearance"))
+            theme_element = ElementTree.SubElement(appearance, _q(ns, "app", "theme"))
+            theme_element.text = theme
+            painted = False
+            for index, polygon_ids in by_index.items():
+                if not 0 <= index < len(self._materials):
+                    warnings.warn(
+                        f"CityGML writer: material index {index} is out of range for the "
+                        f"{len(self._materials)}-material pool; those surfaces are left unpainted",
+                        stacklevel=2,
+                    )
+                    continue
+                surface_data = ElementTree.SubElement(
+                    appearance, _q(ns, "app", "surfaceDataMember")
+                )
+                self._x3d_material(
+                    ns, surface_data, self._materials[index], polygon_ids
+                )
+                painted = True
+            # Only emit a theme's Appearance if it actually painted something — a theme whose every
+            # index was out of range must not leave an empty app:Appearance behind.
+            if painted:
+                members.append(member)
+        return members
+
+    def _x3d_material(
+        self,
+        ns: dict[str, str],
+        surface_data: ElementTree.Element,
+        material: dict[str, Any],
+        polygon_ids: list[str],
+    ) -> None:
+        """Build one ``app:X3DMaterial`` with ``material``'s members and an ``app:target`` per id.
+
+        The ``gml:id`` is a generated, document-unique ``mat`` id (always a valid ``NCName``); the
+        material's ``name`` rides in a free-form ``gml:name`` child instead, so it round-trips
+        verbatim even when two materials share a name or a name is not ``NCName``-safe.
+        """
+        x3d = ElementTree.SubElement(surface_data, _q(ns, "app", "X3DMaterial"))
+        x3d.set(_q(ns, "gml", "id"), self._ids.allocate("mat"))
+        name = material.get("name")
+        if name is not None:
+            name_element = ElementTree.SubElement(x3d, _q(ns, "gml", "name"))
+            name_element.text = str(name)
+        for member_name in _MATERIAL_COLORS:
+            if member_name in material:
+                element = ElementTree.SubElement(x3d, _q(ns, "app", member_name))
+                element.text = " ".join(repr(float(c)) for c in material[member_name])
+        for member_name in _MATERIAL_SCALARS:
+            if member_name in material:
+                element = ElementTree.SubElement(x3d, _q(ns, "app", member_name))
+                element.text = repr(float(material[member_name]))
+        if "isSmooth" in material:
+            element = ElementTree.SubElement(x3d, _q(ns, "app", "isSmooth"))
+            element.text = "true" if material["isSmooth"] else "false"
+        for polygon_id in polygon_ids:
+            target = ElementTree.SubElement(x3d, _q(ns, "app", "target"))
+            target.text = f"#{polygon_id}"
+
+
+def _surface_materials(geometry: Geometry) -> list[dict[str, int]]:
+    """Per-surface ``{theme: material index}`` for a geometry, in :func:`iter_surfaces` order.
+
+    Walks each theme's material ``values`` (nested parallel to the boundaries, like the semantic
+    values) so the material index for surface *i* lines up with the *i*-th surface the writer emits;
+    an unpainted (``None``) surface contributes no entry.
+    """
+    material_map = (geometry.appearance or {}).get("material") or {}
+    count = sum(1 for _ in iter_surfaces(geometry.boundaries, geometry.semantic_values))
+    per_surface: list[dict[str, int]] = [{} for _ in range(count)]
+    for theme, spec in material_map.items():
+        values = (spec or {}).get("values")
+        if values is None:
+            continue
+        # iter_surfaces walks ``boundaries`` (the first arg), so it yields exactly ``count`` surfaces
+        # regardless of ``values`` — ``position`` is always a valid index into ``per_surface``.
+        for position, (_surface, index) in enumerate(
+            iter_surfaces(geometry.boundaries, values)
+        ):
+            if index is None:
+                continue
+            # A material index must be a plain int (``bool`` is an int subclass — exclude it). A
+            # malformed leaf (a list from mis-nested values, a str/float) is skipped with a warning
+            # rather than crashing to_citygml() downstream (unhashable key / bad comparison).
+            if not isinstance(index, int) or isinstance(index, bool):
+                warnings.warn(
+                    f"CityGML writer: non-integer material index {index!r} is ignored; "
+                    "that surface is left unpainted",
+                    stacklevel=2,
+                )
+                continue
+            per_surface[position][theme] = index
+    return per_surface
 
 
 def _pos_list(ring: list[Any]) -> tuple[str, int]:
@@ -156,12 +318,18 @@ def _polygon_element(
 
 
 def _bounded_by(
-    ns: dict[str, str], semantic_type: str, surface: list[Any], lod: int
+    ns: dict[str, str],
+    semantic_type: str,
+    surface: list[Any],
+    lod: int,
+    targets: _MaterialTargets,
+    material_by_theme: dict[str, int],
 ) -> ElementTree.Element | None:
     """A ``bldg:boundedBy`` wrapping one boundary surface of ``semantic_type`` and its polygon."""
     polygon = _polygon_element(ns, surface)
     if polygon is None:
         return None
+    targets.paint(ns, polygon, material_by_theme)
     bounded_by = ElementTree.Element(_q(ns, "bldg", "boundedBy"))
     boundary_surface = ElementTree.SubElement(bounded_by, _q(ns, "bldg", semantic_type))
     multi_surface_property = ElementTree.SubElement(
@@ -213,12 +381,18 @@ def _add_attributes(
 
 
 def _append_plain_surface(
-    ns: dict[str, str], feature: ElementTree.Element, surface: list[Any], lod: int
+    ns: dict[str, str],
+    feature: ElementTree.Element,
+    surface: list[Any],
+    lod: int,
+    targets: _MaterialTargets,
+    material_by_theme: dict[str, int],
 ) -> None:
     """Append a surface with no semantic type as a bare ``bldg:lod{n}MultiSurface`` on the feature."""
     plain = _polygon_element(ns, surface)
     if plain is None:
         return
+    targets.paint(ns, plain, material_by_theme)
     multi_property = ElementTree.SubElement(
         feature, _q(ns, "bldg", f"lod{lod}MultiSurface")
     )
@@ -228,7 +402,12 @@ def _append_plain_surface(
 
 
 def _append_solid(
-    ns: dict[str, str], feature: ElementTree.Element, geometry: Geometry, lod: int
+    ns: dict[str, str],
+    feature: ElementTree.Element,
+    geometry: Geometry,
+    lod: int,
+    targets: _MaterialTargets,
+    surface_materials: list[dict[str, int]],
 ) -> None:
     """Append a (non-semantic) ``Solid`` as a ``bldg:lod{n}Solid`` of one ``gml:CompositeSurface``.
 
@@ -239,13 +418,18 @@ def _append_solid(
     collapse its N solids into one shell and mislabel the type), so it falls through to the
     per-surface path in :func:`_append_geometry` and is written as its surfaces.
     """
-    polygons = [
-        polygon
-        for surface, _value in iter_surfaces(
-            geometry.boundaries, geometry.semantic_values
+    polygons: list[ElementTree.Element] = []
+    for position, (surface, _value) in enumerate(
+        iter_surfaces(geometry.boundaries, geometry.semantic_values)
+    ):
+        polygon = _polygon_element(ns, surface)
+        if polygon is None:
+            continue
+        material = (
+            surface_materials[position] if position < len(surface_materials) else {}
         )
-        if (polygon := _polygon_element(ns, surface)) is not None
-    ]
+        targets.paint(ns, polygon, material)
+        polygons.append(polygon)
     if not polygons:
         return
     solid_property = ElementTree.SubElement(feature, _q(ns, "bldg", f"lod{lod}Solid"))
@@ -258,7 +442,10 @@ def _append_solid(
 
 
 def _append_geometry(
-    ns: dict[str, str], feature: ElementTree.Element, geometry: Geometry
+    ns: dict[str, str],
+    feature: ElementTree.Element,
+    geometry: Geometry,
+    targets: _MaterialTargets,
 ) -> None:
     """Append one IR geometry to ``feature`` — a ``gml:Solid`` when it is a plain solid, else surfaces.
 
@@ -269,19 +456,26 @@ def _append_geometry(
     surface with no semantic type becomes a plain building ``MultiSurface``. A ``MultiSolid`` is **not**
     emitted as a single ``gml:Solid`` (that would collapse its solids and mislabel the type); it takes
     this per-surface path, so its type is not preserved (a documented limit) but it is never mislabelled.
+    Each emitted polygon is registered with ``targets`` (its ``gml:id`` + any material painting it).
     """
     lod = _lod_number(geometry)
+    surface_materials = _surface_materials(geometry)
     if geometry.type == "Solid" and not geometry.semantics:
-        _append_solid(ns, feature, geometry, lod)
+        _append_solid(ns, feature, geometry, lod, targets, surface_materials)
         return
-    for surface, semantic_value in iter_surfaces(
-        geometry.boundaries, geometry.semantic_values
+    for position, (surface, semantic_value) in enumerate(
+        iter_surfaces(geometry.boundaries, geometry.semantic_values)
     ):
+        material = (
+            surface_materials[position] if position < len(surface_materials) else {}
+        )
         surface_object = geometry.semantic_for(semantic_value)
         if surface_object is None:
-            _append_plain_surface(ns, feature, surface, lod)
+            _append_plain_surface(ns, feature, surface, lod, targets, material)
             continue
-        bounded_by = _bounded_by(ns, surface_object.type, surface, lod)
+        bounded_by = _bounded_by(
+            ns, surface_object.type, surface, lod, targets, material
+        )
         if bounded_by is not None:
             feature.append(bounded_by)
 
@@ -292,13 +486,14 @@ def _append_children(
     city_object: CityObject,
     model: CityModel,
     visited: set[str],
+    targets: _MaterialTargets,
 ) -> None:
     """Nest each child object: a ``BuildingPart`` under ``bldg:consistsOfBuildingPart``, else attached."""
     for child_id in city_object.children:
         child = model.objects.get(child_id)
         if child is None or child_id in visited:
             continue
-        child_element = _feature_element(ns, child, model, visited)
+        child_element = _feature_element(ns, child, model, visited, targets)
         if child.type == "BuildingPart":
             consists = ElementTree.SubElement(
                 feature, _q(ns, "bldg", "consistsOfBuildingPart")
@@ -311,7 +506,11 @@ def _append_children(
 
 
 def _feature_element(
-    ns: dict[str, str], city_object: CityObject, model: CityModel, visited: set[str]
+    ns: dict[str, str],
+    city_object: CityObject,
+    model: CityModel,
+    visited: set[str],
+    targets: _MaterialTargets,
 ) -> ElementTree.Element:
     """Build one ``bldg:<type>`` feature element: its id, attributes, surfaces and nested children."""
     feature = ElementTree.Element(_q(ns, "bldg", city_object.type))
@@ -319,8 +518,8 @@ def _feature_element(
     visited.add(city_object.id)
     _add_attributes(ns, feature, city_object.attributes)
     for geometry in city_object.geometries:
-        _append_geometry(ns, feature, geometry)
-    _append_children(ns, feature, city_object, model, visited)
+        _append_geometry(ns, feature, geometry, targets)
+    _append_children(ns, feature, city_object, model, visited, targets)
     return feature
 
 
@@ -421,6 +620,23 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
             True
 
             ```
+        - A surface's material is written as an ``app:X3DMaterial`` and survives the round-trip:
+            ```python
+            >>> from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+            >>> from pyramids_citymodels.readers.citygml import parse_citygml
+            >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+            >>> model = CityModel(
+            ...     appearances={"materials": [{"name": "red", "diffuseColor": [1.0, 0.0, 0.0]}]},
+            ...     objects={"b": CityObject(id="b", type="Building", geometries=[
+            ...         Geometry(type="MultiSurface", lod="2", boundaries=[surface],
+            ...                  appearance={"material": {"t": {"values": [0]}}})])})
+            >>> "X3DMaterial" in write_citygml(model)
+            True
+            >>> back = parse_citygml(write_citygml(model))
+            >>> back.appearances["materials"][0]["diffuseColor"]
+            [1.0, 0.0, 0.0]
+
+            ```
     """
     # Emit the source version's namespaces for a version this writer matches (1.0/2.0), so the
     # version string round-trips through the reader; a 3.0 or unknown source falls back to 2.0. The
@@ -456,12 +672,20 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
     root = ElementTree.Element(_q(ns, "core", "CityModel"))
     _add_envelope(ns, root, model)
 
+    materials = (model.appearances or {}).get("materials") or []
+    # Seed the id allocator with the city-object ids so generated polygon/material ids never collide
+    # with them (gml:id is an xsd:ID — unique per document).
+    targets = _MaterialTargets(materials, _UniqueIds(model.objects))
     visited: set[str] = set()
     for city_object in model.objects.values():
         if city_object.parents:
             continue  # emitted inside its parent
         member = ElementTree.SubElement(root, _q(ns, "core", "cityObjectMember"))
-        member.append(_feature_element(ns, city_object, model, visited))
+        member.append(_feature_element(ns, city_object, model, visited, targets))
+
+    # Appearances come after the city objects: each paints polygons by the gml:ids assigned above.
+    for appearance_member in targets.appearance_members(ns):
+        root.append(appearance_member)
 
     ElementTree.indent(root)
     document = ElementTree.tostring(root, encoding="unicode", xml_declaration=True)

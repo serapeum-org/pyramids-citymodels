@@ -812,28 +812,46 @@ def _parse_x3d_material(
 
     Colour members become ``[r, g, b]`` float lists and the scalar members floats, matching the
     CityJSON material object; ``app:target`` references (``#poly_id``) become the surfaces the
-    material paints. The element's ``gml:id`` seeds the material ``name`` when present.
+    material paints. The material ``name`` is read from an explicit ``gml:name`` child when present
+    (free-form, so it survives even when the ``gml:id`` is suffixed for uniqueness), else it falls
+    back to the element's ``gml:id``.
     """
     material: dict[str, Any] = {}
     targets: list[str] = []
     for child in element:
-        name = _local(child.tag)
-        text = (child.text or "").strip()
-        if name == "target" and text:
-            targets.append(text.lstrip("#"))
-        elif name in _MATERIAL_COLORS and text:
-            try:
-                material[name] = [float(component) for component in text.split()]
-            except ValueError:
-                pass
-        elif name in _MATERIAL_SCALARS and text:
-            material[name] = _coerce_number(text, float)
-        elif name == "isSmooth" and text:
-            material["isSmooth"] = text.lower() in ("true", "1")
+        _read_x3d_material_child(
+            material, targets, _local(child.tag), (child.text or "").strip()
+        )
     gml_identifier = _gml_id(element)
     if gml_identifier:
         material.setdefault("name", gml_identifier)
     return material, targets
+
+
+def _read_x3d_material_child(
+    material: dict[str, Any], targets: list[str], name: str, text: str
+) -> None:
+    """Apply one ``app:X3DMaterial`` child (by local ``name``) to ``material`` / ``targets``.
+
+    A ``target`` adds a painted polygon id; ``name`` sets the material name; a colour member becomes
+    an ``[r, g, b]`` float list; a scalar member a float; ``isSmooth`` a bool. An empty ``text`` or an
+    unrecognised child is ignored.
+    """
+    if not text:
+        return
+    if name == "target":
+        targets.append(text.lstrip("#"))
+    elif name == "name":
+        material["name"] = text
+    elif name in _MATERIAL_COLORS:
+        try:
+            material[name] = [float(component) for component in text.split()]
+        except ValueError:
+            pass
+    elif name in _MATERIAL_SCALARS:
+        material[name] = _coerce_number(text, float)
+    elif name == "isSmooth":
+        material["isSmooth"] = text.lower() in ("true", "1")
 
 
 def _appearance_theme(appearance: ElementTree.Element) -> str:

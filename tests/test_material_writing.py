@@ -1,0 +1,383 @@
+"""Tests for CityGML X3DMaterial writing (issue #43).
+
+The CityGML writer emits `app:Appearance` / `app:X3DMaterial` for material-painted surfaces, targeting
+each surface's `gml:Polygon` by a `gml:id` it assigns, so a material on the IR (read from CityJSON or
+CityGML) survives `to_citygml()` and round-trips CityJSON → CityGML → CityJSON.
+"""
+
+import re
+import warnings
+
+import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
+
+import pytest
+
+from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+from pyramids_citymodels.readers.citygml import parse_citygml
+
+
+def _material_model(
+    values: object = None, *, geom_type: str = "MultiSurface"
+) -> CityModel:
+    """A one-building model whose surface(s) are painted red under theme ``t`` (index 0)."""
+    if geom_type == "Solid":
+        boundaries: object = [[[[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]]]
+        default_values: object = [[0]]
+    else:
+        boundaries = [[[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]]
+        default_values = [0]
+    return CityModel(
+        appearances={"materials": [{"name": "red", "diffuseColor": [1.0, 0.0, 0.0]}]},
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type=geom_type,
+                        lod="2",
+                        boundaries=boundaries,
+                        appearance={
+                            "material": {"t": {"values": values or default_values}}
+                        },
+                    )
+                ],
+            )
+        },
+    )
+
+
+def test_writer_emits_x3dmaterial_targeting_a_polygon() -> None:
+    xml = _material_model().to_citygml()
+    assert "X3DMaterial" in xml
+    assert "diffuseColor" in xml
+    assert 'gml:id="poly' in xml  # the polygon got an id (poly, poly_2, …)
+    assert "#poly" in xml  # and the material targets it
+
+
+def test_material_colour_round_trips_cityjson_to_citygml_to_cityjson() -> None:
+    model = _material_model()
+    back = parse_citygml(model.to_citygml())
+    assert back.appearances["materials"][0]["diffuseColor"] == [1.0, 0.0, 0.0]
+    values = back.objects["b"].geometries[0].appearance["material"]["t"]["values"]
+    assert values == [0]  # the surface is still painted by material 0
+
+
+def test_unpainted_surface_emits_no_appearance() -> None:
+    model = CityModel(
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[
+                            [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                        ],
+                    )
+                ],
+            )
+        }
+    )
+    xml = model.to_citygml()
+    assert "X3DMaterial" not in xml
+    assert "Appearance" not in xml
+    assert parse_citygml(xml).objects["b"].geometries[0].appearance is None
+
+
+def test_only_painted_surface_is_targeted_in_a_multi_surface() -> None:
+    # Two surfaces, only the first painted (index 0, then null): exactly one target.
+    model = _material_model(values=[0, None])
+    model.objects["b"].geometries[0].boundaries = [
+        [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]],
+        [[(0.0, 0.0, 9.0), (1.0, 0.0, 9.0), (1.0, 1.0, 9.0)]],
+    ]
+    back = parse_citygml(model.to_citygml())
+    values = back.objects["b"].geometries[0].appearance["material"]["t"]["values"]
+    assert values == [0, None]
+
+
+def test_material_on_a_solid_round_trips() -> None:
+    model = _material_model(geom_type="Solid")
+    back = parse_citygml(model.to_citygml()).objects["b"].geometries[0]
+    assert back.type == "Solid"
+    assert back.appearance["material"]["t"]["values"] == [[0]]  # shell-nested
+
+
+def test_multi_theme_materials_each_get_an_appearance() -> None:
+    model = CityModel(
+        appearances={
+            "materials": [
+                {"name": "red", "diffuseColor": [1.0, 0.0, 0.0]},
+                {"name": "blue", "diffuseColor": [0.0, 0.0, 1.0]},
+            ]
+        },
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[
+                            [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                        ],
+                        appearance={
+                            "material": {
+                                "day": {"values": [0]},
+                                "night": {"values": [1]},
+                            }
+                        },
+                    )
+                ],
+            )
+        },
+    )
+    back = parse_citygml(model.to_citygml()).objects["b"].geometries[0]
+    assert back.appearance["material"]["day"]["values"] == [0]
+    assert back.appearance["material"]["night"]["values"] == [1]
+
+
+def test_scalars_and_issmooth_round_trip() -> None:
+    model = _material_model()
+    model.appearances["materials"][0].update(
+        {"shininess": 0.5, "transparency": 0.25, "isSmooth": True}
+    )
+    material = parse_citygml(model.to_citygml()).appearances["materials"][0]
+    assert material["shininess"] == 0.5
+    assert material["transparency"] == 0.25
+    assert material["isSmooth"] is True
+
+
+def test_writing_a_material_emits_no_warning() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _material_model().to_citygml()
+
+
+def test_material_name_round_trips_even_with_duplicate_names() -> None:
+    # Two materials share the name "wall"; the name survives on both — it rides in gml:name, not the
+    # suffixed-for-uniqueness gml:id (review R2-M1).
+    model = CityModel(
+        appearances={
+            "materials": [
+                {"name": "wall", "diffuseColor": [1.0, 0.0, 0.0]},
+                {"name": "wall", "diffuseColor": [0.0, 0.0, 1.0]},
+            ]
+        },
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[
+                            [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]],
+                            [[(0.0, 0.0, 9.0), (1.0, 0.0, 9.0), (1.0, 1.0, 9.0)]],
+                        ],
+                        appearance={"material": {"t": {"values": [0, 1]}}},
+                    )
+                ],
+            )
+        },
+    )
+    back = parse_citygml(model.to_citygml())
+    assert sorted(m.get("name") for m in back.appearances["materials"]) == [
+        "wall",
+        "wall",
+    ]
+
+
+def test_material_name_colliding_with_a_polygon_id_still_round_trips() -> None:
+    # A material named "poly" (the shape of generated polygon ids) keeps its name via gml:name.
+    model = _material_model()
+    model.appearances["materials"][0]["name"] = "poly"
+    assert (
+        parse_citygml(model.to_citygml()).appearances["materials"][0]["name"] == "poly"
+    )
+
+
+def test_non_ncname_material_name_round_trips_via_gml_name() -> None:
+    # A name that is not a valid NCName rides in gml:name (free-form); the gml:id stays a clean NCName.
+    model = _material_model()
+    model.appearances["materials"][0]["name"] = "my material 1"
+    xml = model.to_citygml()
+    assert (
+        'gml:id="mat' in xml
+    )  # the X3DMaterial id is a generated NCName, not the free-form name
+    assert parse_citygml(xml).appearances["materials"][0]["name"] == "my material 1"
+
+
+def test_non_integer_material_index_warns_and_does_not_crash() -> None:
+    for bad_values in (["0"], [0.0]):
+        model = _material_model(values=bad_values)
+        with pytest.warns(UserWarning, match="non-integer material index"):
+            xml = model.to_citygml()
+        assert "X3DMaterial" not in xml
+
+
+def test_mis_nested_material_values_warn_not_crash() -> None:
+    # values nested one level deeper than boundaries: each surface's leaf is a list, not an int.
+    model = _material_model(values=[[0], [0]])
+    model.objects["b"].geometries[0].boundaries = [
+        [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]],
+        [[(0.0, 0.0, 9.0), (1.0, 0.0, 9.0), (1.0, 1.0, 9.0)]],
+    ]
+    with pytest.warns(UserWarning, match="non-integer material index"):
+        xml = model.to_citygml()
+    assert "X3DMaterial" not in xml
+
+
+def test_all_out_of_range_theme_emits_no_empty_appearance() -> None:
+    model = _material_model(values=[9])  # the only index is out of range
+    with pytest.warns(UserWarning, match="out of range"):
+        xml = model.to_citygml()
+    assert "Appearance" not in xml  # no empty app:Appearance is left behind
+
+
+def test_material_without_a_name_still_emits_and_round_trips() -> None:
+    # A material lacking a "name" gets no gml:id on its X3DMaterial, but still paints and round-trips.
+    model = _material_model()
+    model.appearances["materials"][0] = {"diffuseColor": [0.0, 1.0, 0.0]}
+    xml = model.to_citygml()
+    assert "X3DMaterial" in xml
+    back = parse_citygml(xml)
+    assert back.appearances["materials"][0]["diffuseColor"] == [0.0, 1.0, 0.0]
+    assert back.objects["b"].geometries[0].appearance["material"]["t"]["values"] == [0]
+
+
+def _gml_ids(xml: str) -> list[str]:
+    """Every ``gml:id`` value in a CityGML document, in document order."""
+    return re.findall(r'gml:id="([^"]*)"', xml)
+
+
+def test_all_gml_ids_are_unique_even_with_shared_material_and_colliding_names() -> None:
+    # A material reused across two themes, an object literally named like a generated id, and a
+    # material whose name matches another id must still yield a document with unique gml:ids (M1).
+    model = CityModel(
+        appearances={"materials": [{"name": "poly", "diffuseColor": [1.0, 0.0, 0.0]}]},
+        objects={
+            "poly": CityObject(  # object id collides with the generated "poly" polygon ids
+                id="poly",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[
+                            [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                        ],
+                        appearance={
+                            "material": {  # same material (0) under two themes
+                                "day": {"values": [0]},
+                                "night": {"values": [0]},
+                            }
+                        },
+                    )
+                ],
+            )
+        },
+    )
+    ids = _gml_ids(model.to_citygml())
+    assert len(ids) == len(set(ids)), f"duplicate gml:id in {ids}"
+
+
+def test_out_of_range_material_index_warns_and_leaves_surface_unpainted() -> None:
+    model = _material_model(values=[5])  # pool has only index 0
+    with pytest.warns(UserWarning, match="out of range"):
+        xml = model.to_citygml()
+    assert "X3DMaterial" not in xml  # nothing painted
+    assert parse_citygml(xml).objects["b"].geometries[0].appearance is None
+
+
+def test_negative_material_index_warns_and_does_not_wrap() -> None:
+    model = _material_model(
+        values=[-1]
+    )  # must NOT select the last material by wraparound
+    with pytest.warns(UserWarning, match="out of range"):
+        xml = model.to_citygml()
+    assert "X3DMaterial" not in xml
+
+
+def test_one_material_painting_several_surfaces_emits_one_material_with_many_targets() -> (
+    None
+):
+    model = _material_model(values=[0, 0])
+    model.objects["b"].geometries[0].boundaries = [
+        [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]],
+        [[(0.0, 0.0, 9.0), (1.0, 0.0, 9.0), (1.0, 1.0, 9.0)]],
+    ]
+    xml = model.to_citygml()
+    assert xml.count("<app:X3DMaterial") == 1  # one material element
+    assert xml.count("<app:target>") == 2  # two surfaces targeted
+    values = (
+        parse_citygml(xml)
+        .objects["b"]
+        .geometries[0]
+        .appearance["material"]["t"]["values"]
+    )
+    assert values == [0, 0]
+
+
+def test_shell_nested_multi_material_solid_keeps_colour_per_surface() -> None:
+    # A two-surface Solid with values [[0, 1]]: surface 0 red, surface 1 blue — the shell-nested
+    # alignment the writer must respect.
+    model = CityModel(
+        appearances={
+            "materials": [
+                {"name": "red", "diffuseColor": [1.0, 0.0, 0.0]},
+                {"name": "blue", "diffuseColor": [0.0, 0.0, 1.0]},
+            ]
+        },
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="Solid",
+                        lod="2",
+                        boundaries=[
+                            [
+                                [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]],
+                                [[(0.0, 0.0, 9.0), (1.0, 0.0, 9.0), (1.0, 1.0, 9.0)]],
+                            ]
+                        ],
+                        appearance={"material": {"t": {"values": [[0, 1]]}}},
+                    )
+                ],
+            )
+        },
+    )
+    back = parse_citygml(model.to_citygml()).objects["b"].geometries[0]
+    assert back.type == "Solid"
+    assert back.appearance["material"]["t"]["values"] == [
+        [0, 1]
+    ]  # per-surface colours kept
+
+
+def test_all_colour_and_scalar_members_round_trip() -> None:
+    model = _material_model()
+    model.appearances["materials"][0] = {
+        "name": "full",
+        "diffuseColor": [0.1, 0.2, 0.3],
+        "emissiveColor": [0.4, 0.5, 0.6],
+        "specularColor": [0.7, 0.8, 0.9],
+        "ambientIntensity": 0.2,
+        "shininess": 0.5,
+        "transparency": 0.25,
+        "isSmooth": False,
+    }
+    material = parse_citygml(model.to_citygml()).appearances["materials"][0]
+    assert material["diffuseColor"] == [0.1, 0.2, 0.3]
+    assert material["emissiveColor"] == [0.4, 0.5, 0.6]
+    assert material["specularColor"] == [0.7, 0.8, 0.9]
+    assert material["ambientIntensity"] == 0.2
+    assert material["shininess"] == 0.5
+    assert material["transparency"] == 0.25
+    assert material["isSmooth"] is False
