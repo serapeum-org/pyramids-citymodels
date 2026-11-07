@@ -589,16 +589,21 @@ class CityModel:
 
         return write_kml(self, path)
 
-    def to_3dtiles(self, directory: Any) -> "dict[str, Any]":
-        """Write this model as a single-tile 3D Tiles tileset into ``directory``.
+    def to_3dtiles(
+        self, directory: Any, max_objects_per_tile: int | None = None
+    ) -> "dict[str, Any]":
+        """Write this model as a 3D Tiles tileset into ``directory``.
 
-        Writes ``tileset.json`` plus a batched ``content.b3dm`` (one batch per city object, with a
-        batch table of each object's id/type/attributes) — the tiling/packaging export (feature #15).
-        See :func:`.writers.threedtiles.write_3dtiles` for the format and its documented limits. 3D
-        Tiles is multi-file, so a directory is required rather than a single file path.
+        Writes ``tileset.json`` plus batched ``b3dm`` content (one batch per city object, with a batch
+        table of each object's id/type/attributes) — the tiling/packaging export (features #15/#51).
+        By default a single tile; with ``max_objects_per_tile`` set, a model with more objects is
+        subdivided into an XY quadtree of tiles. See :func:`.writers.threedtiles.write_3dtiles` for the
+        format and its documented limits. 3D Tiles is multi-file, so a directory is required.
 
         Args:
             directory: The output directory (created if missing).
+            max_objects_per_tile: When set, subdivide into tiles of at most this many objects;
+                ``None`` (default) writes a single tile.
 
         Returns:
             The written ``tileset.json`` document.
@@ -621,7 +626,7 @@ class CityModel:
         """
         from pyramids_citymodels.writers.threedtiles import write_3dtiles
 
-        return write_3dtiles(self, directory)
+        return write_3dtiles(self, directory, max_objects_per_tile)
 
     def to_file(self, path: Any) -> "dict[str, Any] | str | None":
         """Serialize this model to ``path``, choosing the writer by the path's suffix.
