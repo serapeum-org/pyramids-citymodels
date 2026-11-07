@@ -564,6 +564,23 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
             True
 
             ```
+        - A surface's material is written as an ``app:X3DMaterial`` and survives the round-trip:
+            ```python
+            >>> from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+            >>> from pyramids_citymodels.readers.citygml import parse_citygml
+            >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+            >>> model = CityModel(
+            ...     appearances={"materials": [{"name": "red", "diffuseColor": [1.0, 0.0, 0.0]}]},
+            ...     objects={"b": CityObject(id="b", type="Building", geometries=[
+            ...         Geometry(type="MultiSurface", lod="2", boundaries=[surface],
+            ...                  appearance={"material": {"t": {"values": [0]}}})])})
+            >>> "X3DMaterial" in write_citygml(model)
+            True
+            >>> back = parse_citygml(write_citygml(model))
+            >>> back.appearances["materials"][0]["diffuseColor"]
+            [1.0, 0.0, 0.0]
+
+            ```
     """
     # Emit the source version's namespaces for a version this writer matches (1.0/2.0), so the
     # version string round-trips through the reader; a 3.0 or unknown source falls back to 2.0. The
