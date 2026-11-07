@@ -25,23 +25,10 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored 
 from typing import Any
 
 from pyramids_citymodels.ir import CityModel, CityObject, iter_surfaces
+from pyramids_citymodels.writers._geometry import open_ring as _open_ring
+from pyramids_citymodels.writers._geometry import xyz as _xyz
 
 __all__ = ["write_obj"]
-
-
-def _open_ring(ring: Any) -> list[Any]:
-    """Drop a ring's closing duplicate vertex (``last == first``), so a face is not degenerate."""
-    if len(ring) > 1 and tuple(ring[0]) == tuple(ring[-1]):
-        return list(ring[:-1])
-    return list(ring)
-
-
-def _xyz(coordinate: Any) -> tuple[float, float, float]:
-    """A coordinate as an ``(x, y, z)`` float triple, filling ``z = 0.0`` for a 2-D point."""
-    x = float(coordinate[0])
-    y = float(coordinate[1])
-    z = float(coordinate[2]) if len(coordinate) > 2 else 0.0
-    return (x, y, z)
 
 
 class _VertexPool:

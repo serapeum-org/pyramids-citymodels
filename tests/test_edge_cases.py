@@ -86,8 +86,11 @@ def test_citygml_reads_gml_pos_and_interior_rings() -> None:
     surface = model.objects["BA_p1"].geometries[0].boundaries[0]
     exterior, interior = surface[0], surface[1]
     assert exterior[0] == (0.0, 0.0, 2.0)
-    assert len(exterior) == 4
-    assert len(interior) == 4  # interior ring parsed from posList
+    # Rings are stored OPEN (the GML closing vertex is dropped), so a 4-position closed GML ring
+    # becomes 3 distinct vertices.
+    assert len(exterior) == 3
+    assert exterior[0] != exterior[-1]  # open: first vertex not repeated as last
+    assert len(interior) == 3  # interior ring parsed from posList, also opened
 
 
 def test_citygml_anonymous_building_gets_generated_id_and_bytes_source() -> None:

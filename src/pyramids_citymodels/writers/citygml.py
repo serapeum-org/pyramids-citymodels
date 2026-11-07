@@ -227,17 +227,53 @@ def _append_plain_surface(
     member.append(plain)
 
 
+def _append_solid(
+    ns: dict[str, str], feature: ElementTree.Element, geometry: Geometry, lod: int
+) -> None:
+    """Append a (non-semantic) ``Solid`` as a ``bldg:lod{n}Solid`` of one ``gml:CompositeSurface``.
+
+    Emitting the surfaces inside a ``gml:Solid`` (rather than as separate plain ``MultiSurface``
+    properties) preserves the geometry *type*, so a CityJSON ``Solid`` round-trips as a ``Solid``
+    through CityGML (the reader reads a ``lodXSolid`` back as ``type="Solid"`` — §3 gap 2). Only a
+    single ``Solid`` is handled here: a ``MultiSolid`` is **not** routed through this path (that would
+    collapse its N solids into one shell and mislabel the type), so it falls through to the
+    per-surface path in :func:`_append_geometry` and is written as its surfaces.
+    """
+    polygons = [
+        polygon
+        for surface, _value in iter_surfaces(
+            geometry.boundaries, geometry.semantic_values
+        )
+        if (polygon := _polygon_element(ns, surface)) is not None
+    ]
+    if not polygons:
+        return
+    solid_property = ElementTree.SubElement(feature, _q(ns, "bldg", f"lod{lod}Solid"))
+    solid = ElementTree.SubElement(solid_property, _q(ns, "gml", "Solid"))
+    exterior = ElementTree.SubElement(solid, _q(ns, "gml", "exterior"))
+    composite = ElementTree.SubElement(exterior, _q(ns, "gml", "CompositeSurface"))
+    for polygon in polygons:
+        member = ElementTree.SubElement(composite, _q(ns, "gml", "surfaceMember"))
+        member.append(polygon)
+
+
 def _append_geometry(
     ns: dict[str, str], feature: ElementTree.Element, geometry: Geometry
 ) -> None:
-    """Append one IR geometry's surfaces to ``feature`` as semantic ``bldg:boundedBy`` surfaces.
+    """Append one IR geometry to ``feature`` — a ``gml:Solid`` when it is a plain solid, else surfaces.
 
-    Walks to surface level for ANY geometry type (``MultiSurface``, ``Solid``, ``MultiSolid``, …) via
-    the shared IR traversal, pairing each surface with its semantic value — so a ``Solid``'s surfaces
-    (nested one shell deeper, with nested semantic values) are reached, not silently dropped. A
-    surface with no semantic type becomes a plain building geometry instead.
+    A non-semantic ``Solid`` is emitted as a ``bldg:lod{n}Solid`` so its type survives the round-trip
+    (§3 gap 2). Every other geometry is walked to surface level for ANY type via the shared IR
+    traversal, each surface paired with its semantic value — so a semantic ``Solid``'s surfaces (nested
+    one shell deeper) are still reached and emitted as ``bldg:boundedBy`` boundary surfaces, and a
+    surface with no semantic type becomes a plain building ``MultiSurface``. A ``MultiSolid`` is **not**
+    emitted as a single ``gml:Solid`` (that would collapse its solids and mislabel the type); it takes
+    this per-surface path, so its type is not preserved (a documented limit) but it is never mislabelled.
     """
     lod = _lod_number(geometry)
+    if geometry.type == "Solid" and not geometry.semantics:
+        _append_solid(ns, feature, geometry, lod)
+        return
     for surface, semantic_value in iter_surfaces(
         geometry.boundaries, geometry.semantic_values
     ):
@@ -391,6 +427,15 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
     # map is a per-call local threaded through construction — no module-global is mutated, so
     # concurrent writes of different-version models cannot corrupt each other.
     version = model.version if model.version in _MATCHED_VERSIONS else "2.0"
+    if model.version is not None and model.version not in _MATCHED_VERSIONS:
+        # CityGML 3.0 restructures the geometry model, so emitting 3.0 namespaces with this writer's
+        # 2.0 element structure would be invalid 3.0. The reader reads 3.0 (version-agnostic by local
+        # name), but on write the model is downgraded to valid 2.0 — the version does not round-trip.
+        warnings.warn(
+            f"CityGML writer: a {model.version} source is written as valid CityGML 2.0 (this writer "
+            "emits the 2.0 building structure), so the CityGML version does not round-trip",
+            stacklevel=2,
+        )
     ns = _namespaces(version)
 
     unreadable = sorted(

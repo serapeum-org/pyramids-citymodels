@@ -491,6 +491,40 @@ class CityModel:
 
         return write_gltf(self, path)
 
+    def to_3dtiles(self, directory: Any) -> "dict[str, Any]":
+        """Write this model as a single-tile 3D Tiles tileset into ``directory``.
+
+        Writes ``tileset.json`` plus a batched ``content.b3dm`` (one batch per city object, with a
+        batch table of each object's id/type/attributes) — the tiling/packaging export (feature #15).
+        See :func:`.writers.threedtiles.write_3dtiles` for the format and its documented limits. 3D
+        Tiles is multi-file, so a directory is required rather than a single file path.
+
+        Args:
+            directory: The output directory (created if missing).
+
+        Returns:
+            The written ``tileset.json`` document.
+
+        Examples:
+            - A one-building model writes a tileset pointing at its b3dm content:
+                ```python
+                >>> import tempfile
+                >>> from pathlib import Path
+                >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+                >>> tileset = model.to_3dtiles(Path(tempfile.mkdtemp()))
+                >>> tileset["root"]["content"]["uri"]
+                'content.b3dm'
+                >>> tileset["asset"]["gltfUpAxis"]  # IR is z-up
+                'Z'
+
+                ```
+        """
+        from pyramids_citymodels.writers.threedtiles import write_3dtiles
+
+        return write_3dtiles(self, directory)
+
     def to_file(self, path: Any) -> "dict[str, Any] | str | None":
         """Serialize this model to ``path``, choosing the writer by the path's suffix.
 
