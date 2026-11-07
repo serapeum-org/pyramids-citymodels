@@ -158,6 +158,88 @@ def test_writing_a_material_emits_no_warning() -> None:
         _material_model().to_citygml()
 
 
+def test_material_name_round_trips_even_with_duplicate_names() -> None:
+    # Two materials share the name "wall"; the name survives on both — it rides in gml:name, not the
+    # suffixed-for-uniqueness gml:id (review R2-M1).
+    model = CityModel(
+        appearances={
+            "materials": [
+                {"name": "wall", "diffuseColor": [1.0, 0.0, 0.0]},
+                {"name": "wall", "diffuseColor": [0.0, 0.0, 1.0]},
+            ]
+        },
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[
+                            [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]],
+                            [[(0.0, 0.0, 9.0), (1.0, 0.0, 9.0), (1.0, 1.0, 9.0)]],
+                        ],
+                        appearance={"material": {"t": {"values": [0, 1]}}},
+                    )
+                ],
+            )
+        },
+    )
+    back = parse_citygml(model.to_citygml())
+    assert sorted(m.get("name") for m in back.appearances["materials"]) == [
+        "wall",
+        "wall",
+    ]
+
+
+def test_material_name_colliding_with_a_polygon_id_still_round_trips() -> None:
+    # A material named "poly" (the shape of generated polygon ids) keeps its name via gml:name.
+    model = _material_model()
+    model.appearances["materials"][0]["name"] = "poly"
+    assert (
+        parse_citygml(model.to_citygml()).appearances["materials"][0]["name"] == "poly"
+    )
+
+
+def test_non_ncname_material_name_round_trips_via_gml_name() -> None:
+    # A name that is not a valid NCName rides in gml:name (free-form); the gml:id stays a clean NCName.
+    model = _material_model()
+    model.appearances["materials"][0]["name"] = "my material 1"
+    xml = model.to_citygml()
+    assert (
+        'gml:id="mat' in xml
+    )  # the X3DMaterial id is a generated NCName, not the free-form name
+    assert parse_citygml(xml).appearances["materials"][0]["name"] == "my material 1"
+
+
+def test_non_integer_material_index_warns_and_does_not_crash() -> None:
+    for bad_values in (["0"], [0.0]):
+        model = _material_model(values=bad_values)
+        with pytest.warns(UserWarning, match="non-integer material index"):
+            xml = model.to_citygml()
+        assert "X3DMaterial" not in xml
+
+
+def test_mis_nested_material_values_warn_not_crash() -> None:
+    # values nested one level deeper than boundaries: each surface's leaf is a list, not an int.
+    model = _material_model(values=[[0], [0]])
+    model.objects["b"].geometries[0].boundaries = [
+        [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]],
+        [[(0.0, 0.0, 9.0), (1.0, 0.0, 9.0), (1.0, 1.0, 9.0)]],
+    ]
+    with pytest.warns(UserWarning, match="non-integer material index"):
+        xml = model.to_citygml()
+    assert "X3DMaterial" not in xml
+
+
+def test_all_out_of_range_theme_emits_no_empty_appearance() -> None:
+    model = _material_model(values=[9])  # the only index is out of range
+    with pytest.warns(UserWarning, match="out of range"):
+        xml = model.to_citygml()
+    assert "Appearance" not in xml  # no empty app:Appearance is left behind
+
+
 def test_material_without_a_name_still_emits_and_round_trips() -> None:
     # A material lacking a "name" gets no gml:id on its X3DMaterial, but still paints and round-trips.
     model = _material_model()
@@ -296,4 +378,6 @@ def test_all_colour_and_scalar_members_round_trip() -> None:
     assert material["emissiveColor"] == [0.4, 0.5, 0.6]
     assert material["specularColor"] == [0.7, 0.8, 0.9]
     assert material["ambientIntensity"] == 0.2
+    assert material["shininess"] == 0.5
+    assert material["transparency"] == 0.25
     assert material["isSmooth"] is False
