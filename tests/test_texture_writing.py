@@ -158,3 +158,19 @@ def test_writing_a_texture_emits_no_warning() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         _texture_model().to_citygml()
+
+
+def test_ring_value_without_uvs_leaves_surface_untextured() -> None:
+    # A ring value carrying a texture index but no UV coordinates paints nothing (no crash).
+    model = _texture_model(values=[[[0]]])
+    xml = model.to_citygml()
+    assert "ParameterizedTexture" not in xml
+
+
+def test_extra_ring_values_beyond_the_polygon_rings_are_ignored() -> None:
+    # The surface has one ring but the texture value lists two — the extra entry is ignored, and the
+    # real ring still paints.
+    model = _texture_model(values=[[[0, 0, 1, 2], [0, 0, 1, 2]]])
+    xml = model.to_citygml()
+    assert xml.count("<app:textureCoordinates") == 1  # only the one real ring
+    assert "ParameterizedTexture" in xml
