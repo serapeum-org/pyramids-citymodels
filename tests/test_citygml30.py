@@ -1,9 +1,9 @@
-"""Tests for CityGML 3.0 reading (§3 gap 4).
+"""Tests for CityGML 3.0 reading and writing (§3 gap 4 / #50).
 
 The reader is version-agnostic (it matches CityGML by local name), so it reads a 3.0 document —
 `gml/3.2` ids, boundary surfaces under `bldg:boundary`, a `lod2Solid` — and records `version="3.0"`.
-Emitting *valid* 3.0 is a separate effort (3.0 restructures the geometry model), so the CityGML
-writer downgrades a 3.0 source to valid 2.0 and warns that the version does not round-trip.
+The writer now emits valid 3.0 for the same model (3.0 namespaces + `gml/3.2` + the `bldg:boundary`
+wrapper), so the version round-trips 3.0 → 3.0.
 """
 
 import warnings
@@ -66,8 +66,10 @@ def test_30_lodx_solid_reads_as_solid() -> None:
     assert parse_citygml(xml).objects["B30"].geometries[0].type == "Solid"
 
 
-def test_writer_downgrades_a_30_source_to_20_with_a_warning() -> None:
-    model = CityModel(
+def _solid_30_model() -> CityModel:
+    from pyramids_citymodels.ir import SemanticSurface
+
+    return CityModel(
         version="3.0",
         objects={
             "b": CityObject(
@@ -80,16 +82,38 @@ def test_writer_downgrades_a_30_source_to_20_with_a_warning() -> None:
                         boundaries=[
                             [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
                         ],
+                        semantics=[SemanticSurface(type="RoofSurface")],
+                        semantic_values=[0],
                     )
                 ],
             )
         },
     )
+
+
+def test_writer_emits_valid_30_without_downgrade_warning() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # a downgrade warning would raise
+        out = _solid_30_model().to_citygml()
+    assert "citygml/3.0" in out  # emitted as 3.0, not downgraded
+    assert "http://www.opengis.net/gml/3.2" in out  # 3.0 uses GML 3.2
+    assert "citygml/2.0" not in out
+
+
+def test_30_version_and_semantics_round_trip_30_to_30() -> None:
+    back = parse_citygml(_solid_30_model().to_citygml())
+    assert back.version == "3.0"  # version round-trips
+    assert back.objects["b"].geometries[0].semantics[0].type == "RoofSurface"
+
+
+def test_unknown_version_downgrades_to_20_with_warning() -> None:
+    model = CityModel(
+        version="9.9",
+        objects={"b": CityObject(id="b", type="Building")},
+    )
     with pytest.warns(UserWarning, match="does not round-trip"):
         out = model.to_citygml()
-    assert "citygml/2.0" in out  # emitted as valid 2.0
-    assert "citygml/3.0" not in out
-    # The downgraded document is still readable (as 2.0).
+    assert "citygml/2.0" in out
     assert parse_citygml(out).version == "2.0"
 
 

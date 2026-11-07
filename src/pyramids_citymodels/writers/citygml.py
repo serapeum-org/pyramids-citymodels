@@ -17,10 +17,13 @@ The writer targets exactly what that reader rebuilds, so the round-trip fidelity
   material ``name``, carried in a free-form ``gml:name``). What does **not** survive is the appearance
   *pool* itself: a material/texture is inlined once per theme that paints it, so an unpainted one is
   dropped and the indices are recompacted on re-read (the per-surface appearance is unchanged, but the
-  pool composition and index values are not). The **version** round-trips for a ``1.0`` or ``2.0`` source
-  (whose LOD2 building structure this writer matches element-for-element): the source version's
-  namespaces are emitted. A ``3.0`` or unknown source is emitted as ``2.0`` (its version does *not*
-  round-trip) — 3.0 restructures the geometry model, which this writer does not reproduce.
+  pool composition and index values are not). The **version** round-trips for a ``1.0``, ``2.0`` or
+  ``3.0`` source: the source version's namespaces are emitted. 1.0/2.0 use the ``bldg:boundedBy``
+  building structure; **3.0** uses ``bldg:boundary`` and the ``gml/3.2`` namespace for the same
+  building + common-object semantic/geometry/appearance model this writer covers (3.0's wider
+  space/versioning features are out of scope, and a 3.0 document's namespace prefixes are
+  auto-assigned — valid, and read back by local name). An unknown version falls back to ``2.0`` with
+  a warning.
 - **Best-effort:** attribute *values* keep their Python type via ``gen:*Attribute`` kinds
   (``int`` → ``gen:intAttribute``, ``float`` → ``gen:doubleAttribute``, else
   ``gen:stringAttribute``); the known numeric building attributes (``measuredHeight``, …) are
@@ -62,10 +65,10 @@ from pyramids_citymodels.ir import (
 
 __all__ = ["write_citygml"]
 
-#: CityGML versions whose LOD2 building structure this writer matches element-for-element. A source
-#: in one of these is re-emitted under its own namespaces (so the version string round-trips); any
-#: other version (e.g. 3.0, which restructures geometry) is emitted as 2.0.
-_MATCHED_VERSIONS = frozenset({"1.0", "2.0"})
+#: CityGML versions this writer emits natively (so the version string round-trips). 1.0/2.0 share the
+#: ``bldg:boundedBy`` building structure; 3.0 uses ``bldg:boundary`` and the ``gml/3.2`` namespace (see
+#: :func:`_namespaces` / :func:`_boundary_tag`). Any other version is emitted as 2.0 with a warning.
+_MATCHED_VERSIONS = frozenset({"1.0", "2.0", "3.0"})
 
 #: The GML namespace, constant across CityGML versions this writer emits.
 _GML_NS = "http://www.opengis.net/gml"
@@ -130,8 +133,16 @@ def _namespaces(version: str) -> dict[str, str]:
         for prefix, module in _MODULE_PATHS.items()
     }
     namespaces["core"] = f"http://www.opengis.net/citygml/{version}"
-    namespaces["gml"] = _GML_NS
+    # CityGML 3.0 is built on GML 3.2; 1.0/2.0 on the older GML namespace.
+    namespaces["gml"] = (
+        "http://www.opengis.net/gml/3.2" if version == "3.0" else _GML_NS
+    )
     return namespaces
+
+
+def _boundary_tag(ns: dict[str, str]) -> str:
+    """The semantic-boundary wrapper element for this version: 3.0's ``boundary`` else ``boundedBy``."""
+    return "boundary" if ns["core"].rstrip("/").endswith("/3.0") else "boundedBy"
 
 
 #: The default (CityGML 2.0) namespace map. Its prefixes are registered with ElementTree once at
@@ -604,7 +615,7 @@ def _bounded_by(
     if polygon is None:
         return None
     targets.paint(ns, polygon, surface, material_by_theme, texture_by_theme)
-    bounded_by = ElementTree.Element(_q(ns, "bldg", "boundedBy"))
+    bounded_by = ElementTree.Element(_q(ns, "bldg", _boundary_tag(ns)))
     boundary_surface = ElementTree.SubElement(bounded_by, _q(ns, "bldg", semantic_type))
     multi_surface_property = ElementTree.SubElement(
         boundary_surface, _q(ns, "bldg", f"lod{lod}MultiSurface")
@@ -951,17 +962,16 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
             ```
     """
     # Emit the source version's namespaces for a version this writer matches (1.0/2.0), so the
-    # version string round-trips through the reader; a 3.0 or unknown source falls back to 2.0. The
-    # map is a per-call local threaded through construction — no module-global is mutated, so
-    # concurrent writes of different-version models cannot corrupt each other.
+    # version string round-trips through the reader; an unknown version falls back to 2.0. The map is
+    # a per-call local threaded through construction — no module-global is mutated, so concurrent
+    # writes of different-version models cannot corrupt each other.
     version = model.version if model.version in _MATCHED_VERSIONS else "2.0"
     if model.version is not None and model.version not in _MATCHED_VERSIONS:
-        # CityGML 3.0 restructures the geometry model, so emitting 3.0 namespaces with this writer's
-        # 2.0 element structure would be invalid 3.0. The reader reads 3.0 (version-agnostic by local
-        # name), but on write the model is downgraded to valid 2.0 — the version does not round-trip.
+        # 1.0/2.0/3.0 are emitted natively; any other version has no known structure, so it is written
+        # as valid 2.0 and its version does not round-trip.
         warnings.warn(
-            f"CityGML writer: a {model.version} source is written as valid CityGML 2.0 (this writer "
-            "emits the 2.0 building structure), so the CityGML version does not round-trip",
+            f"CityGML writer: a {model.version} source has no known emission structure and is "
+            "written as valid CityGML 2.0, so the CityGML version does not round-trip",
             stacklevel=2,
         )
     ns = _namespaces(version)
