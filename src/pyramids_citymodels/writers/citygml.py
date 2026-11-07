@@ -813,6 +813,23 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
             [1.0, 0.0, 0.0]
 
             ```
+        - A surface's texture is written as an ``app:ParameterizedTexture`` and round-trips:
+            ```python
+            >>> from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+            >>> from pyramids_citymodels.readers.citygml import parse_citygml
+            >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+            >>> model = CityModel(
+            ...     appearances={"textures": [{"type": "PNG", "image": "wall.png"}],
+            ...                  "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]},
+            ...     objects={"b": CityObject(id="b", type="Building", geometries=[
+            ...         Geometry(type="MultiSurface", lod="2", boundaries=[surface],
+            ...                  appearance={"texture": {"t": {"values": [[[0, 0, 1, 2]]]}}})])})
+            >>> "ParameterizedTexture" in write_citygml(model)
+            True
+            >>> parse_citygml(write_citygml(model)).appearances["textures"][0]["image"]
+            'wall.png'
+
+            ```
     """
     # Emit the source version's namespaces for a version this writer matches (1.0/2.0), so the
     # version string round-trips through the reader; a 3.0 or unknown source falls back to 2.0. The
