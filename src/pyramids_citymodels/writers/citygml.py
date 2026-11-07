@@ -10,13 +10,14 @@ The writer targets exactly what that reader rebuilds, so the round-trip fidelity
   the parent/child hierarchy (children nested in ``bldg:consistsOfBuildingPart``), every boundary
   surface's geometry (rings, holes, coordinates) across ``MultiSurface`` and ``Solid``/``MultiSolid``
   alike, its semantic type, and the CRS. A plain (non-semantic) ``Solid`` round-trips **as a**
-  ``Solid`` (emitted as ``bldg:lod{n}Solid``), and a surface's **material** (``app:X3DMaterial``, per
-  ``app:theme``) is written as an ``app:Appearance`` targeting that polygon's assigned ``gml:id`` — so
-  the **painted colour per surface** survives the round-trip (and the material ``name``, carried in a
-  free-form ``gml:name``). What does **not** survive is the appearance *pool* itself: a material is
-  inlined once per theme that paints it, so an unpainted material is dropped and the material indices
-  are recompacted on re-read (the per-surface colour is unchanged, but the pool composition and index
-  values are not). The **version** round-trips for a ``1.0`` or ``2.0`` source
+  ``Solid`` (emitted as ``bldg:lod{n}Solid``), and a surface's **material** (``app:X3DMaterial``) and
+  **texture** (``app:ParameterizedTexture`` — image plus per-ring ``textureCoordinates`` from the
+  ``vertices-texture`` pool, each ``app:theme`` an ``app:Appearance`` targeting the polygon's assigned
+  ``gml:id``) — so the **painted colour / texture per surface** survives the round-trip (and the
+  material ``name``, carried in a free-form ``gml:name``). What does **not** survive is the appearance
+  *pool* itself: a material/texture is inlined once per theme that paints it, so an unpainted one is
+  dropped and the indices are recompacted on re-read (the per-surface appearance is unchanged, but the
+  pool composition and index values are not). The **version** round-trips for a ``1.0`` or ``2.0`` source
   (whose LOD2 building structure this writer matches element-for-element): the source version's
   namespaces are emitted. A ``3.0`` or unknown source is emitted as ``2.0`` (its version does *not*
   round-trip) — 3.0 restructures the geometry model, which this writer does not reproduce.
@@ -37,9 +38,8 @@ The writer targets exactly what that reader rebuilds, so the round-trip fidelity
   which is **not schema-valid** (city furniture belongs to the ``frn:`` namespace): the geometry and
   attributes are preserved for a CityJSON/JSON-FG/mesh target, but a CityGML→CityGML round-trip of a
   non-building object is best-effort, not conformant (emitting the correct thematic namespace per
-  type is a follow-up). CityGML **textures** (``app:ParameterizedTexture``) are not written yet
-  (materials are) — a documented follow-up (#44). A ``MultiSolid`` is written as its surfaces (its
-  N-solid partitioning is not preserved), though it is never mislabelled as a single ``Solid``.
+  type is a follow-up). A ``MultiSolid`` is written as its surfaces (its N-solid partitioning is not
+  preserved), though it is never mislabelled as a single ``Solid``.
 
 It writes with the standard-library :mod:`xml.etree.ElementTree` (no ``lxml``, matching the reader),
 so there is no new dependency and no optional ``extra``.
@@ -149,62 +149,268 @@ class _UniqueIds:
         return candidate
 
 
-class _MaterialTargets:
-    """Collects, while geometry is emitted, which polygon ``gml:id``\\ s each material paints per theme.
+#: A texture target: the painted polygon's id and, per painted ring, its ``gml:id`` + the closed
+#: ``textureCoordinates`` text.
+_TextureTarget = tuple[str, list[tuple[str, str]]]
+
+
+class _Appearances:
+    """Collects, while geometry is emitted, the material and texture appearances to write per theme.
 
     The CityGML writer assigns every emitted ``gml:Polygon`` a document-unique ``gml:id`` and, for a
-    painted surface, records that id under the material's theme; :meth:`appearance_members` then builds
-    the ``app:Appearance`` elements that target those ids — so a CityJSON material survives
-    ``to_citygml``. All ids come from a shared :class:`_UniqueIds`, so the document stays valid even
-    when a material is reused across themes or a name/object-id would otherwise collide.
+    painted surface, records that id under the appearance's theme (a texture also assigns each painted
+    ``gml:LinearRing`` an id and carries its UV coordinates); :meth:`appearance_members` then builds
+    one ``app:Appearance`` per theme with the ``app:X3DMaterial`` and ``app:ParameterizedTexture``
+    elements that target those ids — so a CityJSON material/texture survives ``to_citygml``. All ids
+    come from a shared :class:`_UniqueIds`, so the document stays valid even when an appearance is
+    reused across themes or a name/object-id would otherwise collide.
     """
 
-    def __init__(self, materials: list[dict[str, Any]], ids: _UniqueIds):
+    def __init__(
+        self,
+        materials: list[dict[str, Any]],
+        textures: list[dict[str, Any]],
+        vertices_texture: list[list[float]],
+        ids: _UniqueIds,
+    ):
         self._materials = materials
+        self._textures = textures
+        self._vertices_texture = vertices_texture
         self._ids = ids
-        self._targets: dict[str, dict[int, list[str]]] = {}
+        self._material_targets: dict[str, dict[int, list[str]]] = {}
+        self._texture_targets: dict[str, dict[int, list[_TextureTarget]]] = {}
 
     def paint(
         self,
         ns: dict[str, str],
         polygon: ElementTree.Element,
+        surface: list[Any],
         material_by_theme: dict[str, int],
+        texture_by_theme: dict[str, list[Any]],
     ) -> None:
-        """Give ``polygon`` a document-unique ``gml:id`` and record it as a target of each theme's material."""
+        """Give ``polygon`` a document-unique ``gml:id`` and record the materials/textures painting it."""
         polygon_id = self._ids.allocate("poly")
         polygon.set(_q(ns, "gml", "id"), polygon_id)
         for theme, index in material_by_theme.items():
-            self._targets.setdefault(theme, {}).setdefault(index, []).append(polygon_id)
+            self._material_targets.setdefault(theme, {}).setdefault(index, []).append(
+                polygon_id
+            )
+        if texture_by_theme:
+            self._paint_textures(ns, polygon, surface, polygon_id, texture_by_theme)
+
+    def _paint_textures(
+        self,
+        ns: dict[str, str],
+        polygon: ElementTree.Element,
+        surface: list[Any],
+        polygon_id: str,
+        texture_by_theme: dict[str, list[Any]],
+    ) -> None:
+        """Assign painted-ring ids and record each theme's texture target for ``polygon``.
+
+        ``_polygon_element`` drops rings with fewer than three vertices, so the emitted
+        ``gml:LinearRing`` elements correspond to the surface's **kept** rings, not every ring. The
+        texture ``values`` are indexed over *all* surface rings, so the kept-ring indices bridge the
+        two — without this the UVs would shift onto the wrong ring when a degenerate ring is dropped.
+        ``polygon.iter()`` yields the LinearRings in document order (exterior then interiors), the same
+        order ``_polygon_element`` emitted the kept rings.
+        """
+        kept = [index for index, ring in enumerate(surface) if ring and len(ring) >= 3]
+        linear_rings = [
+            element
+            for element in polygon.iter()
+            if element.tag == _q(ns, "gml", "LinearRing")
+        ]
+        # Each kept ring's gml:id is allocated once and shared across themes: a ring textured under
+        # two themes must keep ONE id — otherwise the second theme overwrites the element's gml:id and
+        # the first theme's textureCoordinates reference a dangling ring (review R2-H1).
+        ring_ids: dict[int, str] = {}
+        for theme, surface_value in texture_by_theme.items():
+            by_texture = self._ring_targets(
+                ns, linear_rings, kept, surface, surface_value, ring_ids
+            )
+            for texture_index, ring_coords in by_texture.items():
+                self._texture_targets.setdefault(theme, {}).setdefault(
+                    texture_index, []
+                ).append((polygon_id, ring_coords))
+
+    def _ring_targets(
+        self,
+        ns: dict[str, str],
+        linear_rings: list[ElementTree.Element],
+        kept: list[int],
+        surface: list[Any],
+        surface_value: list[Any],
+        ring_ids: dict[int, str],
+    ) -> dict[int, list[tuple[str, str]]]:
+        """Map texture index → ``[(ring_id, coords)]`` for one theme's value over ``linear_rings``.
+
+        ``kept[position]`` is the surface-ring index of the ``position``-th emitted ``LinearRing``;
+        ``ring_ids`` memoizes each ring's assigned ``gml:id`` so it is shared across themes.
+        """
+        by_texture: dict[int, list[tuple[str, str]]] = {}
+        for position, ring_element in enumerate(linear_rings):
+            if position >= len(kept):
+                break
+            ring_index = kept[position]
+            if ring_index >= len(surface_value):
+                continue
+            resolved = self._ring_texture(
+                surface_value[ring_index], surface[ring_index]
+            )
+            if resolved is None:
+                continue
+            texture_index, coordinates = resolved
+            if position not in ring_ids:
+                ring_ids[position] = self._ids.allocate("ring")
+                ring_element.set(_q(ns, "gml", "id"), ring_ids[position])
+            by_texture.setdefault(texture_index, []).append(
+                (ring_ids[position], coordinates)
+            )
+        return by_texture
+
+    def _ring_texture(
+        self, ring_value: Any, ring: list[Any]
+    ) -> "tuple[int, str] | None":
+        """A painted ring's ``(texture index, closed textureCoordinates text)``, or ``None`` to skip.
+
+        An unpainted ring — ``[None]`` or an index with no UV coordinates — is skipped **silently**
+        (an unpainted ring is not an error). A **malformed** ``ring_value`` (not a list) or an
+        **invalid** texture/UV index (not an int, or out of range of its pool) is skipped **with a
+        warning** (never crashes ``to_citygml``). The UV coordinates are re-closed to match the
+        emitted ``gml:LinearRing`` — closed exactly when :func:`_pos_list` closes the ``ring`` (an open
+        ring of ≥3 vertices), so the texture-coordinate count equals the ring's position count.
+        """
+        if not isinstance(ring_value, (list, tuple)):
+            warnings.warn(
+                f"CityGML writer: malformed texture ring value {ring_value!r} is ignored",
+                stacklevel=2,
+            )
+            return None
+        if not ring_value or ring_value[0] is None:
+            return None
+        texture_index = ring_value[0]
+        if not isinstance(texture_index, int) or isinstance(texture_index, bool):
+            warnings.warn(
+                f"CityGML writer: non-integer texture index {texture_index!r} is ignored",
+                stacklevel=2,
+            )
+            return None
+        if not 0 <= texture_index < len(self._textures):
+            warnings.warn(
+                f"CityGML writer: texture index {texture_index} is out of range for the "
+                f"{len(self._textures)}-texture pool; that ring is left untextured",
+                stacklevel=2,
+            )
+            return None
+        coordinates: list[list[float]] = []
+        for uv in ring_value[1:]:
+            if not isinstance(uv, int) or isinstance(uv, bool):
+                warnings.warn(
+                    f"CityGML writer: non-integer UV index {uv!r} is ignored; ring untextured",
+                    stacklevel=2,
+                )
+                return None
+            if not 0 <= uv < len(self._vertices_texture):
+                warnings.warn(
+                    f"CityGML writer: UV index {uv} is out of range for the "
+                    f"{len(self._vertices_texture)}-entry vertices-texture pool; ring untextured",
+                    stacklevel=2,
+                )
+                return None
+            coordinates.append(self._vertices_texture[uv])
+        if not coordinates:
+            return None
+        # Close the UV list exactly when _pos_list closes the geometry ring (an open ring of ≥3
+        # vertices), so textureCoordinates has one pair per emitted ring position — regardless of
+        # whether the first and last UV coordinates happen to coincide (review R2-L1).
+        if len(ring) >= 3 and ring[0] != ring[-1]:
+            coordinates = [*coordinates, coordinates[0]]
+        text = " ".join(repr(float(c)) for pair in coordinates for c in pair)
+        return texture_index, text
 
     def appearance_members(self, ns: dict[str, str]) -> list[ElementTree.Element]:
-        """One ``app:appearanceMember``/``app:Appearance`` element per painted theme (``[]`` if none)."""
+        """One ``app:appearanceMember``/``app:Appearance`` per painted theme (``[]`` if none)."""
         members: list[ElementTree.Element] = []
-        for theme, by_index in self._targets.items():
+        themes = list(dict.fromkeys([*self._material_targets, *self._texture_targets]))
+        for theme in themes:
             member = ElementTree.Element(_q(ns, "app", "appearanceMember"))
             appearance = ElementTree.SubElement(member, _q(ns, "app", "Appearance"))
             theme_element = ElementTree.SubElement(appearance, _q(ns, "app", "theme"))
             theme_element.text = theme
-            painted = False
-            for index, polygon_ids in by_index.items():
-                if not 0 <= index < len(self._materials):
-                    warnings.warn(
-                        f"CityGML writer: material index {index} is out of range for the "
-                        f"{len(self._materials)}-material pool; those surfaces are left unpainted",
-                        stacklevel=2,
-                    )
-                    continue
-                surface_data = ElementTree.SubElement(
-                    appearance, _q(ns, "app", "surfaceDataMember")
-                )
-                self._x3d_material(
-                    ns, surface_data, self._materials[index], polygon_ids
-                )
-                painted = True
-            # Only emit a theme's Appearance if it actually painted something — a theme whose every
-            # index was out of range must not leave an empty app:Appearance behind.
+            painted = self._emit_materials(ns, appearance, theme)
+            painted = self._emit_textures(ns, appearance, theme) or painted
+            # Only emit a theme's Appearance if it painted something — a theme whose every index was
+            # out of range must not leave an empty app:Appearance behind.
             if painted:
                 members.append(member)
         return members
+
+    def _emit_materials(
+        self, ns: dict[str, str], appearance: ElementTree.Element, theme: str
+    ) -> bool:
+        """Append this theme's ``app:X3DMaterial`` surface-data members; return whether any was added."""
+        painted = False
+        for index, polygon_ids in self._material_targets.get(theme, {}).items():
+            if not 0 <= index < len(self._materials):
+                warnings.warn(
+                    f"CityGML writer: material index {index} is out of range for the "
+                    f"{len(self._materials)}-material pool; those surfaces are left unpainted",
+                    stacklevel=2,
+                )
+                continue
+            surface_data = ElementTree.SubElement(
+                appearance, _q(ns, "app", "surfaceDataMember")
+            )
+            self._x3d_material(ns, surface_data, self._materials[index], polygon_ids)
+            painted = True
+        return painted
+
+    def _emit_textures(
+        self, ns: dict[str, str], appearance: ElementTree.Element, theme: str
+    ) -> bool:
+        """Append this theme's ``app:ParameterizedTexture`` surface-data members; return whether any."""
+        painted = False
+        for texture_index, target_list in self._texture_targets.get(theme, {}).items():
+            texture = self._textures[texture_index]
+            if not texture.get("image"):
+                warnings.warn(
+                    f"CityGML writer: texture {texture_index} has no image URI; its surfaces are "
+                    "left untextured (an app:ParameterizedTexture needs an imageURI)",
+                    stacklevel=2,
+                )
+                continue
+            surface_data = ElementTree.SubElement(
+                appearance, _q(ns, "app", "surfaceDataMember")
+            )
+            self._parameterized_texture(ns, surface_data, texture, target_list)
+            painted = True
+        return painted
+
+    def _parameterized_texture(
+        self,
+        ns: dict[str, str],
+        surface_data: ElementTree.Element,
+        texture: dict[str, Any],
+        target_list: list[_TextureTarget],
+    ) -> None:
+        """Build one ``app:ParameterizedTexture`` (image + per-polygon ``app:target`` TexCoordLists)."""
+        parameterized = ElementTree.SubElement(
+            surface_data, _q(ns, "app", "ParameterizedTexture")
+        )
+        parameterized.set(_q(ns, "gml", "id"), self._ids.allocate("tex"))
+        image = ElementTree.SubElement(parameterized, _q(ns, "app", "imageURI"))
+        image.text = str(texture.get("image", ""))
+        for polygon_id, ring_coords in target_list:
+            target = ElementTree.SubElement(parameterized, _q(ns, "app", "target"))
+            target.set("uri", f"#{polygon_id}")
+            coord_list = ElementTree.SubElement(target, _q(ns, "app", "TexCoordList"))
+            for ring_id, coordinates in ring_coords:
+                texture_coordinates = ElementTree.SubElement(
+                    coord_list, _q(ns, "app", "textureCoordinates")
+                )
+                texture_coordinates.set("ring", f"#{ring_id}")
+                texture_coordinates.text = coordinates
 
     def _x3d_material(
         self,
@@ -276,6 +482,29 @@ def _surface_materials(geometry: Geometry) -> list[dict[str, int]]:
     return per_surface
 
 
+def _surface_textures(geometry: Geometry) -> list[dict[str, list[Any]]]:
+    """Per-surface ``{theme: surface texture value}`` for a geometry, in :func:`iter_surfaces` order.
+
+    The texture ``values`` nest parallel to the boundaries at *surface* level (each surface's value is
+    its list of per-ring ``[texture_index, uv₀, …]`` / ``[None]`` entries), so the value for surface
+    *i* lines up with the *i*-th surface the writer emits. An untextured (``None``) surface contributes
+    no entry.
+    """
+    texture_map = (geometry.appearance or {}).get("texture") or {}
+    count = sum(1 for _ in iter_surfaces(geometry.boundaries, geometry.semantic_values))
+    per_surface: list[dict[str, list[Any]]] = [{} for _ in range(count)]
+    for theme, spec in texture_map.items():
+        values = (spec or {}).get("values")
+        if values is None:
+            continue
+        for position, (_surface, surface_value) in enumerate(
+            iter_surfaces(geometry.boundaries, values)
+        ):
+            if surface_value is not None:
+                per_surface[position][theme] = surface_value
+    return per_surface
+
+
 def _pos_list(ring: list[Any]) -> tuple[str, int]:
     """The ``gml:posList`` text for a ring and its ``srsDimension``.
 
@@ -322,14 +551,15 @@ def _bounded_by(
     semantic_type: str,
     surface: list[Any],
     lod: int,
-    targets: _MaterialTargets,
+    targets: _Appearances,
     material_by_theme: dict[str, int],
+    texture_by_theme: dict[str, list[Any]],
 ) -> ElementTree.Element | None:
     """A ``bldg:boundedBy`` wrapping one boundary surface of ``semantic_type`` and its polygon."""
     polygon = _polygon_element(ns, surface)
     if polygon is None:
         return None
-    targets.paint(ns, polygon, material_by_theme)
+    targets.paint(ns, polygon, surface, material_by_theme, texture_by_theme)
     bounded_by = ElementTree.Element(_q(ns, "bldg", "boundedBy"))
     boundary_surface = ElementTree.SubElement(bounded_by, _q(ns, "bldg", semantic_type))
     multi_surface_property = ElementTree.SubElement(
@@ -385,14 +615,15 @@ def _append_plain_surface(
     feature: ElementTree.Element,
     surface: list[Any],
     lod: int,
-    targets: _MaterialTargets,
+    targets: _Appearances,
     material_by_theme: dict[str, int],
+    texture_by_theme: dict[str, list[Any]],
 ) -> None:
     """Append a surface with no semantic type as a bare ``bldg:lod{n}MultiSurface`` on the feature."""
     plain = _polygon_element(ns, surface)
     if plain is None:
         return
-    targets.paint(ns, plain, material_by_theme)
+    targets.paint(ns, plain, surface, material_by_theme, texture_by_theme)
     multi_property = ElementTree.SubElement(
         feature, _q(ns, "bldg", f"lod{lod}MultiSurface")
     )
@@ -406,8 +637,9 @@ def _append_solid(
     feature: ElementTree.Element,
     geometry: Geometry,
     lod: int,
-    targets: _MaterialTargets,
+    targets: _Appearances,
     surface_materials: list[dict[str, int]],
+    surface_textures: list[dict[str, list[Any]]],
 ) -> None:
     """Append a (non-semantic) ``Solid`` as a ``bldg:lod{n}Solid`` of one ``gml:CompositeSurface``.
 
@@ -428,7 +660,8 @@ def _append_solid(
         material = (
             surface_materials[position] if position < len(surface_materials) else {}
         )
-        targets.paint(ns, polygon, material)
+        texture = surface_textures[position] if position < len(surface_textures) else {}
+        targets.paint(ns, polygon, surface, material, texture)
         polygons.append(polygon)
     if not polygons:
         return
@@ -445,7 +678,7 @@ def _append_geometry(
     ns: dict[str, str],
     feature: ElementTree.Element,
     geometry: Geometry,
-    targets: _MaterialTargets,
+    targets: _Appearances,
 ) -> None:
     """Append one IR geometry to ``feature`` — a ``gml:Solid`` when it is a plain solid, else surfaces.
 
@@ -460,8 +693,11 @@ def _append_geometry(
     """
     lod = _lod_number(geometry)
     surface_materials = _surface_materials(geometry)
+    surface_textures = _surface_textures(geometry)
     if geometry.type == "Solid" and not geometry.semantics:
-        _append_solid(ns, feature, geometry, lod, targets, surface_materials)
+        _append_solid(
+            ns, feature, geometry, lod, targets, surface_materials, surface_textures
+        )
         return
     for position, (surface, semantic_value) in enumerate(
         iter_surfaces(geometry.boundaries, geometry.semantic_values)
@@ -469,12 +705,13 @@ def _append_geometry(
         material = (
             surface_materials[position] if position < len(surface_materials) else {}
         )
+        texture = surface_textures[position] if position < len(surface_textures) else {}
         surface_object = geometry.semantic_for(semantic_value)
         if surface_object is None:
-            _append_plain_surface(ns, feature, surface, lod, targets, material)
+            _append_plain_surface(ns, feature, surface, lod, targets, material, texture)
             continue
         bounded_by = _bounded_by(
-            ns, surface_object.type, surface, lod, targets, material
+            ns, surface_object.type, surface, lod, targets, material, texture
         )
         if bounded_by is not None:
             feature.append(bounded_by)
@@ -486,7 +723,7 @@ def _append_children(
     city_object: CityObject,
     model: CityModel,
     visited: set[str],
-    targets: _MaterialTargets,
+    targets: _Appearances,
 ) -> None:
     """Nest each child object: a ``BuildingPart`` under ``bldg:consistsOfBuildingPart``, else attached."""
     for child_id in city_object.children:
@@ -510,7 +747,7 @@ def _feature_element(
     city_object: CityObject,
     model: CityModel,
     visited: set[str],
-    targets: _MaterialTargets,
+    targets: _Appearances,
 ) -> ElementTree.Element:
     """Build one ``bldg:<type>`` feature element: its id, attributes, surfaces and nested children."""
     feature = ElementTree.Element(_q(ns, "bldg", city_object.type))
@@ -637,6 +874,23 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
             [1.0, 0.0, 0.0]
 
             ```
+        - A surface's texture is written as an ``app:ParameterizedTexture`` and round-trips:
+            ```python
+            >>> from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+            >>> from pyramids_citymodels.readers.citygml import parse_citygml
+            >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+            >>> model = CityModel(
+            ...     appearances={"textures": [{"type": "PNG", "image": "wall.png"}],
+            ...                  "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]},
+            ...     objects={"b": CityObject(id="b", type="Building", geometries=[
+            ...         Geometry(type="MultiSurface", lod="2", boundaries=[surface],
+            ...                  appearance={"texture": {"t": {"values": [[[0, 0, 1, 2]]]}}})])})
+            >>> "ParameterizedTexture" in write_citygml(model)
+            True
+            >>> parse_citygml(write_citygml(model)).appearances["textures"][0]["image"]
+            'wall.png'
+
+            ```
     """
     # Emit the source version's namespaces for a version this writer matches (1.0/2.0), so the
     # version string round-trips through the reader; a 3.0 or unknown source falls back to 2.0. The
@@ -673,9 +927,13 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
     _add_envelope(ns, root, model)
 
     materials = (model.appearances or {}).get("materials") or []
+    textures = (model.appearances or {}).get("textures") or []
+    vertices_texture = (model.appearances or {}).get("vertices-texture") or []
     # Seed the id allocator with the city-object ids so generated polygon/material ids never collide
     # with them (gml:id is an xsd:ID — unique per document).
-    targets = _MaterialTargets(materials, _UniqueIds(model.objects))
+    targets = _Appearances(
+        materials, textures, vertices_texture, _UniqueIds(model.objects)
+    )
     visited: set[str] = set()
     for city_object in model.objects.values():
         if city_object.parents:
