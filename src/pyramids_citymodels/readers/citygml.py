@@ -355,8 +355,10 @@ def _surfaces_from_polygon(
     return [exterior, *interiors] if exterior else []
 
 
-def _collect_building_attributes(element: ElementTree.Element) -> dict[str, Any]:
-    """Lift a building's attributes off its direct children.
+def _collect_building_attributes(
+    element: ElementTree.Element,
+) -> "tuple[dict[str, Any], dict[str, str]]":
+    """Lift a building's attributes (and any ``uom`` units) off its direct children.
 
     Every leaf (childless) element with text is captured under its local name, so unknown and
     third-party **ADE** attributes survive rather than being dropped by a fixed whitelist (#13);
@@ -367,12 +369,14 @@ def _collect_building_attributes(element: ElementTree.Element) -> dict[str, Any]
     The numeric coercion is best-effort: a value that does not parse (``measuredHeight`` of
     ``"tall"``, a ``gYear`` carrying a timezone, a ``storeys*`` of ``"3.0"``) is kept as the raw
     string, so type parity with the CityJSON reader is *approximate* — a number when parseable,
-    else the original text. Only element text is captured; attribute metadata such as a
-    ``measuredHeight`` ``uom`` unit is not. A **repeated** property (CityGML allows several
+    else the original text. A leaf element's ``uom`` attribute (e.g. ``measuredHeight uom="m"``) is
+    captured into a parallel ``units`` map so it round-trips without polluting the plain value. A
+    **repeated** property (CityGML allows several
     ``bldg:function`` / ``bldg:usage``) keeps only its **last** occurrence — attributes are a flat
     ``dict``, not a multimap.
     """
     attributes: dict[str, Any] = {}
+    units: dict[str, str] = {}
     for child in element:
         local = _local(child.tag)
         is_leaf = len(child) == 0
@@ -384,6 +388,9 @@ def _collect_building_attributes(element: ElementTree.Element) -> dict[str, Any]
                 attributes[local] = _coerce_number(text, int)
             else:
                 attributes[local] = text
+            uom = child.attrib.get("uom")
+            if uom:
+                units[local] = uom
         elif local in (
             "stringAttribute",
             "intAttribute",
@@ -407,7 +414,7 @@ def _collect_building_attributes(element: ElementTree.Element) -> dict[str, Any]
                     attributes[name] = _coerce_number(raw, float)
                 else:
                     attributes[name] = raw
-    return attributes
+    return attributes, units
 
 
 def _nearest_feature_id(
@@ -435,7 +442,7 @@ def _detect_crs(root: ElementTree.Element) -> Any:
 
 def _citygml_candidate_features(
     root: ElementTree.Element, selector: "ObjectFilter | None"
-) -> "tuple[list[tuple[ElementTree.Element, str | None]], dict[ElementTree.Element, dict[str, Any]]]":
+) -> "tuple[list[tuple[ElementTree.Element, str | None]], dict[ElementTree.Element, tuple[dict[str, Any], dict[str, str]]]]":
     """The Building/BuildingPart features passing the metadata + bbox subset, with their attributes.
 
     A feature passes when it matches by id/type/attributes and is not proven outside the bbox by its
@@ -449,25 +456,27 @@ def _citygml_candidate_features(
         document order, and every candidate element mapped to its collected attributes.
     """
     candidates: list[tuple[ElementTree.Element, str | None]] = []
-    attributes_by_element: dict[ElementTree.Element, dict[str, Any]] = {}
+    attributes_by_element: dict[
+        ElementTree.Element, tuple[dict[str, Any], dict[str, str]]
+    ] = {}
     for element in root.iter():
         if _local(element.tag) not in _CITY_OBJECT_NAMES:
             continue
         gml_identifier = _gml_id(element)
-        attributes = _collect_building_attributes(element)
+        attributes, units = _collect_building_attributes(element)
         if selector is not None and (
             not selector.matches(gml_identifier or "", _local(element.tag), attributes)
             or selector.rejects_extent(_feature_envelope(element))
         ):
             continue
         candidates.append((element, gml_identifier))
-        attributes_by_element[element] = attributes
+        attributes_by_element[element] = (attributes, units)
     return candidates, attributes_by_element
 
 
 def _assign_feature_ids(
     root: ElementTree.Element, selector: "ObjectFilter | None"
-) -> "tuple[dict[ElementTree.Element, str], dict[ElementTree.Element, dict[str, Any]]]":
+) -> "tuple[dict[ElementTree.Element, str], dict[ElementTree.Element, tuple[dict[str, Any], dict[str, str]]]]":
     """Assign a stable id to every *kept* Building/BuildingPart, applying the read-time subset.
 
     Gathers the candidate features (:func:`_citygml_candidate_features`), thins them by any random
@@ -1142,15 +1151,19 @@ def _create_city_objects(
     model: CityModel,
     feature_ids: dict[ElementTree.Element, str],
     parent_of: dict[ElementTree.Element, ElementTree.Element],
-    attributes_by_element: dict[ElementTree.Element, dict[str, Any]],
+    attributes_by_element: dict[
+        ElementTree.Element, tuple[dict[str, Any], dict[str, str]]
+    ],
 ) -> None:
     """Add one :class:`CityObject` per feature to ``model``, linking a part to its parent feature."""
     for element, identifier in feature_ids.items():
         parent_feature_id = _nearest_feature_id(element, parent_of, feature_ids)
+        attributes, units = attributes_by_element[element]
         model.objects[identifier] = CityObject(
             id=identifier,
             type=_local(element.tag),
-            attributes=attributes_by_element[element],
+            attributes=attributes,
+            attribute_units=units,
             parents=[parent_feature_id] if parent_feature_id else [],
         )
         if parent_feature_id:

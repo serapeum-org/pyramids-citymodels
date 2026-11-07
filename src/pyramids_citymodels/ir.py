@@ -209,6 +209,8 @@ class CityObject:
         id: The object's identifier, unique within the file.
         type: The object class, e.g. ``"Building"``, ``"BuildingPart"``, ``"Bridge"``.
         attributes: The object's attributes, passed through verbatim.
+        attribute_units: Optional unit of measure (``uom``) per attribute name, e.g.
+            ``{"measuredHeight": "m"}`` — a side map so ``attributes`` stays a plain name→value dict.
         geometries: The object's geometries (often one per level of detail).
         parents: Ids of parent objects (e.g. a ``BuildingPart``'s ``Building``).
         children: Ids of child objects.
@@ -217,6 +219,7 @@ class CityObject:
     id: str
     type: str
     attributes: dict[str, Any] = field(default_factory=dict)
+    attribute_units: dict[str, str] = field(default_factory=dict)
     geometries: list[Geometry] = field(default_factory=list)
     parents: list[str] = field(default_factory=list)
     children: list[str] = field(default_factory=list)

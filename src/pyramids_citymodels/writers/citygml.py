@@ -586,14 +586,24 @@ def _lod_number(geometry: Geometry) -> int:
 
 
 def _add_attributes(
-    ns: dict[str, str], feature: ElementTree.Element, attributes: dict[str, Any]
+    ns: dict[str, str],
+    feature: ElementTree.Element,
+    attributes: dict[str, Any],
+    units: dict[str, str] | None = None,
 ) -> None:
     """Append an object's attributes: native ``bldg:`` elements for the known numeric ones, else
-    a typed ``gen:*Attribute`` that preserves the Python value type on read."""
+    a typed ``gen:*Attribute`` that preserves the Python value type on read.
+
+    A ``uom`` from ``units`` is re-emitted on the matching native element (e.g.
+    ``<bldg:measuredHeight uom="m">``), so a unit read from CityGML round-trips.
+    """
+    units = units or {}
     for name, value in attributes.items():
         if name in _NATIVE_BUILDING_ATTRIBUTES:
             element = ElementTree.SubElement(feature, _q(ns, "bldg", name))
             element.text = repr(value) if isinstance(value, float) else str(value)
+            if name in units:
+                element.set("uom", units[name])
             continue
         # bool is an int subclass — keep it as a string, not an intAttribute.
         if isinstance(value, bool):
@@ -753,7 +763,7 @@ def _feature_element(
     feature = ElementTree.Element(_q(ns, "bldg", city_object.type))
     feature.set(_q(ns, "gml", "id"), city_object.id)
     visited.add(city_object.id)
-    _add_attributes(ns, feature, city_object.attributes)
+    _add_attributes(ns, feature, city_object.attributes, city_object.attribute_units)
     for geometry in city_object.geometries:
         _append_geometry(ns, feature, geometry, targets)
     _append_children(ns, feature, city_object, model, visited, targets)
