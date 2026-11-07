@@ -153,3 +153,14 @@ def test_writing_a_material_emits_no_warning() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         _material_model().to_citygml()
+
+
+def test_material_without_a_name_still_emits_and_round_trips() -> None:
+    # A material lacking a "name" gets no gml:id on its X3DMaterial, but still paints and round-trips.
+    model = _material_model()
+    model.appearances["materials"][0] = {"diffuseColor": [0.0, 1.0, 0.0]}
+    xml = model.to_citygml()
+    assert "X3DMaterial" in xml
+    back = parse_citygml(xml)
+    assert back.appearances["materials"][0]["diffuseColor"] == [0.0, 1.0, 0.0]
+    assert back.objects["b"].geometries[0].appearance["material"]["t"]["values"] == [0]
