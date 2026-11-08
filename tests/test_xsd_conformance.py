@@ -211,3 +211,47 @@ def test_30_plain_and_solid_are_valid(schema_30):
             "3.0", "Building", Geometry(type="Solid", lod="2", boundaries=[[_wall()]])
         ).to_citygml(),
     )
+
+
+def _mixed(version: str) -> CityModel:
+    # One geometry carrying BOTH a semantic boundary surface and a plain surface (value None) — the
+    # content-order case (R2-M1): geometry vs boundedBy must be sequenced correctly per version.
+    roof = [[(0.0, 0.0, 1.0), (1.0, 0.0, 1.0), (1.0, 1.0, 1.0)]]
+    return _model(
+        version,
+        "Building",
+        Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_wall(), roof],
+            semantics=[SemanticSurface(type="RoofSurface")],
+            semantic_values=[None, 0],
+        ),
+    )
+
+
+@pytest.mark.parametrize("version", ["2.0", "3.0"])
+def test_mixed_semantic_and_plain_geometry_is_valid(request, version):
+    # R2-M1: boundedBy/boundary and the aggregated plain geometry must be ordered per the version's
+    # content sequence (2.0: geometry before boundedBy; 3.0: boundary before geometry).
+    schema = request.getfixturevalue("schema_20" if version == "2.0" else "schema_30")
+    _assert_valid(schema, _mixed(version).to_citygml())
+
+
+def test_two_same_lod_geometries_aggregate_to_one_property(schema_20):
+    # R2-L1: two LOD-2 plain geometries on one object share one lod2MultiSurface (maxOccurs=1).
+    roof = [[(0.0, 0.0, 1.0), (1.0, 0.0, 1.0), (1.0, 1.0, 1.0)]]
+    model = CityModel(
+        version="2.0",
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(type="MultiSurface", lod="2", boundaries=[_wall()]),
+                    Geometry(type="MultiSurface", lod="2", boundaries=[roof]),
+                ],
+            )
+        },
+    )
+    _assert_valid(schema_20, model.to_citygml())

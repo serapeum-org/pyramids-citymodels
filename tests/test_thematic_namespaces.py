@@ -81,6 +81,87 @@ def test_bridge_boundary_surface_and_geometry_are_in_the_bridge_module() -> None
     assert "bldg:" not in xml  # nothing leaks into the building namespace
 
 
+def test_mixed_geometry_emits_plain_before_bounded_by() -> None:
+    # R2-M1: in CityGML 2.0 the plain lod{n}MultiSurface must precede boundedBy in the content
+    # sequence; a geometry mixing a semantic and a plain surface must emit them in that order.
+    roof = [[(0.0, 0.0, 1.0), (1.0, 0.0, 1.0), (1.0, 1.0, 1.0)]]
+    model = CityModel(
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[
+                            [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 0.0, 1.0)]],
+                            roof,
+                        ],
+                        semantics=[SemanticSurface(type="RoofSurface")],
+                        semantic_values=[None, 0],
+                    )
+                ],
+            )
+        }
+    )
+    xml = model.to_citygml()
+    # (use the bldg: prefix: a bare "boundedBy>" also matches the root gml:boundedBy envelope)
+    assert xml.index("<bldg:lod2MultiSurface>") < xml.index("<bldg:boundedBy>")
+
+
+def test_two_same_lod_geometries_aggregate_to_one_property() -> None:
+    # R2-L1: two LOD-2 geometries on one object share a single lod2MultiSurface (maxOccurs=1).
+    roof = [[(0.0, 0.0, 1.0), (1.0, 0.0, 1.0), (1.0, 1.0, 1.0)]]
+    model = CityModel(
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[
+                            [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                        ],
+                    ),
+                    Geometry(type="MultiSurface", lod="2", boundaries=[roof]),
+                ],
+            )
+        }
+    )
+    assert (
+        model.to_citygml().count("<bldg:lod2MultiSurface>") == 1
+    )  # one aggregated property
+
+
+def test_demoted_semantic_surface_warns() -> None:
+    # R2-N1: a typed surface a module cannot carry as a boundary surface is written as plain geometry
+    # (its semantic type dropped) and that lossy demotion is warned, not silent.
+    model = CityModel(
+        objects={
+            "l": CityObject(
+                id="l",
+                type="LandUse",  # no boundedBy slot
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[
+                            [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                        ],
+                        semantics=[SemanticSurface(type="RoofSurface")],
+                        semantic_values=[0],
+                    )
+                ],
+            )
+        }
+    )
+    with pytest.warns(UserWarning, match="semantic boundary surface"):
+        model.to_citygml()
+
+
 def test_plain_surfaces_aggregate_into_one_geometry_property() -> None:
     # The non-semantic surfaces of a geometry share ONE lodNMultiSurface property (it is maxOccurs=1);
     # emitting one property per surface would be schema-invalid.

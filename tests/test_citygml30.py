@@ -119,6 +119,31 @@ def test_30_boundary_surface_uses_core_boundary_and_construction_module() -> Non
     assert ":lod2MultiSurface>" in xml
 
 
+def test_30_relief_without_a_slot_falls_back_and_warns() -> None:
+    # R2-L2: the 3.0 path honours the per-type profile — a ReliefFeature (no surface slot) falls back
+    # to a bldg: property and warns, just like in 2.0, rather than silently emitting a core: slot.
+    model = CityModel(
+        version="3.0",
+        objects={
+            "r": CityObject(
+                id="r",
+                type="ReliefFeature",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[
+                            [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                        ],
+                    )
+                ],
+            )
+        },
+    )
+    with pytest.warns(UserWarning, match="no geometry slot"):
+        model.to_citygml()
+
+
 def test_unknown_version_downgrades_to_20_with_warning() -> None:
     model = CityModel(
         version="9.9",

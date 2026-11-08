@@ -411,8 +411,13 @@ def _collect_building_attributes(
                 raw = value_element.text.strip()
                 if local == "intAttribute":
                     attributes[name] = _coerce_number(raw, int)
-                elif local in ("doubleAttribute", "measureAttribute"):
+                elif local == "doubleAttribute":
                     attributes[name] = _coerce_number(raw, float)
+                elif local == "measureAttribute":
+                    # A measure is a gml:MeasureType (double), but preserve the value's integer-ness
+                    # so an int attribute with a unit round-trips as int: "5" → int, "5.0" → float.
+                    numeric = float if "." in raw or "e" in raw.lower() else int
+                    attributes[name] = _coerce_number(raw, numeric)
                 else:
                     attributes[name] = raw
                 # A gen:measureAttribute carries its unit as a uom on the value element; capture it so

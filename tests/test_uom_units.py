@@ -102,6 +102,24 @@ def test_generic_attribute_unit_round_trips() -> None:
     assert back.attribute_units == {"customLength": "km"}
 
 
+def test_integer_measure_attribute_round_trips_as_int() -> None:
+    # An integer value with a unit keeps its int type across the round-trip (not coerced to float).
+    model = CityModel(
+        objects={
+            "B": CityObject(
+                id="B",
+                type="Building",
+                attributes={"count": 5},
+                attribute_units={"count": "pcs"},
+            )
+        }
+    )
+    back = parse_citygml(model.to_citygml()).objects["B"]
+    assert back.attributes["count"] == 5
+    assert isinstance(back.attributes["count"], int)
+    assert back.attribute_units == {"count": "pcs"}
+
+
 def test_non_numeric_unit_attribute_is_not_a_measure_attribute() -> None:
     # A unit only makes sense on a number; a stray unit on a string value must not produce an invalid
     # (non-numeric) gen:measureAttribute — it falls back to a plain stringAttribute.
