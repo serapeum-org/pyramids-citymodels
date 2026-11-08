@@ -59,7 +59,8 @@ def test_kml_coordinates_are_lon_lat_alt_and_closed() -> None:
     ns = "{http://www.opengis.net/kml/2.2}"
     root = ElementTree.fromstring(_model().to_kml())
     coords = root.find(f".//{ns}coordinates")
-    assert coords is not None and coords.text is not None
+    assert coords is not None
+    assert coords.text is not None
     pairs = coords.text.split()
     assert pairs[0] == "0.0,0.0,0.0"
     assert pairs[0] == pairs[-1]  # LinearRing closed

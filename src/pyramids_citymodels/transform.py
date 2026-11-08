@@ -20,7 +20,7 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored 
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 from pyramids_citymodels.ir import CityModel, Geometry, is_coordinate, iter_surfaces
 
@@ -44,7 +44,7 @@ def _rebuild(
             copied,
             geometries=[geometry_fn(geometry) for geometry in copied.geometries],
         )
-    return replace(model, objects=objects)
+    return cast(CityModel, replace(model, objects=objects))
 
 
 def _map_coordinates(node: Any, point_fn: Callable[[Any], Any]) -> Any:
@@ -126,12 +126,15 @@ def _triangulate_geometry(geometry: Geometry) -> Geometry:
         for apex in range(1, len(ring) - 1):  # fan from the first vertex
             surfaces.append([[ring[0], ring[apex], ring[apex + 1]]])
             values.append(value)
-    return replace(
-        geometry,
-        type="MultiSurface",
-        boundaries=surfaces,
-        semantic_values=values if geometry.semantics else None,
-        appearance=None,
+    return cast(
+        Geometry,
+        replace(
+            geometry,
+            type="MultiSurface",
+            boundaries=surfaces,
+            semantic_values=values if geometry.semantics else None,
+            appearance=None,
+        ),
     )
 
 

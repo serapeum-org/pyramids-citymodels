@@ -355,6 +355,70 @@ def _surfaces_from_polygon(
     return [exterior, *interiors] if exterior else []
 
 
+#: The generic ``gen:*Attribute`` wrapper kinds read as name/value pairs (``measureAttribute`` carries
+#: a ``uom`` on its value; the others do not).
+_GENERIC_ATTRIBUTE_KINDS = frozenset(
+    {
+        "stringAttribute",
+        "intAttribute",
+        "doubleAttribute",
+        "genericAttribute",
+        "measureAttribute",
+    }
+)
+
+
+def _read_leaf_attribute(
+    local: str,
+    child: ElementTree.Element,
+    attributes: "dict[str, Any]",
+    units: "dict[str, str]",
+) -> None:
+    """Read a leaf attribute element: coerce a known-numeric name, and capture any ``uom`` unit."""
+    text = (child.text or "").strip()
+    if local in _FLOAT_BUILDING_ATTRIBUTES:
+        attributes[local] = _coerce_number(text, float)
+    elif local in _INT_BUILDING_ATTRIBUTES:
+        attributes[local] = _coerce_number(text, int)
+    else:
+        attributes[local] = text
+    uom = child.attrib.get("uom")
+    if uom:
+        units[local] = uom
+
+
+def _read_generic_attribute(
+    local: str,
+    child: ElementTree.Element,
+    attributes: "dict[str, Any]",
+    units: "dict[str, str]",
+) -> None:
+    """Read one ``gen:*Attribute`` wrapper into ``attributes`` (and ``units`` for a measure)."""
+    name = child.attrib.get("name") or _gml_id(child)
+    value_element = next(
+        (grandchild for grandchild in child if _local(grandchild.tag) == "value"),
+        None,
+    )
+    if not (name and value_element is not None and value_element.text):
+        return
+    raw = value_element.text.strip()
+    if local == "intAttribute":
+        attributes[name] = _coerce_number(raw, int)
+    elif local == "doubleAttribute":
+        attributes[name] = _coerce_number(raw, float)
+    elif local == "measureAttribute":
+        # A measure is a gml:MeasureType (double), but preserve the value's integer-ness so an int
+        # attribute with a unit round-trips as int: "5" → int, "5.0" → float.
+        numeric = float if "." in raw or "e" in raw.lower() else int
+        attributes[name] = _coerce_number(raw, numeric)
+        # The unit lives as a uom on the value element; capture it so the unit round-trips.
+        measure_uom = value_element.attrib.get("uom")
+        if measure_uom:
+            units[name] = measure_uom
+    else:
+        attributes[name] = raw
+
+
 def _collect_building_attributes(
     element: ElementTree.Element,
 ) -> "tuple[dict[str, Any], dict[str, str]]":
@@ -379,52 +443,10 @@ def _collect_building_attributes(
     units: dict[str, str] = {}
     for child in element:
         local = _local(child.tag)
-        is_leaf = len(child) == 0
-        if is_leaf and child.text and child.text.strip():
-            text = child.text.strip()
-            if local in _FLOAT_BUILDING_ATTRIBUTES:
-                attributes[local] = _coerce_number(text, float)
-            elif local in _INT_BUILDING_ATTRIBUTES:
-                attributes[local] = _coerce_number(text, int)
-            else:
-                attributes[local] = text
-            uom = child.attrib.get("uom")
-            if uom:
-                units[local] = uom
-        elif local in (
-            "stringAttribute",
-            "intAttribute",
-            "doubleAttribute",
-            "genericAttribute",
-            "measureAttribute",
-        ):
-            name = child.attrib.get("name") or _gml_id(child)
-            value_element = next(
-                (
-                    grandchild
-                    for grandchild in child
-                    if _local(grandchild.tag) == "value"
-                ),
-                None,
-            )
-            if name and value_element is not None and value_element.text:
-                raw = value_element.text.strip()
-                if local == "intAttribute":
-                    attributes[name] = _coerce_number(raw, int)
-                elif local == "doubleAttribute":
-                    attributes[name] = _coerce_number(raw, float)
-                elif local == "measureAttribute":
-                    # A measure is a gml:MeasureType (double), but preserve the value's integer-ness
-                    # so an int attribute with a unit round-trips as int: "5" → int, "5.0" → float.
-                    numeric = float if "." in raw or "e" in raw.lower() else int
-                    attributes[name] = _coerce_number(raw, numeric)
-                else:
-                    attributes[name] = raw
-                # A gen:measureAttribute carries its unit as a uom on the value element; capture it so
-                # a generic attribute's unit round-trips (the writer re-emits it as a measureAttribute).
-                measure_uom = value_element.attrib.get("uom")
-                if measure_uom:
-                    units[name] = measure_uom
+        if len(child) == 0 and child.text and child.text.strip():
+            _read_leaf_attribute(local, child, attributes, units)
+        elif local in _GENERIC_ATTRIBUTE_KINDS:
+            _read_generic_attribute(local, child, attributes, units)
     return attributes, units
 
 

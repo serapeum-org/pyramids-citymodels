@@ -85,7 +85,8 @@ def test_each_leaf_b3dm_is_8_byte_aligned() -> None:
         data = leaf.read_bytes()
         _magic, _ver, length, ftj, ftb, btj, btb = _B3DM_HEADER.unpack_from(data, 0)
         glb_offset = _B3DM_HEADER.size + ftj + ftb + btj + btb
-        assert glb_offset % 8 == 0 and len(data) % 8 == 0
+        assert glb_offset % 8 == 0
+        assert len(data) % 8 == 0
         assert length == len(data)
         _gm, _gv, glb_len = struct.unpack_from("<III", data[glb_offset:], 0)
         assert glb_len % 8 == 0

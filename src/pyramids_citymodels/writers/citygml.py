@@ -893,37 +893,49 @@ def _add_attributes(
     for name, value in attributes.items():
         if native_ok and name in _NATIVE_BUILDING_ATTRIBUTES:
             native.append((name, value))
-            continue
-        # A numeric attribute with a unit → gen:measureAttribute (carries the uom on its value).
-        if (
-            name in units
-            and isinstance(value, (int, float))
-            and not isinstance(value, bool)
-        ):
-            measure = ElementTree.SubElement(feature, _q(ns, "gen", "measureAttribute"))
-            measure.set("name", name)
-            value_element = ElementTree.SubElement(measure, _q(ns, "gen", "value"))
-            value_element.set("uom", units[name])
-            value_element.text = _text(value)
-            continue
-        # bool is an int subclass — keep it as a string, not an intAttribute.
-        if isinstance(value, bool):
-            kind = "stringAttribute"
-        elif isinstance(value, int):
-            kind = "intAttribute"
-        elif isinstance(value, float):
-            kind = "doubleAttribute"
         else:
-            kind = "stringAttribute"
-        generic = ElementTree.SubElement(feature, _q(ns, "gen", kind))
-        generic.set("name", name)
-        value_element = ElementTree.SubElement(generic, _q(ns, "gen", "value"))
-        value_element.text = _text(value)
+            _emit_generic_attribute(ns, feature, name, value, units.get(name))
     for name, value in native:
         element = ElementTree.SubElement(feature, _q(ns, "bldg", name))
         element.text = _text(value)
         if name in units:
             element.set("uom", units[name])
+
+
+def _generic_attribute_kind(value: Any) -> str:
+    """The ``gen:*Attribute`` element for a value's Python type (``bool`` stays a string)."""
+    if isinstance(
+        value, bool
+    ):  # bool is an int subclass — keep it a string, not an intAttribute
+        return "stringAttribute"
+    if isinstance(value, int):
+        return "intAttribute"
+    if isinstance(value, float):
+        return "doubleAttribute"
+    return "stringAttribute"
+
+
+def _emit_generic_attribute(
+    ns: dict[str, str],
+    feature: ElementTree.Element,
+    name: str,
+    value: Any,
+    unit: str | None,
+) -> None:
+    """Append one ``gen:*Attribute``: a ``measureAttribute`` when a numeric value carries a unit, else
+    the typed kind for its Python type."""
+    numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+    if unit is not None and numeric:
+        # gen:measureAttribute is the only generic kind whose value (gml:MeasureType) holds a uom.
+        kind, with_uom = "measureAttribute", True
+    else:
+        kind, with_uom = _generic_attribute_kind(value), False
+    generic = ElementTree.SubElement(feature, _q(ns, "gen", kind))
+    generic.set("name", name)
+    value_element = ElementTree.SubElement(generic, _q(ns, "gen", "value"))
+    if with_uom:
+        value_element.set("uom", unit or "")
+    value_element.text = _text(value)
 
 
 #: The schema-sequence rank of a ``boundedBy`` group in a construction content model: it sits after the
@@ -1001,6 +1013,58 @@ def _build_solid(
     return solid_property
 
 
+def _collect_one_geometry(
+    ns: dict[str, str],
+    plan: _GeometryPlan,
+    geometry: Geometry,
+    targets: _Appearances,
+) -> tuple[
+    int,
+    ElementTree.Element | None,
+    list[ElementTree.Element],
+    list[ElementTree.Element],
+]:
+    """Classify one geometry's surfaces: ``(lod, solid_or_None, boundary_surfaces, plain_polygons)``.
+
+    A non-semantic ``Solid`` with a module solid slot yields the ``solid`` element (and no surfaces).
+    Otherwise each surface is split: one the module can carry becomes a ``boundedBy`` boundary surface;
+    any other (plain, or a demoted typed surface — recorded so the writer warns) becomes a plain
+    polygon. :func:`_append_feature_geometry` aggregates and orders these across all of a feature's
+    geometries.
+    """
+    lod = _lod_number(geometry)
+    materials = _surface_materials(geometry)
+    textures = _surface_textures(geometry)
+    if geometry.type == "Solid" and not geometry.semantics:
+        solid = _build_solid(ns, plan, geometry, lod, targets, materials, textures)
+        if solid is not None:
+            return lod, solid, [], []
+        # No Solid slot — fall through and emit the shell's surfaces as plain geometry.
+    bounded: list[ElementTree.Element] = []
+    plain: list[ElementTree.Element] = []
+    for position, (surface, semantic_value) in enumerate(
+        iter_surfaces(geometry.boundaries, geometry.semantic_values)
+    ):
+        material = materials[position] if position < len(materials) else {}
+        texture = textures[position] if position < len(textures) else {}
+        surface_object = geometry.semantic_for(semantic_value)
+        if surface_object is not None and plan.supports_surface(surface_object.type):
+            bounded_by = _bounded_by(
+                ns, plan, surface_object.type, surface, lod, targets, material, texture
+            )
+            if bounded_by is not None:
+                bounded.append(bounded_by)
+            continue
+        if surface_object is not None:
+            plan.note_demoted()  # a typed surface the module can't carry → plain, semantic lost
+        polygon = _polygon_element(ns, surface)
+        if polygon is None:
+            continue
+        targets.paint(ns, polygon, surface, material, texture)
+        plain.append(polygon)
+    return lod, None, bounded, plain
+
+
 def _append_feature_geometry(
     ns: dict[str, str],
     plan: _GeometryPlan,
@@ -1023,44 +1087,14 @@ def _append_feature_geometry(
     plain_by_lod: dict[int, list[ElementTree.Element]] = {}
     solids: list[tuple[int, ElementTree.Element]] = []
     for geometry in geometries:
-        lod = _lod_number(geometry)
-        materials = _surface_materials(geometry)
-        textures = _surface_textures(geometry)
-        if geometry.type == "Solid" and not geometry.semantics:
-            solid = _build_solid(ns, plan, geometry, lod, targets, materials, textures)
-            if solid is not None:
-                solids.append((lod, solid))
-                continue
-            # No Solid slot — fall through and emit the shell's surfaces as plain geometry.
-        for position, (surface, semantic_value) in enumerate(
-            iter_surfaces(geometry.boundaries, geometry.semantic_values)
-        ):
-            material = materials[position] if position < len(materials) else {}
-            texture = textures[position] if position < len(textures) else {}
-            surface_object = geometry.semantic_for(semantic_value)
-            if surface_object is not None and plan.supports_surface(
-                surface_object.type
-            ):
-                bounded_by = _bounded_by(
-                    ns,
-                    plan,
-                    surface_object.type,
-                    surface,
-                    lod,
-                    targets,
-                    material,
-                    texture,
-                )
-                if bounded_by is not None:
-                    bounded.append(bounded_by)
-                continue
-            if surface_object is not None:
-                plan.note_demoted()  # a typed surface the module can't carry → plain, semantic lost
-            polygon = _polygon_element(ns, surface)
-            if polygon is None:
-                continue
-            targets.paint(ns, polygon, surface, material, texture)
-            plain_by_lod.setdefault(lod, []).append(polygon)
+        lod, solid, geometry_bounded, geometry_plain = _collect_one_geometry(
+            ns, plan, geometry, targets
+        )
+        if solid is not None:
+            solids.append((lod, solid))
+        bounded.extend(geometry_bounded)
+        if geometry_plain:
+            plain_by_lod.setdefault(lod, []).extend(geometry_plain)
     ordered: list[tuple[tuple[int, int], ElementTree.Element]] = [
         ((lod, 0), solid) for lod, solid in solids
     ]
@@ -1185,6 +1219,56 @@ def _add_envelope(
         upper_corner.text = " ".join(repr(component) for component in upper)
 
 
+def _resolve_version(model: CityModel) -> str:
+    """The CityGML version to emit, warning for an unknown version and for unreadable object types.
+
+    A ``1.0``/``2.0``/``3.0`` source is emitted natively (its version round-trips); any other falls
+    back to valid ``2.0`` with a warning. A separate warning lists object types with no known thematic
+    namespace (written under ``bldg:``).
+    """
+    if model.version is not None and model.version not in _MATCHED_VERSIONS:
+        warnings.warn(
+            f"CityGML writer: a {model.version} source has no known emission structure and is "
+            "written as valid CityGML 2.0, so the CityGML version does not round-trip",
+            stacklevel=3,
+        )
+    unreadable = sorted(
+        {
+            city_object.type
+            for city_object in model.objects.values()
+            if city_object.type not in _READABLE_OBJECT_TYPES
+        }
+    )
+    if unreadable:
+        warnings.warn(
+            "CityGML writer: object type(s) "
+            f"{', '.join(unreadable)} have no known thematic namespace and are written under bldg: "
+            "(not schema-valid), so they will not round-trip conformantly",
+            stacklevel=3,
+        )
+    return model.version if model.version in _MATCHED_VERSIONS else "2.0"
+
+
+def _warn_diagnostics(diagnostics: _WriteDiagnostics) -> None:
+    """Emit one warning each for the geometry fallbacks and the demoted semantic surfaces collected."""
+    if diagnostics.fallbacks:
+        warnings.warn(
+            "CityGML writer: object type(s) "
+            f"{', '.join(sorted(diagnostics.fallbacks))} have no geometry slot in their thematic "
+            "module for the supplied geometry and are written with a bldg: geometry property (not "
+            "schema-valid), so their geometry will not round-trip conformantly",
+            stacklevel=3,
+        )
+    if diagnostics.demoted:
+        warnings.warn(
+            "CityGML writer: object type(s) "
+            f"{', '.join(sorted(diagnostics.demoted))} carry a semantic boundary surface their "
+            "thematic module cannot represent; it is written as plain geometry and its semantic "
+            "surface type is dropped",
+            stacklevel=3,
+        )
+
+
 def write_citygml(model: CityModel, path: Any = None) -> str | None:
     """Serialize a :class:`~pyramids_citymodels.ir.CityModel` to a CityGML 2.0 document.
 
@@ -1267,36 +1351,10 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
 
             ```
     """
-    # Emit the source version's namespaces for a version this writer matches (1.0/2.0), so the
-    # version string round-trips through the reader; an unknown version falls back to 2.0. The map is
-    # a per-call local threaded through construction — no module-global is mutated, so concurrent
-    # writes of different-version models cannot corrupt each other.
-    version = model.version if model.version in _MATCHED_VERSIONS else "2.0"
-    if model.version is not None and model.version not in _MATCHED_VERSIONS:
-        # 1.0/2.0/3.0 are emitted natively; any other version has no known structure, so it is written
-        # as valid 2.0 and its version does not round-trip.
-        warnings.warn(
-            f"CityGML writer: a {model.version} source has no known emission structure and is "
-            "written as valid CityGML 2.0, so the CityGML version does not round-trip",
-            stacklevel=2,
-        )
+    # The map is a per-call local threaded through construction — no module-global is mutated, so
+    # concurrent writes of different-version models cannot corrupt each other.
+    version = _resolve_version(model)
     ns = _namespaces(version)
-
-    unreadable = sorted(
-        {
-            city_object.type
-            for city_object in model.objects.values()
-            if city_object.type not in _READABLE_OBJECT_TYPES
-        }
-    )
-    if unreadable:
-        warnings.warn(
-            "CityGML writer: object type(s) "
-            f"{', '.join(unreadable)} have no known thematic namespace and are written under bldg: "
-            "(not schema-valid), so they will not round-trip conformantly",
-            stacklevel=2,
-        )
-
     root = ElementTree.Element(_q(ns, "core", "CityModel"))
     _add_envelope(ns, root, model)
 
@@ -1319,22 +1377,7 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
         member.append(
             _feature_element(ns, city_object, model, visited, targets, diagnostics)
         )
-    if diagnostics.fallbacks:
-        warnings.warn(
-            "CityGML writer: object type(s) "
-            f"{', '.join(sorted(diagnostics.fallbacks))} have no geometry slot in their thematic "
-            "module for the supplied geometry and are written with a bldg: geometry property (not "
-            "schema-valid), so their geometry will not round-trip conformantly",
-            stacklevel=2,
-        )
-    if diagnostics.demoted:
-        warnings.warn(
-            "CityGML writer: object type(s) "
-            f"{', '.join(sorted(diagnostics.demoted))} carry a semantic boundary surface their "
-            "thematic module cannot represent; it is written as plain geometry and its semantic "
-            "surface type is dropped",
-            stacklevel=2,
-        )
+    _warn_diagnostics(diagnostics)
 
     # Appearances come after the city objects: each paints polygons by the gml:ids assigned above.
     for appearance_member in targets.appearance_members(ns):

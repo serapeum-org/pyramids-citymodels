@@ -17,6 +17,7 @@ Deliberate, documented limits (plain geometry, like the OBJ/glTF writers):
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
+from collections.abc import Callable
 from typing import Any
 from xml.etree import ElementTree
 
@@ -28,6 +29,22 @@ __all__ = ["write_collada"]
 #: The COLLADA 1.4.1 schema namespace, emitted as a literal ``xmlns`` on the root so elements carry
 #: no prefix (a global default-namespace registration would collide with the KML writer's).
 _DAE_NS = "http://www.collada.org/2005/11/COLLADASchema"
+
+
+def _fan_surface(
+    surface: list[Any],
+    intern: "Callable[[tuple[float, float, float]], int]",
+    triangles: list[int],
+) -> None:
+    """Fan-triangulate one surface's exterior ring, appending flat triangle indices to ``triangles``."""
+    if not surface:
+        return
+    ring = [xyz(coordinate) for coordinate in open_ring(surface[0])]
+    if len(ring) < 3:
+        return
+    indices = [intern(point) for point in ring]
+    for apex in range(1, len(indices) - 1):  # fan from the first vertex
+        triangles.extend((indices[0], indices[apex], indices[apex + 1]))
 
 
 def _mesh(model: CityModel) -> tuple[list[tuple[float, float, float]], list[int]]:
@@ -49,14 +66,7 @@ def _mesh(model: CityModel) -> tuple[list[tuple[float, float, float]], list[int]
             for surface, _value in iter_surfaces(
                 geometry.boundaries, geometry.semantic_values
             ):
-                if not surface:
-                    continue
-                ring = [xyz(coordinate) for coordinate in open_ring(surface[0])]
-                if len(ring) < 3:
-                    continue
-                indices = [intern(point) for point in ring]
-                for apex in range(1, len(indices) - 1):  # fan from the first vertex
-                    triangles.extend((indices[0], indices[apex], indices[apex + 1]))
+                _fan_surface(surface, intern, triangles)
     return positions, triangles
 
 
