@@ -41,7 +41,9 @@ def test_collada_empty_model_is_valid_and_geometryless() -> None:
     dae = CityModel().to_collada()
     root = ElementTree.fromstring(dae)
     assert root.tag.endswith("COLLADA")
-    assert "<geometry" not in dae  # empty library, still a valid scene
+    assert "<geometry" not in dae  # no geometry
+    # The empty library_geometries is omitted entirely (the 1.4.1 XSD requires >=1 geometry in it).
+    assert "library_geometries" not in dae
 
 
 def test_kml_is_well_formed_with_placemark_and_polygon() -> None:

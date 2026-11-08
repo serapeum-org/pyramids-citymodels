@@ -12,7 +12,7 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 
 import pytest
 
-from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+from pyramids_citymodels.ir import CityModel, CityObject, Geometry, SemanticSurface
 
 
 def _obj(object_id: str, object_type: str, **kw: object) -> CityObject:
@@ -52,6 +52,74 @@ def test_object_type_emitted_in_its_thematic_namespace(
     assert f"<bldg:{object_type}" not in xml  # not the invalid bldg: fallback
 
 
+def test_bridge_boundary_surface_and_geometry_are_in_the_bridge_module() -> None:
+    # M1: a bridge's boundary surface, its boundedBy wrapper and its lod2MultiSurface geometry are all
+    # emitted in the bridge module (brid:), not hardcoded bldg:.
+    model = CityModel(
+        objects={
+            "br": CityObject(
+                id="br",
+                type="Bridge",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[
+                            [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 0.0, 1.0)]]
+                        ],
+                        semantics=[SemanticSurface(type="WallSurface")],
+                        semantic_values=[0],
+                    )
+                ],
+            )
+        }
+    )
+    xml = model.to_citygml()
+    assert "<brid:boundedBy>" in xml
+    assert "<brid:WallSurface" in xml
+    assert "<brid:lod2MultiSurface>" in xml
+    assert "bldg:" not in xml  # nothing leaks into the building namespace
+
+
+def test_plain_surfaces_aggregate_into_one_geometry_property() -> None:
+    # The non-semantic surfaces of a geometry share ONE lodNMultiSurface property (it is maxOccurs=1);
+    # emitting one property per surface would be schema-invalid.
+    two = [
+        [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]],
+        [[(0.0, 0.0, 0.0), (0.0, 1.0, 0.0), (1.0, 1.0, 0.0)]],
+    ]
+    model = CityModel(
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[Geometry(type="MultiSurface", lod="2", boundaries=two)],
+            )
+        }
+    )
+    assert (
+        model.to_citygml().count("lod2MultiSurface>") == 2
+    )  # one open + one close tag
+
+
+def test_solid_on_a_module_without_a_solid_slot_falls_back_to_plain_geometry() -> None:
+    # CityFurniture has no lodNSolid slot, so a Solid geometry is written as its plain lodNGeometry
+    # (not a bldg:lodNSolid) — the _append_solid-returns-False path.
+    wall = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 0.0, 1.0), (0.0, 0.0, 1.0)]]
+    model = CityModel(
+        objects={
+            "f": CityObject(
+                id="f",
+                type="CityFurniture",
+                geometries=[Geometry(type="Solid", lod="2", boundaries=[[wall]])],
+            )
+        }
+    )
+    xml = model.to_citygml()
+    assert "<frn:lod2Geometry>" in xml
+    assert "Solid>" not in xml  # no gml:Solid — the solid was flattened to surfaces
+
+
 def test_part_nests_under_its_module_consists_of_wrapper() -> None:
     model = CityModel(
         objects={
@@ -69,23 +137,40 @@ def test_building_still_uses_bldg_namespace() -> None:
     assert "<bldg:Building " in xml
 
 
-def test_known_city_objects_emit_no_unreadable_warning() -> None:
+def test_known_representable_city_objects_emit_no_warning() -> None:
     from pyramids_citymodels.readers.citygml import parse_citygml
 
     model = CityModel(
         objects={
             "f": _obj("f", "CityFurniture"),
-            "w": _obj("w", "WaterBody"),
+            "l": _obj("l", "LandUse"),
         }
     )
     with warnings.catch_warnings():
-        warnings.simplefilter(
-            "error"
-        )  # any "no known thematic namespace" warning would raise
+        warnings.simplefilter("error")  # any writer warning would raise
         xml = model.to_citygml()
     # and they round-trip back to their own types
     back = parse_citygml(xml)
-    assert {o.type for o in back.objects.values()} == {"CityFurniture", "WaterBody"}
+    assert {o.type for o in back.objects.values()} == {"CityFurniture", "LandUse"}
+
+
+@pytest.mark.parametrize(
+    "object_type", ["WaterBody", "ReliefFeature", "CityObjectGroup"]
+)
+def test_module_without_a_surface_slot_warns_but_still_namespaces_the_feature(
+    object_type: str,
+) -> None:
+    # Relief, groups and a water *surface* have no slot in their module for the IR's generic surface
+    # geometry, so the geometry falls back to a bldg: property with a warning — but the feature element
+    # itself is still emitted in the object's own thematic namespace.
+    model = CityModel(objects={"x": _obj("x", object_type)})
+    with pytest.warns(UserWarning, match="no geometry slot"):
+        xml = model.to_citygml()
+    prefix = {"WaterBody": "wtr", "ReliefFeature": "dem", "CityObjectGroup": "grp"}[
+        object_type
+    ]
+    assert f"<{prefix}:{object_type} " in xml  # feature namespaced correctly
+    assert f"<bldg:{object_type}" not in xml
 
 
 def test_unknown_type_falls_back_to_bldg_with_warning() -> None:

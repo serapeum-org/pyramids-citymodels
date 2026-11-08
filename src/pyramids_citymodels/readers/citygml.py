@@ -396,6 +396,7 @@ def _collect_building_attributes(
             "intAttribute",
             "doubleAttribute",
             "genericAttribute",
+            "measureAttribute",
         ):
             name = child.attrib.get("name") or _gml_id(child)
             value_element = next(
@@ -410,10 +411,15 @@ def _collect_building_attributes(
                 raw = value_element.text.strip()
                 if local == "intAttribute":
                     attributes[name] = _coerce_number(raw, int)
-                elif local == "doubleAttribute":
+                elif local in ("doubleAttribute", "measureAttribute"):
                     attributes[name] = _coerce_number(raw, float)
                 else:
                     attributes[name] = raw
+                # A gen:measureAttribute carries its unit as a uom on the value element; capture it so
+                # a generic attribute's unit round-trips (the writer re-emits it as a measureAttribute).
+                measure_uom = value_element.attrib.get("uom")
+                if measure_uom:
+                    units[name] = measure_uom
     return attributes, units
 
 

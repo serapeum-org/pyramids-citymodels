@@ -106,6 +106,19 @@ def test_30_version_and_semantics_round_trip_30_to_30() -> None:
     assert back.objects["b"].geometries[0].semantics[0].type == "RoofSurface"
 
 
+def test_30_boundary_surface_uses_core_boundary_and_construction_module() -> None:
+    # M2: CityGML 3.0 moved boundary surfaces to the Construction module and the relation to core:
+    # <core:boundary> → <con:RoofSurface> → <core:lod2MultiSurface>. (Prefixes are auto-assigned for
+    # 3.0, so assert on namespaces/local-names rather than literal prefixes.)
+    xml = _solid_30_model().to_citygml()
+    assert (
+        "http://www.opengis.net/citygml/construction/3.0" in xml
+    )  # con: module declared
+    assert ":boundary>" in xml  # core:boundary wrapper
+    assert ":RoofSurface>" in xml
+    assert ":lod2MultiSurface>" in xml
+
+
 def test_unknown_version_downgrades_to_20_with_warning() -> None:
     model = CityModel(
         version="9.9",

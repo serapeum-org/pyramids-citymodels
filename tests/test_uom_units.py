@@ -70,3 +70,51 @@ def test_object_without_units_writes_no_uom() -> None:
         }
     )
     assert "uom=" not in model.to_citygml()
+
+
+def test_generic_attribute_unit_uses_measure_attribute() -> None:
+    # A non-native attribute carrying a unit must go out as gen:measureAttribute (the only generic kind
+    # whose value legally holds a uom), not a gen:doubleAttribute (which cannot) — see M3.
+    model = CityModel(
+        objects={
+            "B": CityObject(
+                id="B",
+                type="Building",
+                attributes={"customLength": 5.0},
+                attribute_units={"customLength": "km"},
+            )
+        }
+    )
+    xml = model.to_citygml()
+    assert "measureAttribute" in xml
+    assert 'uom="km"' in xml
+
+
+def test_generic_attribute_unit_round_trips() -> None:
+    model = parse_citygml(
+        _building(
+            '<gen:measureAttribute xmlns:gen="http://www.opengis.net/citygml/generics/2.0" '
+            'name="customLength"><gen:value uom="km">5.0</gen:value></gen:measureAttribute>'
+        )
+    )
+    back = parse_citygml(model.to_citygml()).objects["B"]
+    assert back.attributes["customLength"] == 5.0
+    assert back.attribute_units == {"customLength": "km"}
+
+
+def test_non_numeric_unit_attribute_is_not_a_measure_attribute() -> None:
+    # A unit only makes sense on a number; a stray unit on a string value must not produce an invalid
+    # (non-numeric) gen:measureAttribute — it falls back to a plain stringAttribute.
+    model = CityModel(
+        objects={
+            "B": CityObject(
+                id="B",
+                type="Building",
+                attributes={"note": "tall"},
+                attribute_units={"note": "m"},
+            )
+        }
+    )
+    xml = model.to_citygml()
+    assert "measureAttribute" not in xml
+    assert "stringAttribute" in xml

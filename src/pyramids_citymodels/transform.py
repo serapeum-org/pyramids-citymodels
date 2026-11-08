@@ -18,6 +18,7 @@ value (replicated from its source surface) but **drops** per-geometry appearance
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import replace
 from typing import Any
 
@@ -29,14 +30,20 @@ __all__ = ["translate", "quantize", "clean_rings", "triangulate"]
 def _rebuild(
     model: CityModel, geometry_fn: Callable[[Geometry], Geometry]
 ) -> CityModel:
-    """A copy of ``model`` with ``geometry_fn`` applied to every geometry (all else preserved)."""
-    objects = {
-        object_id: replace(
-            city_object,
-            geometries=[geometry_fn(geometry) for geometry in city_object.geometries],
+    """A new model with ``geometry_fn`` applied to every geometry (all else deep-copied).
+
+    Each city object is deep-copied before ``geometry_fn`` runs, so the returned model shares **no**
+    mutable structure with the input — its ``semantics`` / ``appearance`` / ``attributes`` are
+    independent objects. This mirrors :meth:`CityModel.merge`'s guarantee: a later in-place edit of a
+    transformed model must not leak back into the source (the transforms themselves never mutate).
+    """
+    objects = {}
+    for object_id, city_object in model.objects.items():
+        copied = deepcopy(city_object)
+        objects[object_id] = replace(
+            copied,
+            geometries=[geometry_fn(geometry) for geometry in copied.geometries],
         )
-        for object_id, city_object in model.objects.items()
-    }
     return replace(model, objects=objects)
 
 

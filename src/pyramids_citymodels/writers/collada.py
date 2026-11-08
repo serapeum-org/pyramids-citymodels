@@ -11,7 +11,8 @@ Deliberate, documented limits (plain geometry, like the OBJ/glTF writers):
   non-convex polygon's fan can self-overlap (fan triangulation is not ear-clipping).
 - **One mesh, positions only** — no normals, materials or textures; appearance round-trips through
   the CityJSON/CityGML writers, not here. Coordinates are the model's own (no reprojection).
-- An empty model yields a valid `.dae` with an empty geometry library and an empty scene.
+- An empty model yields a valid `.dae` with a geometry-less scene and no `library_geometries` (that
+  element is omitted rather than emitted empty, which the COLLADA 1.4.1 XSD would reject).
 """
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
@@ -65,50 +66,55 @@ def _geometry_library(
     triangles: list[int],
 ) -> None:
     """Append `library_geometries` with one positions mesh, and the instancing scene libraries."""
-    library = ElementTree.SubElement(collada, "library_geometries")
+    # COLLADA's <COLLADA> sequence is asset, (library_*)*, scene — so every library element must
+    # precede <scene>. The geometry library is emitted only for a non-empty model: the 1.4.1 XSD
+    # requires <library_geometries> to hold at least one <geometry>, so an empty one would be invalid
+    # (the library is optional, and a scene with a geometry-less node is valid on its own).
+    if triangles:
+        library = ElementTree.SubElement(collada, "library_geometries")
+        geometry = ElementTree.SubElement(library, "geometry")
+        geometry.set("id", "mesh0")
+        mesh = ElementTree.SubElement(geometry, "mesh")
+        source = ElementTree.SubElement(mesh, "source")
+        source.set("id", "mesh0-positions")
+        float_array = ElementTree.SubElement(source, "float_array")
+        float_array.set("id", "mesh0-positions-array")
+        float_array.set("count", str(len(positions) * 3))
+        float_array.text = " ".join(
+            repr(component) for point in positions for component in point
+        )
+        technique = ElementTree.SubElement(source, "technique_common")
+        accessor = ElementTree.SubElement(technique, "accessor")
+        accessor.set("source", "#mesh0-positions-array")
+        accessor.set("count", str(len(positions)))
+        accessor.set("stride", "3")
+        for axis in ("X", "Y", "Z"):
+            param = ElementTree.SubElement(accessor, "param")
+            param.set("name", axis)
+            param.set("type", "float")
+        vertices = ElementTree.SubElement(mesh, "vertices")
+        vertices.set("id", "mesh0-vertices")
+        vertex_input = ElementTree.SubElement(vertices, "input")
+        vertex_input.set("semantic", "POSITION")
+        vertex_input.set("source", "#mesh0-positions")
+        triangles_element = ElementTree.SubElement(mesh, "triangles")
+        triangles_element.set("count", str(len(triangles) // 3))
+        triangle_input = ElementTree.SubElement(triangles_element, "input")
+        triangle_input.set("semantic", "VERTEX")
+        triangle_input.set("source", "#mesh0-vertices")
+        triangle_input.set("offset", "0")
+        primitives = ElementTree.SubElement(triangles_element, "p")
+        primitives.text = " ".join(str(index) for index in triangles)
+
     scenes = ElementTree.SubElement(collada, "library_visual_scenes")
     visual_scene = ElementTree.SubElement(scenes, "visual_scene")
     visual_scene.set("id", "scene0")
     node = ElementTree.SubElement(visual_scene, "node")
     node.set("id", "node0")
+    if triangles:
+        ElementTree.SubElement(node, "instance_geometry").set("url", "#mesh0")
     scene = ElementTree.SubElement(collada, "scene")
     ElementTree.SubElement(scene, "instance_visual_scene").set("url", "#scene0")
-    if not triangles:
-        return  # empty model: a valid scene with no geometry
-    geometry = ElementTree.SubElement(library, "geometry")
-    geometry.set("id", "mesh0")
-    mesh = ElementTree.SubElement(geometry, "mesh")
-    source = ElementTree.SubElement(mesh, "source")
-    source.set("id", "mesh0-positions")
-    float_array = ElementTree.SubElement(source, "float_array")
-    float_array.set("id", "mesh0-positions-array")
-    float_array.set("count", str(len(positions) * 3))
-    float_array.text = " ".join(
-        repr(component) for point in positions for component in point
-    )
-    technique = ElementTree.SubElement(source, "technique_common")
-    accessor = ElementTree.SubElement(technique, "accessor")
-    accessor.set("source", "#mesh0-positions-array")
-    accessor.set("count", str(len(positions)))
-    accessor.set("stride", "3")
-    for axis in ("X", "Y", "Z"):
-        param = ElementTree.SubElement(accessor, "param")
-        param.set("name", axis)
-        param.set("type", "float")
-    vertices = ElementTree.SubElement(mesh, "vertices")
-    vertices.set("id", "mesh0-vertices")
-    vertex_input = ElementTree.SubElement(vertices, "input")
-    vertex_input.set("semantic", "POSITION")
-    vertex_input.set("source", "#mesh0-positions")
-    triangles_element = ElementTree.SubElement(mesh, "triangles")
-    triangles_element.set("count", str(len(triangles) // 3))
-    triangle_input = ElementTree.SubElement(triangles_element, "input")
-    triangle_input.set("semantic", "VERTEX")
-    triangle_input.set("source", "#mesh0-vertices")
-    triangle_input.set("offset", "0")
-    primitives = ElementTree.SubElement(triangles_element, "p")
-    primitives.text = " ".join(str(index) for index in triangles)
-    ElementTree.SubElement(node, "instance_geometry").set("url", "#mesh0")
 
 
 def write_collada(model: CityModel, path: Any = None) -> str | None:

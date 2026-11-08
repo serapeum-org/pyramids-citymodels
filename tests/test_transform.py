@@ -107,6 +107,24 @@ def test_triangulate_skips_empty_and_subareal_surfaces() -> None:
     assert len(out.boundaries) == 1  # only the valid triangle survives
 
 
+def test_transform_output_does_not_alias_input_semantics_or_appearance() -> None:
+    # A transformed model shares no mutable structure with the input (like CityModel.merge), so a
+    # later in-place edit of the output cannot leak back into the source.
+    model = _model(
+        _tri(),
+        semantics=[SemanticSurface(type="RoofSurface")],
+        semantic_values=[0],
+        appearance={"material": {"t": {"values": [0]}}},
+    )
+    out = model.translate((1.0, 0.0, 0.0))
+    out_geom = out.objects["b"].geometries[0]
+    in_geom = model.objects["b"].geometries[0]
+    assert out_geom.semantics is not in_geom.semantics
+    assert out_geom.appearance is not in_geom.appearance
+    out_geom.semantics[0].type = "WallSurface"  # mutate the copy
+    assert in_geom.semantics[0].type == "RoofSurface"  # source intact
+
+
 def test_coordinate_mappers_leave_a_non_coordinate_node_untouched() -> None:
     # Defensive: a stray non-list, non-coordinate node (e.g. None) in the boundaries is passed through
     # unchanged by the recursive mappers rather than crashing.
