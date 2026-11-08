@@ -1048,21 +1048,52 @@ def _collect_one_geometry(
         material = materials[position] if position < len(materials) else {}
         texture = textures[position] if position < len(textures) else {}
         surface_object = geometry.semantic_for(semantic_value)
-        if surface_object is not None and plan.supports_surface(surface_object.type):
-            bounded_by = _bounded_by(
-                ns, plan, surface_object.type, surface, lod, targets, material, texture
-            )
-            if bounded_by is not None:
-                bounded.append(bounded_by)
-            continue
-        if surface_object is not None:
-            plan.note_demoted()  # a typed surface the module can't carry → plain, semantic lost
-        polygon = _polygon_element(ns, surface)
-        if polygon is None:
-            continue
-        targets.paint(ns, polygon, surface, material, texture)
-        plain.append(polygon)
+        _classify_surface(
+            ns,
+            plan,
+            surface,
+            surface_object,
+            lod,
+            targets,
+            material,
+            texture,
+            bounded,
+            plain,
+        )
     return lod, None, bounded, plain
+
+
+def _classify_surface(
+    ns: dict[str, str],
+    plan: _GeometryPlan,
+    surface: list[Any],
+    surface_object: Any,
+    lod: int,
+    targets: _Appearances,
+    material: dict[str, int],
+    texture: dict[str, list[Any]],
+    bounded: list[ElementTree.Element],
+    plain: list[ElementTree.Element],
+) -> None:
+    """Route one surface: a ``boundedBy`` boundary surface the module can carry, else a plain polygon.
+
+    A semantic surface the module cannot carry as a boundary surface is demoted to ``plain`` (its type
+    recorded via :meth:`_GeometryPlan.note_demoted` so the writer warns).
+    """
+    if surface_object is not None and plan.supports_surface(surface_object.type):
+        bounded_by = _bounded_by(
+            ns, plan, surface_object.type, surface, lod, targets, material, texture
+        )
+        if bounded_by is not None:
+            bounded.append(bounded_by)
+        return
+    if surface_object is not None:
+        plan.note_demoted()  # a typed surface the module can't carry → plain, semantic lost
+    polygon = _polygon_element(ns, surface)
+    if polygon is None:
+        return
+    targets.paint(ns, polygon, surface, material, texture)
+    plain.append(polygon)
 
 
 def _append_feature_geometry(
