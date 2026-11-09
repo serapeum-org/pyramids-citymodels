@@ -351,11 +351,15 @@ class CityModel:
             f"no city-model reader recognizes {path!r} (not CityJSON, 3D Tiles or CityGML)"
         )
 
-    def to_cityjson(self, path: Any = None) -> "dict[str, Any] | None":
+    def to_cityjson(
+        self, path: Any = None, compress: int | None = None
+    ) -> "dict[str, Any] | None":
         """Serialize this model to CityJSON 2.0 (see :func:`.writers.cityjson.write_cityjson`).
 
         Returns the CityJSON document ``dict`` when ``path`` is ``None``, else writes it and
-        returns ``None``.
+        returns ``None``. With ``compress`` set, coordinates are quantized to that many decimal digits
+        and written as compact integer ``vertices`` + a ``transform`` (a smaller, lossy-to-precision
+        document; the reader restores the coordinates).
 
         Examples:
             - Serialize to a dict and read a city object straight out of it:
@@ -374,7 +378,7 @@ class CityModel:
         """
         from pyramids_citymodels.writers.cityjson import write_cityjson
 
-        return write_cityjson(self, path)
+        return write_cityjson(self, path, compress)
 
     def to_cityjsonseq(self, path: Any = None) -> str | None:
         """Serialize this model to a CityJSON Text Sequence (``.city.jsonl``).
