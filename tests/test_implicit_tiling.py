@@ -67,11 +67,21 @@ def test_subtree_round_trips_with_a_bitstream() -> None:
 
 def test_uniform_availability_is_stored_as_a_constant() -> None:
     # An all-false / all-true availability needs no bitstream — the binary chunk stays empty.
-    blob = it.encode_subtree([False] * 5, [False] * 5, [False] * 16)
+    blob = it.encode_subtree([False] * 5, [True] * 5, [False] * 16)
     json_length = struct.unpack_from("<Q", blob, 8)[0]
     document = json.loads(blob[24 : 24 + json_length])
-    assert document["tileAvailability"] == {"constant": 0}
+    assert document["tileAvailability"] == {"constant": 0}  # all-false
+    assert document["contentAvailability"][0] == {"constant": 1}  # all-true
     assert "buffers" not in document  # no binary buffer for all-constant availability
+    tile, content, child = it.decode_subtree(
+        blob, 2, 4
+    )  # 5 = node_count(2, 4), 16 = 4**2
+    assert tile == [False] * 5 and content == [True] * 5 and child == [False] * 16
+
+
+def test_decode_rejects_a_file_with_bad_magic() -> None:
+    with pytest.raises(ValueError, match="bad magic"):
+        it.decode_subtree(b"XXXX" + b"\x00" * 20, 1, 4)
 
 
 # ----------------------------------------------------------------------- writer / round-trip
