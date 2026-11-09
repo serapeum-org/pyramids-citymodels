@@ -808,7 +808,7 @@ def _expand_subtree(
     if not subtree_path.exists():
         return
     try:
-        tile_av, content_av, child_av = implicit.decode_subtree(
+        _tile_av, content_av, child_av = implicit.decode_subtree(
             subtree_path.read_bytes(), subtree_levels, children
         )
     except (ValueError, OSError) as error:

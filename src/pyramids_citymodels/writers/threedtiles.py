@@ -622,6 +622,16 @@ def _write_implicit(
     }
 
 
+def _validate_implicit_args(scheme: str, max_objects_per_tile: int | None) -> None:
+    """Raise ``ValueError`` for an invalid implicit-tiling ``scheme`` or a non-positive per-tile target."""
+    if scheme.lower() not in ("quadtree", "octree"):
+        raise ValueError(f"scheme must be 'quadtree' or 'octree', got {scheme!r}")
+    if max_objects_per_tile is not None and max_objects_per_tile < 1:
+        raise ValueError(
+            f"max_objects_per_tile must be >= 1, got {max_objects_per_tile}"
+        )
+
+
 def write_3dtiles(
     model: CityModel,
     directory: Any,
@@ -712,14 +722,9 @@ def write_3dtiles(
             ```
     """
     if implicit_tiling:
-        # Validate the implicit-only args here (not in _write_implicit) so the contract is the same for
-        # an empty model, which never reaches _write_implicit.
-        if scheme.lower() not in ("quadtree", "octree"):
-            raise ValueError(f"scheme must be 'quadtree' or 'octree', got {scheme!r}")
-        if max_objects_per_tile is not None and max_objects_per_tile < 1:
-            raise ValueError(
-                f"max_objects_per_tile must be >= 1, got {max_objects_per_tile}"
-            )
+        # Validated here (not in _write_implicit) so the contract is the same for an empty model, which
+        # never reaches _write_implicit.
+        _validate_implicit_args(scheme, max_objects_per_tile)
     target = Path(directory)
     target.mkdir(parents=True, exist_ok=True)
     # Gather the model's geometry once and feed both builders, rather than walking it twice.

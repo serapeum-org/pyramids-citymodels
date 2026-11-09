@@ -76,7 +76,9 @@ def test_uniform_availability_is_stored_as_a_constant() -> None:
     tile, content, child = it.decode_subtree(
         blob, 2, 4
     )  # 5 = node_count(2, 4), 16 = 4**2
-    assert tile == [False] * 5 and content == [True] * 5 and child == [False] * 16
+    assert tile == [False] * 5
+    assert content == [True] * 5
+    assert child == [False] * 16
 
 
 def test_decode_rejects_a_file_with_bad_magic() -> None:
@@ -228,17 +230,15 @@ def test_reader_follows_child_subtrees() -> None:
 @pytest.mark.parametrize("scheme", ["octtree", "QuadTree ", "3d", ""])
 def test_invalid_scheme_raises(scheme: str) -> None:
     # A typo'd scheme must raise, not silently fall back to a quadtree (wrong-output-shape footgun).
+    model, directory = _grid(5), Path(tempfile.mkdtemp())
     with pytest.raises(ValueError, match="scheme must be"):
-        _grid(5).to_3dtiles(
-            Path(tempfile.mkdtemp()), implicit_tiling=True, scheme=scheme
-        )
+        model.to_3dtiles(directory, implicit_tiling=True, scheme=scheme)
 
 
 def test_non_positive_max_objects_per_tile_raises() -> None:
+    model, directory = _grid(5), Path(tempfile.mkdtemp())
     with pytest.raises(ValueError, match="must be >= 1"):
-        _grid(5).to_3dtiles(
-            Path(tempfile.mkdtemp()), max_objects_per_tile=0, implicit_tiling=True
-        )
+        model.to_3dtiles(directory, max_objects_per_tile=0, implicit_tiling=True)
 
 
 def test_decode_subtree_rejects_an_implausibly_large_subtree_levels() -> None:
@@ -276,11 +276,8 @@ def test_empty_model_validates_implicit_args() -> None:
     # Validation must run for an empty model too (it never reaches _write_implicit), so the public
     # contract is the same regardless of whether the model has geometry.
     empty = CityModel(objects={})
+    directory = Path(tempfile.mkdtemp())
     with pytest.raises(ValueError, match="scheme must be"):
-        empty.to_3dtiles(
-            Path(tempfile.mkdtemp()), implicit_tiling=True, scheme="octtree"
-        )
+        empty.to_3dtiles(directory, implicit_tiling=True, scheme="octtree")
     with pytest.raises(ValueError, match="must be >= 1"):
-        empty.to_3dtiles(
-            Path(tempfile.mkdtemp()), max_objects_per_tile=0, implicit_tiling=True
-        )
+        empty.to_3dtiles(directory, max_objects_per_tile=0, implicit_tiling=True)

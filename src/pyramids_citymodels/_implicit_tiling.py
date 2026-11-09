@@ -247,13 +247,8 @@ def demorton(index: int, dimension: int) -> tuple[int, ...]:
 
             ```
     """
-    if dimension == 2:
-        return (_compact_1by1(index), _compact_1by1(index >> 1))
-    return (
-        _compact_1by2(index),
-        _compact_1by2(index >> 1),
-        _compact_1by2(index >> 2),
-    )
+    compact = _compact_1by1 if dimension == 2 else _compact_1by2
+    return tuple(compact(index >> axis) for axis in range(dimension))
 
 
 def pack_bits(bits: list[bool]) -> bytes:
