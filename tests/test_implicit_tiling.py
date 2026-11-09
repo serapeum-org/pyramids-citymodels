@@ -303,21 +303,45 @@ def _spread_grid(n: int) -> CityModel:
     return CityModel(objects=objects)
 
 
-def test_deep_tree_is_split_into_chained_subtrees_and_round_trips() -> None:
-    # A tree deeper than one subtree (availableLevels > subtreeLevels) must be written as MULTIPLE
-    # chained .subtree files (root + children), and still round-trip through the reader.
+def test_normal_depth_stays_a_single_subtree() -> None:
+    # A city-scale tree fits in one bounded subtree (no chaining, no per-leaf file explosion).
+    directory = _write(_spread_grid(100), max_objects_per_tile=1)
+    tileset = json.loads((directory / "tileset.json").read_text(encoding="utf-8"))
+    implicit_tiling = tileset["root"]["implicitTiling"]
+    assert (
+        implicit_tiling["subtreeLevels"] == implicit_tiling["availableLevels"]
+    )  # one subtree
+    assert len(list(directory.glob("subtrees/**/*.subtree"))) == 1
+
+
+def test_deep_tree_is_split_into_balanced_chained_subtrees_and_round_trips(
+    monkeypatch,
+) -> None:
+    # Force chaining by shrinking the single-subtree bound, then verify the tree is split into MULTIPLE
+    # chained .subtree files (not one per leaf) and still round-trips through the reader.
+    from pyramids_citymodels import _implicit_tiling as codec
+
+    monkeypatch.setattr(codec, "max_subtree_levels", lambda children: 3)
     model = _spread_grid(100)
     directory = _write(model, max_objects_per_tile=1)
     tileset = json.loads((directory / "tileset.json").read_text(encoding="utf-8"))
     implicit_tiling = tileset["root"]["implicitTiling"]
     assert (
         implicit_tiling["availableLevels"] > implicit_tiling["subtreeLevels"]
-    )  # genuinely deep
+    )  # genuinely chained
     subtrees = list(directory.glob("subtrees/**/*.subtree"))
-    assert len(subtrees) > 1  # root + child subtrees
-    assert any("/0/0/0.subtree" in p.as_posix() for p in subtrees)  # the root subtree
+    assert len(subtrees) > 1  # root + deeper subtrees
+    assert (
+        directory / "subtrees" / "0" / "0" / "0.subtree"
+    ).exists()  # the root subtree
+    deepest_root = implicit_tiling["availableLevels"] - 1
+    # not one 1-node subtree per occupied leaf: fewer subtree files than content files
+    assert len(subtrees) < len(list(directory.glob("content/**/*.b3dm")))
+    assert not any(
+        f"subtrees/{deepest_root}/" in p.as_posix() for p in subtrees
+    )  # deepest content lives inside a parent subtree, not its own
     back = parse_3dtiles(directory / "tileset.json")
     assert sorted(back.objects) == sorted(
         model.objects
-    )  # all 100 recovered via chained subtrees
+    )  # all recovered via chained subtrees
     assert back.objects["o57"].attributes["h"] == 57.0

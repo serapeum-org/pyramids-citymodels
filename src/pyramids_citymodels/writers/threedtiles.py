@@ -504,14 +504,24 @@ def _centroid(
     return tuple(total / count for total in sums)
 
 
-#: Levels per ``.subtree`` file. The tree is split into chained subtrees of this depth, so a deep
-#: tileset is described by many small, bounded subtree files rather than one giant one (issue #58).
-_SUBTREE_LEVELS = 4
-
 #: Safety cap on the tileset's total depth. ``_choose_levels`` picks ~``log(count)`` levels, so this is
 #: only a guard against a pathological ``max_objects_per_tile``; multi-subtree chaining means it is not
 #: bounded by one subtree's size.
 _MAX_AVAILABLE_LEVELS = 16
+
+
+def _subtree_levels(levels: int, children: int) -> int:
+    """How many levels each ``.subtree`` spans for a tileset of ``levels`` total levels.
+
+    One subtree per tileset while the whole tree fits in a single bounded subtree
+    (``levels <= max_subtree_levels``, so no chaining for a normal city-scale tree); beyond that the
+    tree is split into the **fewest, balanced** blocks that each stay within the bound. Balancing
+    (rather than a fixed block size) keeps the deepest content *inside* a subtree instead of landing on
+    a subtree-root boundary — which would spawn one 1-node ``.subtree`` per occupied leaf.
+    """
+    bound = implicit.max_subtree_levels(children)
+    blocks = math.ceil(levels / bound)
+    return math.ceil(levels / blocks)
 
 
 def _choose_levels(count: int, max_per_tile: int, children: int) -> int:
@@ -613,7 +623,8 @@ def _write_implicit(
 
     Objects are binned by centroid into a uniform quadtree/octree grid at the chosen depth; each
     occupied deepest-level cell gets its own ``content/{level}/{x}/{y}[/{z}].b3dm``. The tree is
-    described by **chained subtrees** of :data:`_SUBTREE_LEVELS` levels each (one ``.subtree`` per
+    described by **chained subtrees** (:func:`_subtree_levels` picks the span — one subtree for a
+    normal tree, balanced blocks beyond the single-subtree bound), one ``.subtree`` per
     occupied subtree, linked by child-subtree availability), so an arbitrarily deep tileset needs only
     small, bounded subtree files. The root ``tileset.json`` holds only the root box + the
     ``implicitTiling`` rule.
@@ -626,7 +637,7 @@ def _write_implicit(
     diagonal = math.sqrt(sum((maxima[axis] - minima[axis]) ** 2 for axis in range(3)))
     levels = _choose_levels(len(contributing), max_per_tile, children)
     deepest = levels - 1
-    subtree_levels = min(_SUBTREE_LEVELS, levels)
+    subtree_levels = _subtree_levels(levels, children)
     cells_per_axis = 2**deepest
 
     bins: dict[tuple[int, ...], _Contributing] = {}

@@ -5,9 +5,9 @@ integer `vertices`, and adds a CityJSON `transform` {scale, translate} the reade
 smaller output, lossy to the chosen precision, and near-coincident points merge.
 """
 
-import json
+import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see conftest)
 
-import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
+import json
 
 from pyramids_citymodels.ir import CityModel, CityObject, Geometry
 from pyramids_citymodels.readers.cityjson import parse_cityjson
@@ -86,3 +86,40 @@ def test_compress_on_a_coordinateless_model_writes_no_transform() -> None:
     )
     assert "transform" not in doc
     assert doc["vertices"] == []
+
+
+def test_compress_rejects_a_ragged_dimension_model() -> None:
+    # compress writes one document-wide transform, so mixed 2-D/3-D coordinates (only possible for a
+    # hand-built/merged model) must raise a clear error naming the object, not a bare IndexError.
+    import pytest
+
+    model = CityModel(
+        objects={
+            "a": CityObject(
+                id="a",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[[[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)]]],
+                    )
+                ],
+            ),  # 2-D
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[
+                            [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                        ],
+                    )
+                ],
+            ),  # 3-D
+        }
+    )
+    with pytest.raises(ValueError, match="same dimension"):
+        model.to_cityjson(compress=2)

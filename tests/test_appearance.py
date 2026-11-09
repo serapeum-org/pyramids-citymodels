@@ -312,8 +312,9 @@ def test_citygml_round_trip_keeps_per_surface_appearance_but_recompacts_the_pool
     None
 ):
     """A CityGML round-trip preserves each surface's painted material but **recompacts** the pool —
-    CityGML has no indexed appearance pool (surface→material is by gml:id), so an unpainted entry is
-    dropped and indices are renumbered. This documents an inherent format limit, not a bug."""
+    CityGML has no indexed appearance pool (surface→material is by gml:id), so index values cannot be
+    preserved, and this writer also drops an unpainted entry (it could be emitted as an orphan
+    surfaceData — composition is a possible follow-up — but indices still would not survive)."""
     from pyramids_citymodels.ir import CityModel, CityObject, Geometry
     from pyramids_citymodels.writers.citygml import write_citygml
 

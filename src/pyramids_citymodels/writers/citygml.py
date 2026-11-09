@@ -22,12 +22,13 @@ contract is:
   (``app:X3DMaterial``) and **texture** (``app:ParameterizedTexture`` — image plus per-ring
   ``textureCoordinates``, each ``app:theme`` an ``app:Appearance`` targeting the polygon's ``gml:id``)
   survive, as does the material ``name`` (a free-form ``gml:name``). The appearance *pool* itself does
-  not survive a CityGML round-trip — **inherently**, not as a bug: CityGML has no flat indexed
-  appearance pool (a surface references its material by ``gml:id``, not by a pool index), so a
-  material/texture is inlined once per theme that paints it, an **unpainted** pool entry has nothing to
-  attach to and is dropped, and the indices are recompacted on re-read. (The CityJSON writer, whose
-  format *does* have an indexed pool, re-emits it verbatim — composition and index values survive a
-  CityJSON round-trip; see #60.) The **version** round-trips for a ``1.0``/``2.0``/``3.0``
+  not survive a CityGML round-trip: CityGML has no flat **indexed** appearance pool (a surface
+  references its material by ``gml:id``, not by a pool index), so the pool **index values** cannot be
+  preserved and are recompacted on re-read. This writer also does not preserve an **unpainted** pool
+  entry — it is dropped rather than emitted as an orphan ``app:surfaceDataMember`` (that could carry
+  one, so composition is a possible follow-up, but index values would still not survive). (The CityJSON
+  writer, whose format *does* have an indexed pool, re-emits it verbatim — composition and index values
+  survive a CityJSON round-trip; see #60.) The **version** round-trips for a ``1.0``/``2.0``/``3.0``
   source. 1.0/2.0 use the ``<module>:boundedBy`` structure on GML 3.1.1; **3.0** emits valid CityGML
   3.0 — ``core:boundary`` → ``con:<Surface>`` (the Construction module) → ``core:lod{n}MultiSurface``
   on GML 3.2 — for the building + common-object model this writer covers (3.0's wider space/versioning

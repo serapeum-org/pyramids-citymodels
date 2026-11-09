@@ -179,13 +179,24 @@ def _compress_transform(model: CityModel, digits: int) -> dict[str, Any] | None:
     is ``10 ** -digits`` on every axis. Returns ``None`` for a model with no coordinates.
     """
     minima: list[float] | None = None
-    for city_object in model.objects.values():
+    dimension: int | None = None
+    for object_id, city_object in model.objects.items():
         for geometry in city_object.geometries:
             for coordinate in _iter_coordinates(geometry.boundaries):
                 if minima is None:
                     minima = list(coordinate)
+                    dimension = len(coordinate)
+                elif len(coordinate) != dimension:
+                    # compress emits one transform (scale/translate) for the whole document, so every
+                    # vertex must share one dimensionality — a mixed 2-D/3-D model (only possible for a
+                    # hand-built or merged one) is rejected clearly, not with a bare IndexError.
+                    raise ValueError(
+                        f"to_cityjson(compress=…) requires every coordinate to have the same "
+                        f"dimension; object {object_id!r} has a {len(coordinate)}-D coordinate where "
+                        f"{dimension}-D was seen first"
+                    )
                 else:
-                    for axis in range(min(len(minima), len(coordinate))):
+                    for axis in range(dimension):
                         minima[axis] = min(minima[axis], coordinate[axis])
     if minima is None:
         return None
