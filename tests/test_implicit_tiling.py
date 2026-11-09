@@ -242,10 +242,11 @@ def test_non_positive_max_objects_per_tile_raises() -> None:
 
 
 def test_decode_subtree_rejects_an_implausibly_large_subtree_levels() -> None:
-    # A tiny file that *declares* a huge subtree must be rejected, not materialized (DoS guard).
+    # A tiny file that *declares* a huge subtree must be rejected by comparing the EXPONENT — never by
+    # computing children**subtree_levels, which for 1e9 is itself a multi-hundred-MB bigint DoS.
     blob = it.encode_subtree([True], [False], [False, False, False, False])
     with pytest.raises(ValueError, match="out of the supported range"):
-        it.decode_subtree(blob, 40, 4)
+        it.decode_subtree(blob, 10**9, 4)  # must return ~instantly, not hang/OOM
 
 
 def test_reader_skips_a_corrupt_subtree_with_a_warning() -> None:
@@ -262,8 +263,24 @@ def test_reader_skips_an_oversized_subtree_levels_without_hanging() -> None:
     # An untrusted tileset declaring a huge subtreeLevels must be rejected fast, not iterated densely.
     directory = _write(_grid(30), max_objects_per_tile=4)
     tileset = json.loads((directory / "tileset.json").read_text(encoding="utf-8"))
-    tileset["root"]["implicitTiling"]["subtreeLevels"] = 40
+    tileset["root"]["implicitTiling"]["subtreeLevels"] = (
+        10**9
+    )  # pathological; must not be computed
     (directory / "tileset.json").write_text(json.dumps(tileset), encoding="utf-8")
     with pytest.warns(UserWarning, match="unreadable subtree"):
         back = parse_3dtiles(directory / "tileset.json")
     assert back.objects == {}
+
+
+def test_empty_model_validates_implicit_args() -> None:
+    # Validation must run for an empty model too (it never reaches _write_implicit), so the public
+    # contract is the same regardless of whether the model has geometry.
+    empty = CityModel(objects={})
+    with pytest.raises(ValueError, match="scheme must be"):
+        empty.to_3dtiles(
+            Path(tempfile.mkdtemp()), implicit_tiling=True, scheme="octtree"
+        )
+    with pytest.raises(ValueError, match="must be >= 1"):
+        empty.to_3dtiles(
+            Path(tempfile.mkdtemp()), max_objects_per_tile=0, implicit_tiling=True
+        )

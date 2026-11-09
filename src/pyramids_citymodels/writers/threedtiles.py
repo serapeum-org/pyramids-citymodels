@@ -551,10 +551,6 @@ def _write_implicit(
     carries the availability (which tiles exist, which have content); the root ``tileset.json`` holds
     only the root box + the ``implicitTiling`` rule, so the whole tree is described, not enumerated.
     """
-    if scheme.lower() not in ("quadtree", "octree"):
-        raise ValueError(f"scheme must be 'quadtree' or 'octree', got {scheme!r}")
-    if max_per_tile < 1:
-        raise ValueError(f"max_objects_per_tile must be >= 1, got {max_per_tile}")
     children = implicit.children_per_node(scheme)
     dimension = implicit.dimensions(scheme)
     scheme_name = "OCTREE" if dimension == 3 else "QUADTREE"
@@ -715,6 +711,15 @@ def write_3dtiles(
 
             ```
     """
+    if implicit_tiling:
+        # Validate the implicit-only args here (not in _write_implicit) so the contract is the same for
+        # an empty model, which never reaches _write_implicit.
+        if scheme.lower() not in ("quadtree", "octree"):
+            raise ValueError(f"scheme must be 'quadtree' or 'octree', got {scheme!r}")
+        if max_objects_per_tile is not None and max_objects_per_tile < 1:
+            raise ValueError(
+                f"max_objects_per_tile must be >= 1, got {max_objects_per_tile}"
+            )
     target = Path(directory)
     target.mkdir(parents=True, exist_ok=True)
     # Gather the model's geometry once and feed both builders, rather than walking it twice.

@@ -419,7 +419,9 @@ def decode_subtree(
 
             ```
     """
-    if subtree_levels < 1 or children**subtree_levels > MAX_SUBTREE_NODES:
+    # Compare the *exponent* against the cap, never ``children ** subtree_levels`` — computing that
+    # power for an untrusted ``subtree_levels`` (e.g. 1e9) is itself the DoS (a multi-hundred-MB bigint).
+    if subtree_levels < 1 or subtree_levels > max_subtree_levels(children):
         raise ValueError(
             f"subtreeLevels {subtree_levels} is out of the supported range for a "
             f"{children}-ary subtree (cells would exceed {MAX_SUBTREE_NODES})"
