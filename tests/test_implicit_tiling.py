@@ -281,3 +281,43 @@ def test_empty_model_validates_implicit_args() -> None:
         empty.to_3dtiles(directory, implicit_tiling=True, scheme="octtree")
     with pytest.raises(ValueError, match="must be >= 1"):
         empty.to_3dtiles(directory, max_objects_per_tile=0, implicit_tiling=True)
+
+
+# ------------------------------------------------------------------ multi-subtree chaining (#58)
+
+
+def _spread_grid(n: int) -> CityModel:
+    """``n`` objects spread far apart so each lands in a distinct deepest cell (forces a deep tree)."""
+    objects = {}
+    for i in range(n):
+        x, y = (i % 10) * 1000.0, (i // 10) * 1000.0
+        surface = [
+            [(x, y, 0.0), (x + 10.0, y, 0.0), (x + 10.0, y + 10.0, 0.0), (x, y, 0.0)]
+        ]
+        objects[f"o{i}"] = CityObject(
+            id=f"o{i}",
+            type="Building",
+            attributes={"h": float(i)},
+            geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])],
+        )
+    return CityModel(objects=objects)
+
+
+def test_deep_tree_is_split_into_chained_subtrees_and_round_trips() -> None:
+    # A tree deeper than one subtree (availableLevels > subtreeLevels) must be written as MULTIPLE
+    # chained .subtree files (root + children), and still round-trip through the reader.
+    model = _spread_grid(100)
+    directory = _write(model, max_objects_per_tile=1)
+    tileset = json.loads((directory / "tileset.json").read_text(encoding="utf-8"))
+    implicit_tiling = tileset["root"]["implicitTiling"]
+    assert (
+        implicit_tiling["availableLevels"] > implicit_tiling["subtreeLevels"]
+    )  # genuinely deep
+    subtrees = list(directory.glob("subtrees/**/*.subtree"))
+    assert len(subtrees) > 1  # root + child subtrees
+    assert any("/0/0/0.subtree" in p.as_posix() for p in subtrees)  # the root subtree
+    back = parse_3dtiles(directory / "tileset.json")
+    assert sorted(back.objects) == sorted(
+        model.objects
+    )  # all 100 recovered via chained subtrees
+    assert back.objects["o57"].attributes["h"] == 57.0
