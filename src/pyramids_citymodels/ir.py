@@ -209,6 +209,8 @@ class CityObject:
         id: The object's identifier, unique within the file.
         type: The object class, e.g. ``"Building"``, ``"BuildingPart"``, ``"Bridge"``.
         attributes: The object's attributes, passed through verbatim.
+        attribute_units: Optional unit of measure (``uom``) per attribute name, e.g.
+            ``{"measuredHeight": "m"}`` — a side map so ``attributes`` stays a plain name→value dict.
         geometries: The object's geometries (often one per level of detail).
         parents: Ids of parent objects (e.g. a ``BuildingPart``'s ``Building``).
         children: Ids of child objects.
@@ -217,6 +219,7 @@ class CityObject:
     id: str
     type: str
     attributes: dict[str, Any] = field(default_factory=dict)
+    attribute_units: dict[str, str] = field(default_factory=dict)
     geometries: list[Geometry] = field(default_factory=list)
     parents: list[str] = field(default_factory=list)
     children: list[str] = field(default_factory=list)
@@ -491,16 +494,116 @@ class CityModel:
 
         return write_gltf(self, path)
 
-    def to_3dtiles(self, directory: Any) -> "dict[str, Any]":
-        """Write this model as a single-tile 3D Tiles tileset into ``directory``.
+    def translate(self, offset: "tuple[float, ...]") -> "CityModel":
+        """A new model with every coordinate shifted by ``offset`` per axis (geometry cleanup, #17).
 
-        Writes ``tileset.json`` plus a batched ``content.b3dm`` (one batch per city object, with a
-        batch table of each object's id/type/attributes) — the tiling/packaging export (feature #15).
-        See :func:`.writers.threedtiles.write_3dtiles` for the format and its documented limits. 3D
-        Tiles is multi-file, so a directory is required rather than a single file path.
+        See :func:`.transform.translate`. Semantics and appearance are preserved.
+
+        Examples:
+            - Shift a surface's heights up by 10:
+                ```python
+                >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+                >>> model.translate((0.0, 0.0, 10.0)).objects["b"].geometries[0].boundaries[0][0][0]
+                (0.0, 0.0, 10.0)
+
+                ```
+        """
+        from pyramids_citymodels.transform import translate
+
+        return translate(self, offset)
+
+    def quantize(self, digits: int = 3) -> "CityModel":
+        """A new model with every coordinate rounded to ``digits`` decimals (see :func:`.transform.quantize`)."""
+        from pyramids_citymodels.transform import quantize
+
+        return quantize(self, digits)
+
+    def clean_rings(self) -> "CityModel":
+        """A new model with consecutive duplicate ring vertices removed (see :func:`.transform.clean_rings`)."""
+        from pyramids_citymodels.transform import clean_rings
+
+        return clean_rings(self)
+
+    def triangulate(self) -> "CityModel":
+        """A new model with every surface fan-triangulated into triangles (see :func:`.transform.triangulate`).
+
+        Keeps each triangle's semantic value; drops interior rings (holes) and per-geometry appearance.
+
+        Examples:
+            - A quad surface becomes two triangles:
+                ```python
+                >>> quad = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[quad])])})
+                >>> len(model.triangulate().objects["b"].geometries[0].boundaries)
+                2
+
+                ```
+        """
+        from pyramids_citymodels.transform import triangulate
+
+        return triangulate(self)
+
+    def to_collada(self, path: Any = None) -> str | None:
+        """Serialize this model to COLLADA 1.4.1 ``.dae`` (see :func:`.writers.collada.write_collada`).
+
+        A triangulated, positions-only mesh export (feature #14). Returns the document string when
+        ``path`` is ``None``, else writes it.
+
+        Examples:
+            - A one-triangle model yields one COLLADA triangle:
+                ```python
+                >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+                >>> 'triangles count="1"' in model.to_collada()
+                True
+
+                ```
+        """
+        from pyramids_citymodels.writers.collada import write_collada
+
+        return write_collada(self, path)
+
+    def to_kml(self, path: Any = None) -> str | None:
+        """Serialize this model to KML (see :func:`.writers.kml.write_kml`).
+
+        A Placemark per object, each a MultiGeometry of one Polygon per surface (feature #14).
+        Coordinates are the model's own (no reprojection). Returns the KML string when ``path`` is
+        ``None``, else writes it.
+
+        Examples:
+            - A one-surface building becomes a Placemark with a Polygon:
+                ```python
+                >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+                >>> "<Placemark>" in model.to_kml()
+                True
+
+                ```
+        """
+        from pyramids_citymodels.writers.kml import write_kml
+
+        return write_kml(self, path)
+
+    def to_3dtiles(
+        self, directory: Any, max_objects_per_tile: int | None = None
+    ) -> "dict[str, Any]":
+        """Write this model as a 3D Tiles tileset into ``directory``.
+
+        Writes ``tileset.json`` plus batched ``b3dm`` content (one batch per city object, with a batch
+        table of each object's id/type/attributes) — the tiling/packaging export (features #15/#51).
+        By default a single tile; with ``max_objects_per_tile`` set, a model with more objects is
+        subdivided into an XY quadtree of tiles. See :func:`.writers.threedtiles.write_3dtiles` for the
+        format and its documented limits. 3D Tiles is multi-file, so a directory is required.
 
         Args:
             directory: The output directory (created if missing).
+            max_objects_per_tile: When set, subdivide into tiles of at most this many objects;
+                ``None`` (default) writes a single tile.
 
         Returns:
             The written ``tileset.json`` document.
@@ -523,7 +626,7 @@ class CityModel:
         """
         from pyramids_citymodels.writers.threedtiles import write_3dtiles
 
-        return write_3dtiles(self, directory)
+        return write_3dtiles(self, directory, max_objects_per_tile)
 
     def to_file(self, path: Any) -> "dict[str, Any] | str | None":
         """Serialize this model to ``path``, choosing the writer by the path's suffix.
@@ -537,11 +640,14 @@ class CityModel:
         - ``.fg.json`` / ``.jsonfg`` → JSON-FG (:meth:`to_jsonfg`)
         - ``.obj`` → Wavefront OBJ (:meth:`to_obj`)
         - ``.gltf`` → glTF 2.0 (:meth:`to_gltf`)
+        - ``.dae`` → COLLADA 1.4.1 (:meth:`to_collada`)
+        - ``.kml`` → KML (:meth:`to_kml`)
 
         The CityJSON and CityGML suffixes are symmetric with :meth:`from_file`. The CityJSON Text
         Sequence (``.city.jsonl`` / ``.cityjsonseq`` / ``.jsonl``), JSON-FG (``.fg.json`` /
-        ``.jsonfg``), OBJ (``.obj``) and glTF (``.gltf``) suffixes are **write-only**: this package
-        ships no reader for them, so :meth:`from_file` cannot read them back.
+        ``.jsonfg``), OBJ (``.obj``), glTF (``.gltf``), COLLADA (``.dae``) and KML (``.kml``) suffixes
+        are **write-only**: this package ships no reader for them, so :meth:`from_file` cannot read
+        them back.
 
         Args:
             path: The output path; its suffix selects the format.
@@ -591,12 +697,16 @@ class CityModel:
             return self.to_obj(path)
         if name.endswith(".gltf"):
             return self.to_gltf(path)
+        if name.endswith(".dae"):
+            return self.to_collada(path)
+        if name.endswith(".kml"):
+            return self.to_kml(path)
         if name.endswith((".city.json", ".cityjson", ".json")):
             return self.to_cityjson(path)
         raise CityModelError(
             f"cannot infer a city-model writer from the suffix of {path!r}; expected one of "
             ".city.json/.cityjson/.json, .city.jsonl/.cityjsonseq/.jsonl, .gml/.xml/.citygml, "
-            ".fg.json/.jsonfg, .obj, .gltf"
+            ".fg.json/.jsonfg, .obj, .gltf, .dae, .kml"
         )
 
     def coordinates(self) -> Iterator[tuple[float, ...]]:

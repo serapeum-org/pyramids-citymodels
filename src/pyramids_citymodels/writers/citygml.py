@@ -2,47 +2,56 @@
 
 This is the hard writer. CityGML is schema-heavy GML/XML, and the reader is deliberately lossy
 (issue #24): it reconstructs the LOD2 *semantic* model — ``Building → BuildingPart → boundary
-surface → gml:Polygon`` — matching elements by local name across CityGML 1.0/2.0/3.0, and in doing
-so drops ``gml:id``\\ s it does not reuse, attribute ``uom`` units and the source XML structure.
-The writer targets exactly what that reader rebuilds, so the round-trip fidelity contract is:
+surface → gml:Polygon`` — matching elements by local name across CityGML 1.0/2.0/3.0. The writer
+targets exactly what that reader rebuilds and emits **OGC-XSD-valid** CityGML (verified against the
+official 2.0 and 3.0 schemas — see ``tests/test_xsd_conformance.py``). The round-trip fidelity
+contract is:
 
-- **Preserved:** each object's id (written as ``gml:id``), its type (``Building`` / ``BuildingPart``),
-  the parent/child hierarchy (children nested in ``bldg:consistsOfBuildingPart``), every boundary
-  surface's geometry (rings, holes, coordinates) across ``MultiSurface`` and ``Solid``/``MultiSolid``
-  alike, its semantic type, and the CRS. A plain (non-semantic) ``Solid`` round-trips **as a**
-  ``Solid`` (emitted as ``bldg:lod{n}Solid``), and a surface's **material** (``app:X3DMaterial``) and
-  **texture** (``app:ParameterizedTexture`` — image plus per-ring ``textureCoordinates`` from the
-  ``vertices-texture`` pool, each ``app:theme`` an ``app:Appearance`` targeting the polygon's assigned
-  ``gml:id``) — so the **painted colour / texture per surface** survives the round-trip (and the
-  material ``name``, carried in a free-form ``gml:name``). What does **not** survive is the appearance
-  *pool* itself: a material/texture is inlined once per theme that paints it, so an unpainted one is
-  dropped and the indices are recompacted on re-read (the per-surface appearance is unchanged, but the
-  pool composition and index values are not). The **version** round-trips for a ``1.0`` or ``2.0`` source
-  (whose LOD2 building structure this writer matches element-for-element): the source version's
-  namespaces are emitted. A ``3.0`` or unknown source is emitted as ``2.0`` (its version does *not*
-  round-trip) — 3.0 restructures the geometry model, which this writer does not reproduce.
+- **Preserved:** each object's id (written as ``gml:id``), its type, the parent/child hierarchy
+  (children nested in ``<module>:consistsOf…Part``), every boundary surface's geometry (rings, holes,
+  coordinates) across ``MultiSurface`` and ``Solid``/``MultiSolid`` alike, its semantic type, and the
+  CRS. Each object is emitted in its **own thematic namespace** — ``bldg:Building``, ``brid:Bridge``,
+  ``tun:Tunnel``, ``frn:CityFurniture``, ``veg:…``, ``luse:LandUse``, ``tran:…``, ``gen:…`` — with its
+  boundary surfaces and geometry in that module's own elements (``brid:boundedBy`` →
+  ``brid:WallSurface`` → ``brid:lod{n}MultiSurface``; city furniture / generics use their
+  ``lod{n}Geometry`` slot; land use / transportation their ``lod{n}MultiSurface``). A plain
+  (non-semantic) ``Solid`` round-trips **as a** ``Solid`` (the module's ``lod{n}Solid``). Attribute
+  ``uom`` **units** round-trip: a native building attribute re-emits its ``uom``
+  (``<bldg:measuredHeight uom="m">``) and a generic attribute with a unit is written as a
+  ``gen:measureAttribute`` (whose value legally carries the ``uom``). A surface's **material**
+  (``app:X3DMaterial``) and **texture** (``app:ParameterizedTexture`` — image plus per-ring
+  ``textureCoordinates``, each ``app:theme`` an ``app:Appearance`` targeting the polygon's ``gml:id``)
+  survive, as does the material ``name`` (a free-form ``gml:name``). The appearance *pool* itself does
+  not: a material/texture is inlined once per theme that paints it, so an unpainted one is dropped and
+  the indices are recompacted on re-read. The **version** round-trips for a ``1.0``/``2.0``/``3.0``
+  source. 1.0/2.0 use the ``<module>:boundedBy`` structure on GML 3.1.1; **3.0** emits valid CityGML
+  3.0 — ``core:boundary`` → ``con:<Surface>`` (the Construction module) → ``core:lod{n}MultiSurface``
+  on GML 3.2 — for the building + common-object model this writer covers (3.0's wider space/versioning
+  features are out of scope, and a 3.0 document's namespace prefixes are auto-assigned: valid, read
+  back by local name). An unknown version falls back to valid ``2.0`` with a warning.
 - **Best-effort:** attribute *values* keep their Python type via ``gen:*Attribute`` kinds
-  (``int`` → ``gen:intAttribute``, ``float`` → ``gen:doubleAttribute``, else
-  ``gen:stringAttribute``); the known numeric building attributes (``measuredHeight``, …) are
-  written as their native ``bldg:`` elements. Rings are emitted closed (first position repeated) so
-  the ``gml:LinearRing`` is schema-valid even though the IR (CityJSON-style) carries open rings. A
-  CityGML→CityGML round-trip is therefore exact only for a **spec-conformant source, whose rings are
-  already closed** (re-closing is then a no-op); an open-ring source gains the required closing
-  position, so its re-parsed rings carry one extra coordinate. Real GML ``LinearRing``\\ s are always
-  closed, so this affects only hand-authored open-ring input, not conformant CityGML.
-- **Lossy:** attribute ``uom`` units, original ``gml:id``\\ s of surfaces/polygons (regenerated),
-  a geometry whose surfaces carry *no* semantic type (written as a plain building geometry, which
-  this package's semantic reader does not read back), and any non-``Building``/``BuildingPart``
-  object type. Such a type (``Bridge``, ``CityFurniture``, … — now common since the CityGML reader
-  reads them) is written under the ``bldg:`` namespace with a warning, e.g. ``<bldg:CityFurniture>``,
-  which is **not schema-valid** (city furniture belongs to the ``frn:`` namespace): the geometry and
-  attributes are preserved for a CityJSON/JSON-FG/mesh target, but a CityGML→CityGML round-trip of a
-  non-building object is best-effort, not conformant (emitting the correct thematic namespace per
-  type is a follow-up). A ``MultiSolid`` is written as its surfaces (its N-solid partitioning is not
-  preserved), though it is never mislabelled as a single ``Solid``.
+  (``int`` → ``gen:intAttribute``, ``float`` → ``gen:doubleAttribute``, else ``gen:stringAttribute``).
+  Rings are emitted closed (first position repeated) so the ``gml:LinearRing`` is schema-valid even
+  though the IR (CityJSON-style) carries open rings — so a CityGML→CityGML round-trip is exact only for
+  a **spec-conformant, already-closed-ring source** (re-closing is a no-op); an open-ring source gains
+  the required closing position, so its re-parsed rings carry one extra coordinate. Real GML rings are
+  always closed, so this affects only hand-authored open-ring input, not conformant CityGML.
+- **Lossy:** original ``gml:id``\\ s of surfaces/polygons (regenerated); a geometry whose surfaces
+  carry *no* semantic type (written as a plain module geometry, which this package's semantic reader
+  does not read back); a semantic surface whose type the object's module cannot carry as a boundary
+  surface (e.g. a ``RoofSurface`` on a ``LandUse``), which is demoted to plain geometry — its semantic
+  type dropped — **with a warning**; and a few object types whose module has no slot for the IR's generic surface
+  geometry — ``ReliefFeature``/``TINRelief`` (need a TIN structure), ``CityObjectGroup``, and a
+  WaterBody *surface* (water boundary surfaces use a different ``lod{n}Surface`` geometry). Their
+  feature element is still emitted in the correct namespace, but the geometry falls back to a ``bldg:``
+  property **with a warning** (preserved for a CityJSON/JSON-FG/mesh target, not a conformant
+  CityGML→CityGML round-trip). An entirely unknown object type likewise falls back to ``bldg:`` + a
+  warning. A ``MultiSolid`` is written as its surfaces (its N-solid partitioning is not preserved,
+  though it is never mislabelled as a single ``Solid``).
 
-It writes with the standard-library :mod:`xml.etree.ElementTree` (no ``lxml``, matching the reader),
-so there is no new dependency and no optional ``extra``.
+It writes with the standard-library :mod:`xml.etree.ElementTree` (no ``lxml`` at runtime, matching the
+reader — ``lxml`` is a test-only dependency used by the XSD-conformance check), so there is no new
+runtime dependency and no optional ``extra``.
 """
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
@@ -62,32 +71,295 @@ from pyramids_citymodels.ir import (
 
 __all__ = ["write_citygml"]
 
-#: CityGML versions whose LOD2 building structure this writer matches element-for-element. A source
-#: in one of these is re-emitted under its own namespaces (so the version string round-trips); any
-#: other version (e.g. 3.0, which restructures geometry) is emitted as 2.0.
-_MATCHED_VERSIONS = frozenset({"1.0", "2.0"})
-
-#: Object types the CityGML reader reconstructs. A top-level object of any other type is written but
-#: not read back by this package's semantic reader, so writing one warns rather than losing it silently.
-_READABLE_OBJECT_TYPES = frozenset({"Building", "BuildingPart"})
+#: CityGML versions this writer emits natively (so the version string round-trips). 1.0/2.0 share the
+#: ``bldg:boundedBy`` building structure; 3.0 uses ``bldg:boundary`` and the ``gml/3.2`` namespace (see
+#: :func:`_namespaces` / :func:`_boundary_tag`). Any other version is emitted as 2.0 with a warning.
+_MATCHED_VERSIONS = frozenset({"1.0", "2.0", "3.0"})
 
 #: The GML namespace, constant across CityGML versions this writer emits.
 _GML_NS = "http://www.opengis.net/gml"
 
+#: Thematic module prefix → the module path segment of its ``.../citygml/<module>/<version>`` URI.
+_MODULE_PATHS = {
+    "bldg": "building",
+    "gen": "generics",
+    "app": "appearance",
+    "brid": "bridge",
+    "tun": "tunnel",
+    "frn": "cityfurniture",
+    "veg": "vegetation",
+    "wtr": "waterbody",
+    "luse": "landuse",
+    "dem": "relief",
+    "tran": "transportation",
+    "grp": "cityobjectgroup",
+}
+
+#: City-object type → the thematic-module prefix its element and ``consistsOf…`` wrapper belong to, so
+#: a non-Building object is emitted in its correct (schema-valid) namespace, e.g. ``frn:CityFurniture``
+#: rather than an invalid ``bldg:CityFurniture``. Any type absent here falls back to ``bldg`` + a warning.
+_TYPE_NAMESPACE_PREFIX = {
+    "Building": "bldg",
+    "BuildingPart": "bldg",
+    "Bridge": "brid",
+    "BridgePart": "brid",
+    "Tunnel": "tun",
+    "TunnelPart": "tun",
+    "CityFurniture": "frn",
+    "SolitaryVegetationObject": "veg",
+    "PlantCover": "veg",
+    "WaterBody": "wtr",
+    "LandUse": "luse",
+    "ReliefFeature": "dem",
+    "TINRelief": "dem",
+    "TransportationComplex": "tran",
+    "Road": "tran",
+    "Railway": "tran",
+    "Track": "tran",
+    "Square": "tran",
+    "GenericCityObject": "gen",
+    "CityObjectGroup": "grp",
+}
+
+#: Object types this writer emits in a schema-valid namespace (and the reader reads back). A type not
+#: here is written under ``bldg:`` with a warning (best-effort, not conformant).
+_READABLE_OBJECT_TYPES = frozenset(_TYPE_NAMESPACE_PREFIX)
+
+#: The nine thematic boundary-surface element names shared by the building/bridge/tunnel modules
+#: (each defines its own, in its own namespace; the local names are identical). Taken from the
+#: official CityGML 2.0 XSDs — a semantic surface of one of these types is written as a
+#: ``<module>:boundedBy`` → ``<module>:<Type>`` boundary surface; any other semantic type has no
+#: ``boundedBy`` representation in its module and is written as plain geometry instead.
+_CONSTRUCTION_SURFACES = frozenset(
+    {
+        "RoofSurface",
+        "WallSurface",
+        "GroundSurface",
+        "ClosureSurface",
+        "FloorSurface",
+        "OuterFloorSurface",
+        "InteriorWallSurface",
+        "CeilingSurface",
+        "OuterCeilingSurface",
+    }
+)
+
+
+class _GeometryProfile:
+    """How one city-object *type* may carry geometry in **CityGML 2.0**, per the official XSDs.
+
+    The thematic modules do not share one geometry convention: building/bridge/tunnel have boundary
+    surfaces (``boundedBy``) plus ``lod{n}MultiSurface``/``lod{n}Solid``/``lod{n}Geometry``; city
+    furniture and generics have only a ``lod{n}Geometry`` (a ``gml:_Geometry`` slot); land use and
+    transportation have ``lod{n}MultiSurface`` but no boundary surfaces; water has boundary surfaces
+    and a solid but no plain ``MultiSurface``; relief and groups have no slot that accepts a generic
+    surface at all. Each attribute is the *local* element name template (``{n}`` is the LOD integer),
+    or ``None`` when that module has no such slot (then emission falls back, with a warning).
+    """
+
+    def __init__(
+        self,
+        surfaces: frozenset[str] = frozenset(),
+        multisurface: str | None = None,
+        solid: str | None = None,
+        generic: str | None = None,
+    ):
+        self.surfaces = (
+            surfaces  # semantic types that may be a boundedBy boundary surface
+        )
+        self.multisurface = (
+            multisurface  # property for a plain MultiSurface, e.g. "lod{n}MultiSurface"
+        )
+        self.solid = solid  # property for a Solid, e.g. "lod{n}Solid"
+        self.generic = generic  # gml:_Geometry property, e.g. "lod{n}Geometry"
+
+
+#: Building-pattern profile (building/bridge/tunnel): boundary surfaces + MultiSurface + Solid + Geometry.
+_CONSTRUCTION_PROFILE = _GeometryProfile(
+    _CONSTRUCTION_SURFACES, "lod{n}MultiSurface", "lod{n}Solid", "lod{n}Geometry"
+)
+#: A ``gml:_Geometry``-only profile (city furniture, generics, solitary vegetation): ``lod{n}Geometry``.
+_GEOMETRY_ONLY_PROFILE = _GeometryProfile(generic="lod{n}Geometry")
+#: A plain-``MultiSurface`` profile, no boundary surfaces (land use, transportation, plant cover).
+_MULTISURFACE_PROFILE = _GeometryProfile(multisurface="lod{n}MultiSurface")
+#: WaterBody: only its ``lod{n}Solid`` body is cleanly representable from the IR's surface model. Its
+#: boundary surfaces take a ``lod{n}Surface`` (single ``gml:Surface``, not ``MultiSurface``) geometry
+#: and it has no plain ``MultiSurface`` slot, so a water *surface* or plain geometry falls back + warns.
+_WATER_PROFILE = _GeometryProfile(solid="lod{n}Solid")
+#: No slot that accepts a generic surface/solid (relief, city-object groups) — emission falls back.
+_NO_GEOMETRY_PROFILE = _GeometryProfile()
+
+#: City-object type → its CityGML 2.0 geometry profile. A type absent here uses the construction
+#: profile under ``bldg:`` (the warned best-effort fallback in :func:`_feature_element`).
+_TYPE_GEOMETRY_PROFILE = {
+    "Building": _CONSTRUCTION_PROFILE,
+    "BuildingPart": _CONSTRUCTION_PROFILE,
+    "Bridge": _CONSTRUCTION_PROFILE,
+    "BridgePart": _CONSTRUCTION_PROFILE,
+    "Tunnel": _CONSTRUCTION_PROFILE,
+    "TunnelPart": _CONSTRUCTION_PROFILE,
+    "CityFurniture": _GEOMETRY_ONLY_PROFILE,
+    "GenericCityObject": _GEOMETRY_ONLY_PROFILE,
+    "SolitaryVegetationObject": _GEOMETRY_ONLY_PROFILE,
+    "PlantCover": _MULTISURFACE_PROFILE,
+    "LandUse": _MULTISURFACE_PROFILE,
+    "TransportationComplex": _MULTISURFACE_PROFILE,
+    "Road": _MULTISURFACE_PROFILE,
+    "Railway": _MULTISURFACE_PROFILE,
+    "Track": _MULTISURFACE_PROFILE,
+    "Square": _MULTISURFACE_PROFILE,
+    "WaterBody": _WATER_PROFILE,
+    "ReliefFeature": _NO_GEOMETRY_PROFILE,
+    "TINRelief": _NO_GEOMETRY_PROFILE,
+    "CityObjectGroup": _NO_GEOMETRY_PROFILE,
+}
+
 
 def _namespaces(version: str) -> dict[str, str]:
-    """The ``prefix → URI`` map for a CityGML ``version`` (``core``/``bldg``/``gen`` carry it).
+    """The ``prefix → URI`` map for a CityGML ``version`` (``core`` and every thematic module).
 
     Returned fresh per call and threaded through element construction, so the writer holds **no**
     mutable module state — concurrent writes of different-version models cannot corrupt each other.
+    Unused namespaces are not serialized (ElementTree emits an ``xmlns`` only for a namespace a
+    document actually uses), so declaring every module here does not bloat the output.
     """
-    return {
-        "core": f"http://www.opengis.net/citygml/{version}",
-        "bldg": f"http://www.opengis.net/citygml/building/{version}",
-        "gen": f"http://www.opengis.net/citygml/generics/{version}",
-        "app": f"http://www.opengis.net/citygml/appearance/{version}",
-        "gml": _GML_NS,
+    namespaces = {
+        prefix: f"http://www.opengis.net/citygml/{module}/{version}"
+        for prefix, module in _MODULE_PATHS.items()
     }
+    namespaces["core"] = f"http://www.opengis.net/citygml/{version}"
+    # CityGML 3.0 is built on GML 3.2; 1.0/2.0 on the older GML namespace.
+    namespaces["gml"] = (
+        "http://www.opengis.net/gml/3.2" if version == "3.0" else _GML_NS
+    )
+    if version == "3.0":
+        # CityGML 3.0 relocated the thematic boundary surfaces (RoofSurface, …) to the Construction
+        # module; it has no 1.0/2.0 counterpart, so it is declared only here.
+        namespaces["con"] = "http://www.opengis.net/citygml/construction/3.0"
+    return namespaces
+
+
+#: The CityGML 3.0 core namespace, compared exactly (not by URL suffix) to switch on the 3.0 geometry
+#: model (``core:boundary`` → ``con:`` surfaces → ``core:lod{n}…``; see :class:`_GeometryPlan`).
+_CORE_30 = "http://www.opengis.net/citygml/3.0"
+
+
+class _WriteDiagnostics:
+    """Feature-level notes gathered while a model is written, surfaced as one warning each at the end.
+
+    ``fallbacks`` holds object types whose geometry had no valid slot in their module and used the
+    ``bldg:`` fallback; ``demoted`` holds types where a semantic boundary surface could not be carried
+    by the module and was written as plain geometry (its semantic type dropped). Both are warned once.
+    """
+
+    def __init__(self) -> None:
+        self.fallbacks: set[str] = set()
+        self.demoted: set[str] = set()
+
+
+class _GeometryPlan:
+    """The exact element QNames for emitting one object's geometry in a given version **and** module.
+
+    Encapsulates the two things that vary: the CityGML **version** (2.0 keeps boundary surfaces and
+    geometry in the object's own thematic module — ``bldg:boundedBy`` → ``bldg:WallSurface`` →
+    ``bldg:lod2MultiSurface``; 3.0 moved them to core/construction — ``core:boundary`` →
+    ``con:WallSurface`` → ``core:lod2MultiSurface``), and the **module**'s geometry
+    :class:`_GeometryProfile` (which slots a given object type actually has). The ``_profile`` gates
+    *whether* a slot exists in both versions (so a 3.0 relief/group with no slot still falls back and
+    warns); the version only changes the *names*. A method returns ``None`` when the type+version has no
+    valid slot for that geometry kind, so the caller can fall back.
+    """
+
+    def __init__(
+        self,
+        ns: dict[str, str],
+        prefix: str,
+        profile: _GeometryProfile,
+        object_type: str,
+        diagnostics: _WriteDiagnostics,
+    ):
+        self._ns = ns
+        self._prefix = prefix
+        self._profile = profile
+        self._is_30 = ns["core"] == _CORE_30
+        self.object_type = object_type
+        self._diagnostics = diagnostics
+
+    def note_fallback(self) -> None:
+        """Record that this object's geometry had no valid slot and used the ``bldg:`` fallback."""
+        self._diagnostics.fallbacks.add(self.object_type)
+
+    def note_demoted(self) -> None:
+        """Record that a semantic boundary surface was demoted to plain geometry (semantic dropped)."""
+        self._diagnostics.demoted.add(self.object_type)
+
+    def supports_surface(self, semantic_type: str) -> bool:
+        """Whether ``semantic_type`` is a valid ``boundedBy`` boundary surface here.
+
+        Only a module that has boundary surfaces at all (``profile.surfaces``) can carry one; in 3.0
+        the surface *names* come from the Construction module, but a non-construction type (empty
+        ``profile.surfaces``) still has none.
+        """
+        if not self._profile.surfaces:
+            return False
+        valid = _CONSTRUCTION_SURFACES if self._is_30 else self._profile.surfaces
+        return semantic_type in valid
+
+    def boundary_wrapper(self) -> str:
+        """The boundary wrapper element (3.0 ``core:boundary``; else ``<module>:boundedBy``)."""
+        if self._is_30:
+            return _q(self._ns, "core", "boundary")
+        return _q(self._ns, self._prefix, "boundedBy")
+
+    def surface_element(self, semantic_type: str) -> str:
+        """The boundary-surface element (3.0 ``con:<Type>``; else ``<module>:<Type>``)."""
+        if self._is_30:
+            return _q(self._ns, "con", semantic_type)
+        return _q(self._ns, self._prefix, semantic_type)
+
+    def surface_geometry(self, lod: int) -> str:
+        """The ``lod{n}MultiSurface`` geometry inside a boundary surface (3.0 ``core:``; else module)."""
+        prefix = "core" if self._is_30 else self._prefix
+        return _q(self._ns, prefix, f"lod{lod}MultiSurface")
+
+    def plain_property(self, lod: int) -> str | None:
+        """The property for a plain ``MultiSurface``, or ``None`` when the type has no such slot.
+
+        The ``_profile`` decides whether the type has a surface slot at all (so a relief/group with no
+        slot returns ``None`` and falls back in 3.0 too); the version decides the element's name
+        (3.0 ``core:lod{n}MultiSurface`` on the space, else the module's own slot).
+        """
+        template = self._profile.multisurface or self._profile.generic
+        if template is None:
+            return None
+        if self._is_30:
+            return _q(self._ns, "core", f"lod{lod}MultiSurface")
+        return _q(self._ns, self._prefix, template.format(n=lod))
+
+    def solid_property(self, lod: int) -> str | None:
+        """The property for a ``Solid``, or ``None`` when the type has no such slot."""
+        if not self._profile.solid:
+            return None
+        if self._is_30:
+            return _q(self._ns, "core", f"lod{lod}Solid")
+        return _q(self._ns, self._prefix, self._profile.solid.format(n=lod))
+
+    def boundary_rank(self) -> tuple[int, int]:
+        """The sort rank of the ``boundedBy``/``boundary`` group relative to the geometry properties.
+
+        The content sequence differs by version: CityGML **2.0** places ``boundedBy`` *after* the
+        LOD-2 geometry (``_BOUNDED_BY_RANK``), while CityGML **3.0** places ``core:boundary`` *before*
+        the space's own ``core:lod{n}Solid``/``MultiSurface`` — so in 3.0 it sorts ahead of everything.
+        """
+        return (-1, 0) if self._is_30 else _BOUNDED_BY_RANK
+
+    def solid_shell_tag(self) -> str:
+        """The ``gml:Solid``'s exterior shell element: GML 3.2 ``gml:Shell`` (3.0) else ``CompositeSurface``.
+
+        GML 3.1.1 wraps a solid's exterior surfaces in a ``gml:CompositeSurface``; GML 3.2 (CityGML 3.0)
+        wraps them in a ``gml:Shell``. Both then hold ``gml:surfaceMember`` polygons.
+        """
+        return _q(self._ns, "gml", "Shell" if self._is_30 else "CompositeSurface")
 
 
 #: The default (CityGML 2.0) namespace map. Its prefixes are registered with ElementTree once at
@@ -548,6 +820,7 @@ def _polygon_element(
 
 def _bounded_by(
     ns: dict[str, str],
+    plan: _GeometryPlan,
     semantic_type: str,
     surface: list[Any],
     lod: int,
@@ -555,15 +828,22 @@ def _bounded_by(
     material_by_theme: dict[str, int],
     texture_by_theme: dict[str, list[Any]],
 ) -> ElementTree.Element | None:
-    """A ``bldg:boundedBy`` wrapping one boundary surface of ``semantic_type`` and its polygon."""
+    """A boundary wrapper (``<module>:boundedBy`` / 3.0 ``core:boundary``) around one boundary surface.
+
+    The wrapper, surface element and geometry property all come from ``plan``, so the surface lands in
+    its module's namespace (``bldg:``/``brid:``/``tun:``, or 3.0's ``con:`` + ``core:``), not a
+    hardcoded ``bldg:``.
+    """
     polygon = _polygon_element(ns, surface)
     if polygon is None:
         return None
     targets.paint(ns, polygon, surface, material_by_theme, texture_by_theme)
-    bounded_by = ElementTree.Element(_q(ns, "bldg", "boundedBy"))
-    boundary_surface = ElementTree.SubElement(bounded_by, _q(ns, "bldg", semantic_type))
+    bounded_by = ElementTree.Element(plan.boundary_wrapper())
+    boundary_surface = ElementTree.SubElement(
+        bounded_by, plan.surface_element(semantic_type)
+    )
     multi_surface_property = ElementTree.SubElement(
-        boundary_surface, _q(ns, "bldg", f"lod{lod}MultiSurface")
+        boundary_surface, plan.surface_geometry(lod)
     )
     multi_surface = ElementTree.SubElement(
         multi_surface_property, _q(ns, "gml", "MultiSurface")
@@ -585,71 +865,129 @@ def _lod_number(geometry: Geometry) -> int:
         return 2
 
 
+def _text(value: Any) -> str:
+    """The element text for an attribute value (``repr`` for a float, ``str`` otherwise)."""
+    return repr(value) if isinstance(value, float) else str(value)
+
+
 def _add_attributes(
-    ns: dict[str, str], feature: ElementTree.Element, attributes: dict[str, Any]
+    ns: dict[str, str],
+    feature: ElementTree.Element,
+    attributes: dict[str, Any],
+    units: dict[str, str] | None = None,
+    native_ok: bool = True,
 ) -> None:
-    """Append an object's attributes: native ``bldg:`` elements for the known numeric ones, else
-    a typed ``gen:*Attribute`` that preserves the Python value type on read."""
+    """Append an object's attributes to ``feature`` in schema order.
+
+    The generic ``gen:*Attribute`` elements are inherited from ``AbstractCityObject`` and must precede
+    the module's own (native) attributes in the content sequence, so **all generics are emitted first**,
+    then the native ``bldg:`` numeric attributes. A native attribute is written as its ``bldg:`` element
+    only for a building-family feature (``native_ok``); on any other object type ``bldg:measuredHeight``
+    would be invalid, so it goes out as a generic instead. A non-native attribute that carries a unit is
+    written as a ``gen:measureAttribute`` (whose ``gml:MeasureType`` value legally holds the ``uom`` — a
+    plain ``gen:doubleAttribute`` cannot), so the unit round-trips; a native one re-emits its ``uom`` on
+    the ``bldg:`` element.
+    """
+    units = units or {}
+    native: list[tuple[str, Any]] = []
     for name, value in attributes.items():
-        if name in _NATIVE_BUILDING_ATTRIBUTES:
-            element = ElementTree.SubElement(feature, _q(ns, "bldg", name))
-            element.text = repr(value) if isinstance(value, float) else str(value)
-            continue
-        # bool is an int subclass — keep it as a string, not an intAttribute.
-        if isinstance(value, bool):
-            kind = "stringAttribute"
-        elif isinstance(value, int):
-            kind = "intAttribute"
-        elif isinstance(value, float):
-            kind = "doubleAttribute"
+        if native_ok and name in _NATIVE_BUILDING_ATTRIBUTES:
+            native.append((name, value))
         else:
-            kind = "stringAttribute"
-        generic = ElementTree.SubElement(feature, _q(ns, "gen", kind))
-        generic.set("name", name)
-        value_element = ElementTree.SubElement(generic, _q(ns, "gen", "value"))
-        value_element.text = repr(value) if isinstance(value, float) else str(value)
+            _emit_generic_attribute(ns, feature, name, value, units.get(name))
+    for name, value in native:
+        element = ElementTree.SubElement(feature, _q(ns, "bldg", name))
+        element.text = _text(value)
+        if name in units:
+            element.set("uom", units[name])
 
 
-def _append_plain_surface(
+def _generic_attribute_kind(value: Any) -> str:
+    """The ``gen:*Attribute`` element for a value's Python type (``bool`` stays a string)."""
+    if isinstance(
+        value, bool
+    ):  # bool is an int subclass — keep it a string, not an intAttribute
+        return "stringAttribute"
+    if isinstance(value, int):
+        return "intAttribute"
+    if isinstance(value, float):
+        return "doubleAttribute"
+    return "stringAttribute"
+
+
+def _emit_generic_attribute(
     ns: dict[str, str],
     feature: ElementTree.Element,
-    surface: list[Any],
-    lod: int,
-    targets: _Appearances,
-    material_by_theme: dict[str, int],
-    texture_by_theme: dict[str, list[Any]],
+    name: str,
+    value: Any,
+    unit: str | None,
 ) -> None:
-    """Append a surface with no semantic type as a bare ``bldg:lod{n}MultiSurface`` on the feature."""
-    plain = _polygon_element(ns, surface)
-    if plain is None:
-        return
-    targets.paint(ns, plain, surface, material_by_theme, texture_by_theme)
-    multi_property = ElementTree.SubElement(
-        feature, _q(ns, "bldg", f"lod{lod}MultiSurface")
-    )
-    multi = ElementTree.SubElement(multi_property, _q(ns, "gml", "MultiSurface"))
-    member = ElementTree.SubElement(multi, _q(ns, "gml", "surfaceMember"))
-    member.append(plain)
+    """Append one ``gen:*Attribute``: a ``measureAttribute`` when a numeric value carries a unit, else
+    the typed kind for its Python type."""
+    numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+    if unit is not None and numeric:
+        # gen:measureAttribute is the only generic kind whose value (gml:MeasureType) holds a uom.
+        kind, with_uom = "measureAttribute", True
+    else:
+        kind, with_uom = _generic_attribute_kind(value), False
+    generic = ElementTree.SubElement(feature, _q(ns, "gen", kind))
+    generic.set("name", name)
+    value_element = ElementTree.SubElement(generic, _q(ns, "gen", "value"))
+    if with_uom:
+        value_element.set("uom", unit or "")
+    value_element.text = _text(value)
 
 
-def _append_solid(
+#: The schema-sequence rank of a ``boundedBy`` group in a construction content model: it sits after the
+#: LOD-2 geometry and before LOD-3, so it is ranked as the end of the LOD-2 group. Plain geometry at
+#: LOD ≤ 2 then sorts before it, LOD ≥ 3 after it — matching ``AbstractBuildingType``.
+_BOUNDED_BY_RANK = (2, 9)
+
+
+def _build_plain_multisurface(
     ns: dict[str, str],
-    feature: ElementTree.Element,
+    plan: _GeometryPlan,
+    polygons: list[ElementTree.Element],
+    lod: int,
+) -> ElementTree.Element:
+    """Build **one** geometry property wrapping ``polygons`` in a single ``gml:MultiSurface``.
+
+    All of a feature's plain (non-boundary) surfaces at one LOD share a single property — the module's
+    ``lod{n}MultiSurface`` or (city furniture / generics) ``lod{n}Geometry`` slot, which are
+    ``maxOccurs="1"``. When the type has no plain-geometry slot (relief, groups), it falls back to
+    ``bldg:lod{n}MultiSurface`` and records the fallback so :func:`write_citygml` can warn.
+    """
+    property_tag = plan.plain_property(lod)
+    if property_tag is None:
+        plan.note_fallback()
+        property_tag = _q(ns, "bldg", f"lod{lod}MultiSurface")
+    multi_property = ElementTree.Element(property_tag)
+    multi = ElementTree.SubElement(multi_property, _q(ns, "gml", "MultiSurface"))
+    for polygon in polygons:
+        member = ElementTree.SubElement(multi, _q(ns, "gml", "surfaceMember"))
+        member.append(polygon)
+    return multi_property
+
+
+def _build_solid(
+    ns: dict[str, str],
+    plan: _GeometryPlan,
     geometry: Geometry,
     lod: int,
     targets: _Appearances,
     surface_materials: list[dict[str, int]],
     surface_textures: list[dict[str, list[Any]]],
-) -> None:
-    """Append a (non-semantic) ``Solid`` as a ``bldg:lod{n}Solid`` of one ``gml:CompositeSurface``.
+) -> ElementTree.Element | None:
+    """Build a (non-semantic) ``Solid`` as the module's ``lod{n}Solid``, or ``None`` to fall back.
 
-    Emitting the surfaces inside a ``gml:Solid`` (rather than as separate plain ``MultiSurface``
-    properties) preserves the geometry *type*, so a CityJSON ``Solid`` round-trips as a ``Solid``
-    through CityGML (the reader reads a ``lodXSolid`` back as ``type="Solid"`` — §3 gap 2). Only a
-    single ``Solid`` is handled here: a ``MultiSolid`` is **not** routed through this path (that would
-    collapse its N solids into one shell and mislabel the type), so it falls through to the
-    per-surface path in :func:`_append_geometry` and is written as its surfaces.
+    Emitting the surfaces inside a ``gml:Solid`` preserves the geometry *type*, so a CityJSON ``Solid``
+    round-trips as a ``Solid`` (the reader reads a ``lodXSolid`` back as ``type="Solid"`` — §3 gap 2).
+    Returns ``None`` when the module has no ``Solid`` slot or the solid has no valid polygon (then the
+    caller writes the shell's surfaces as plain geometry instead). A ``MultiSolid`` is not routed here.
     """
+    solid_tag = plan.solid_property(lod)
+    if solid_tag is None:
+        return None
     polygons: list[ElementTree.Element] = []
     for position, (surface, _value) in enumerate(
         iter_surfaces(geometry.boundaries, geometry.semantic_values)
@@ -664,57 +1002,144 @@ def _append_solid(
         targets.paint(ns, polygon, surface, material, texture)
         polygons.append(polygon)
     if not polygons:
-        return
-    solid_property = ElementTree.SubElement(feature, _q(ns, "bldg", f"lod{lod}Solid"))
+        return None
+    solid_property = ElementTree.Element(solid_tag)
     solid = ElementTree.SubElement(solid_property, _q(ns, "gml", "Solid"))
     exterior = ElementTree.SubElement(solid, _q(ns, "gml", "exterior"))
-    composite = ElementTree.SubElement(exterior, _q(ns, "gml", "CompositeSurface"))
+    composite = ElementTree.SubElement(exterior, plan.solid_shell_tag())
     for polygon in polygons:
         member = ElementTree.SubElement(composite, _q(ns, "gml", "surfaceMember"))
         member.append(polygon)
+    return solid_property
 
 
-def _append_geometry(
+def _collect_one_geometry(
     ns: dict[str, str],
-    feature: ElementTree.Element,
+    plan: _GeometryPlan,
     geometry: Geometry,
     targets: _Appearances,
-) -> None:
-    """Append one IR geometry to ``feature`` — a ``gml:Solid`` when it is a plain solid, else surfaces.
+) -> tuple[
+    int,
+    ElementTree.Element | None,
+    list[ElementTree.Element],
+    list[ElementTree.Element],
+]:
+    """Classify one geometry's surfaces: ``(lod, solid_or_None, boundary_surfaces, plain_polygons)``.
 
-    A non-semantic ``Solid`` is emitted as a ``bldg:lod{n}Solid`` so its type survives the round-trip
-    (§3 gap 2). Every other geometry is walked to surface level for ANY type via the shared IR
-    traversal, each surface paired with its semantic value — so a semantic ``Solid``'s surfaces (nested
-    one shell deeper) are still reached and emitted as ``bldg:boundedBy`` boundary surfaces, and a
-    surface with no semantic type becomes a plain building ``MultiSurface``. A ``MultiSolid`` is **not**
-    emitted as a single ``gml:Solid`` (that would collapse its solids and mislabel the type); it takes
-    this per-surface path, so its type is not preserved (a documented limit) but it is never mislabelled.
-    Each emitted polygon is registered with ``targets`` (its ``gml:id`` + any material painting it).
+    A non-semantic ``Solid`` with a module solid slot yields the ``solid`` element (and no surfaces).
+    Otherwise each surface is split: one the module can carry becomes a ``boundedBy`` boundary surface;
+    any other (plain, or a demoted typed surface — recorded so the writer warns) becomes a plain
+    polygon. :func:`_append_feature_geometry` aggregates and orders these across all of a feature's
+    geometries.
     """
     lod = _lod_number(geometry)
-    surface_materials = _surface_materials(geometry)
-    surface_textures = _surface_textures(geometry)
+    materials = _surface_materials(geometry)
+    textures = _surface_textures(geometry)
     if geometry.type == "Solid" and not geometry.semantics:
-        _append_solid(
-            ns, feature, geometry, lod, targets, surface_materials, surface_textures
-        )
-        return
+        solid = _build_solid(ns, plan, geometry, lod, targets, materials, textures)
+        if solid is not None:
+            return lod, solid, [], []
+        # No Solid slot — fall through and emit the shell's surfaces as plain geometry.
+    bounded: list[ElementTree.Element] = []
+    plain: list[ElementTree.Element] = []
     for position, (surface, semantic_value) in enumerate(
         iter_surfaces(geometry.boundaries, geometry.semantic_values)
     ):
-        material = (
-            surface_materials[position] if position < len(surface_materials) else {}
-        )
-        texture = surface_textures[position] if position < len(surface_textures) else {}
+        material = materials[position] if position < len(materials) else {}
+        texture = textures[position] if position < len(textures) else {}
         surface_object = geometry.semantic_for(semantic_value)
-        if surface_object is None:
-            _append_plain_surface(ns, feature, surface, lod, targets, material, texture)
-            continue
+        _classify_surface(
+            ns,
+            plan,
+            surface,
+            surface_object,
+            lod,
+            targets,
+            material,
+            texture,
+            bounded,
+            plain,
+        )
+    return lod, None, bounded, plain
+
+
+def _classify_surface(
+    ns: dict[str, str],
+    plan: _GeometryPlan,
+    surface: list[Any],
+    surface_object: Any,
+    lod: int,
+    targets: _Appearances,
+    material: dict[str, int],
+    texture: dict[str, list[Any]],
+    bounded: list[ElementTree.Element],
+    plain: list[ElementTree.Element],
+) -> None:
+    """Route one surface: a ``boundedBy`` boundary surface the module can carry, else a plain polygon.
+
+    A semantic surface the module cannot carry as a boundary surface is demoted to ``plain`` (its type
+    recorded via :meth:`_GeometryPlan.note_demoted` so the writer warns).
+    """
+    if surface_object is not None and plan.supports_surface(surface_object.type):
         bounded_by = _bounded_by(
-            ns, surface_object.type, surface, lod, targets, material, texture
+            ns, plan, surface_object.type, surface, lod, targets, material, texture
         )
         if bounded_by is not None:
-            feature.append(bounded_by)
+            bounded.append(bounded_by)
+        return
+    if surface_object is not None:
+        plan.note_demoted()  # a typed surface the module can't carry → plain, semantic lost
+    polygon = _polygon_element(ns, surface)
+    if polygon is None:
+        return
+    targets.paint(ns, polygon, surface, material, texture)
+    plain.append(polygon)
+
+
+def _append_feature_geometry(
+    ns: dict[str, str],
+    plan: _GeometryPlan,
+    feature: ElementTree.Element,
+    geometries: list[Geometry],
+    targets: _Appearances,
+) -> None:
+    """Emit **all** of a feature's geometries, in CityGML's content-model order.
+
+    CityGML's construction content model is a *sequence*: the ``lod{n}Solid`` / ``lod{n}MultiSurface``
+    geometry properties come **before** the ``boundedBy`` boundary surfaces, and each plain property is
+    ``maxOccurs="1"``. So this collects across every geometry — one aggregated plain property per LOD
+    (never a duplicate), the solids, and the boundary surfaces — then appends them ordered by their
+    schema rank (geometry by LOD, ``boundedBy`` after the LOD-2 geometry). A non-semantic ``Solid`` uses
+    the module's ``lod{n}Solid`` when it has one (type preserved — §3 gap 2), else its shell is written
+    as plain surfaces. A surface whose semantic type the module cannot carry as a boundary surface is
+    demoted to plain geometry (its semantic type dropped — recorded so :func:`write_citygml` warns).
+    """
+    bounded: list[ElementTree.Element] = []
+    plain_by_lod: dict[int, list[ElementTree.Element]] = {}
+    solids: list[tuple[int, ElementTree.Element]] = []
+    for geometry in geometries:
+        lod, solid, geometry_bounded, geometry_plain = _collect_one_geometry(
+            ns, plan, geometry, targets
+        )
+        if solid is not None:
+            solids.append((lod, solid))
+        bounded.extend(geometry_bounded)
+        if geometry_plain:
+            plain_by_lod.setdefault(lod, []).extend(geometry_plain)
+    ordered: list[tuple[tuple[int, int], ElementTree.Element]] = [
+        ((lod, 0), solid) for lod, solid in solids
+    ]
+    ordered += [
+        ((lod, 1), _build_plain_multisurface(ns, plan, polygons, lod))
+        for lod, polygons in plain_by_lod.items()
+    ]
+    boundary_rank = plan.boundary_rank()
+    ordered += [(boundary_rank, bounded_by) for bounded_by in bounded]
+    ordered.sort(
+        key=lambda item: item[0]
+    )  # stable → boundedBy keep their insertion order
+    for _rank, element in ordered:
+        feature.append(element)
 
 
 def _append_children(
@@ -724,21 +1149,27 @@ def _append_children(
     model: CityModel,
     visited: set[str],
     targets: _Appearances,
+    diagnostics: _WriteDiagnostics,
 ) -> None:
-    """Nest each child object: a ``BuildingPart`` under ``bldg:consistsOfBuildingPart``, else attached."""
+    """Nest a part child under its ``consistsOf…Part`` wrapper in the parent's module, else attach it."""
     for child_id in city_object.children:
         child = model.objects.get(child_id)
         if child is None or child_id in visited:
             continue
-        child_element = _feature_element(ns, child, model, visited, targets)
-        if child.type == "BuildingPart":
+        child_element = _feature_element(
+            ns, child, model, visited, targets, diagnostics
+        )
+        if child.type.endswith("Part"):
+            # A <X>Part nests under <module>:consistsOf<X>Part in its own thematic module
+            # (bldg:consistsOfBuildingPart, brid:consistsOfBridgePart, tun:consistsOfTunnelPart).
+            prefix = _TYPE_NAMESPACE_PREFIX.get(child.type, "bldg")
             consists = ElementTree.SubElement(
-                feature, _q(ns, "bldg", "consistsOfBuildingPart")
+                feature, _q(ns, prefix, f"consistsOf{child.type}")
             )
             consists.append(child_element)
         else:
-            # A non-part child cannot nest in a building; attach it so its geometry is not lost,
-            # though this package's reader will not re-link it as a child.
+            # A non-part child cannot nest; attach it so its geometry is not lost, though this
+            # package's reader will not re-link it as a child.
             feature.append(child_element)
 
 
@@ -748,15 +1179,24 @@ def _feature_element(
     model: CityModel,
     visited: set[str],
     targets: _Appearances,
+    diagnostics: _WriteDiagnostics,
 ) -> ElementTree.Element:
-    """Build one ``bldg:<type>`` feature element: its id, attributes, surfaces and nested children."""
-    feature = ElementTree.Element(_q(ns, "bldg", city_object.type))
+    """Build one feature element in its thematic namespace: id, attributes, surfaces and children."""
+    prefix = _TYPE_NAMESPACE_PREFIX.get(city_object.type, "bldg")
+    profile = _TYPE_GEOMETRY_PROFILE.get(city_object.type, _CONSTRUCTION_PROFILE)
+    plan = _GeometryPlan(ns, prefix, profile, city_object.type, diagnostics)
+    feature = ElementTree.Element(_q(ns, prefix, city_object.type))
     feature.set(_q(ns, "gml", "id"), city_object.id)
     visited.add(city_object.id)
-    _add_attributes(ns, feature, city_object.attributes)
-    for geometry in city_object.geometries:
-        _append_geometry(ns, feature, geometry, targets)
-    _append_children(ns, feature, city_object, model, visited, targets)
+    _add_attributes(
+        ns,
+        feature,
+        city_object.attributes,
+        city_object.attribute_units,
+        native_ok=prefix == "bldg",
+    )
+    _append_feature_geometry(ns, plan, feature, city_object.geometries, targets)
+    _append_children(ns, feature, city_object, model, visited, targets, diagnostics)
     return feature
 
 
@@ -808,6 +1248,56 @@ def _add_envelope(
         lower_corner.text = " ".join(repr(component) for component in lower)
         upper_corner = ElementTree.SubElement(envelope, _q(ns, "gml", "upperCorner"))
         upper_corner.text = " ".join(repr(component) for component in upper)
+
+
+def _resolve_version(model: CityModel) -> str:
+    """The CityGML version to emit, warning for an unknown version and for unreadable object types.
+
+    A ``1.0``/``2.0``/``3.0`` source is emitted natively (its version round-trips); any other falls
+    back to valid ``2.0`` with a warning. A separate warning lists object types with no known thematic
+    namespace (written under ``bldg:``).
+    """
+    if model.version is not None and model.version not in _MATCHED_VERSIONS:
+        warnings.warn(
+            f"CityGML writer: a {model.version} source has no known emission structure and is "
+            "written as valid CityGML 2.0, so the CityGML version does not round-trip",
+            stacklevel=3,
+        )
+    unreadable = sorted(
+        {
+            city_object.type
+            for city_object in model.objects.values()
+            if city_object.type not in _READABLE_OBJECT_TYPES
+        }
+    )
+    if unreadable:
+        warnings.warn(
+            "CityGML writer: object type(s) "
+            f"{', '.join(unreadable)} have no known thematic namespace and are written under bldg: "
+            "(not schema-valid), so they will not round-trip conformantly",
+            stacklevel=3,
+        )
+    return model.version if model.version in _MATCHED_VERSIONS else "2.0"
+
+
+def _warn_diagnostics(diagnostics: _WriteDiagnostics) -> None:
+    """Emit one warning each for the geometry fallbacks and the demoted semantic surfaces collected."""
+    if diagnostics.fallbacks:
+        warnings.warn(
+            "CityGML writer: object type(s) "
+            f"{', '.join(sorted(diagnostics.fallbacks))} have no geometry slot in their thematic "
+            "module for the supplied geometry and are written with a bldg: geometry property (not "
+            "schema-valid), so their geometry will not round-trip conformantly",
+            stacklevel=3,
+        )
+    if diagnostics.demoted:
+        warnings.warn(
+            "CityGML writer: object type(s) "
+            f"{', '.join(sorted(diagnostics.demoted))} carry a semantic boundary surface their "
+            "thematic module cannot represent; it is written as plain geometry and its semantic "
+            "surface type is dropped",
+            stacklevel=3,
+        )
 
 
 def write_citygml(model: CityModel, path: Any = None) -> str | None:
@@ -892,37 +1382,10 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
 
             ```
     """
-    # Emit the source version's namespaces for a version this writer matches (1.0/2.0), so the
-    # version string round-trips through the reader; a 3.0 or unknown source falls back to 2.0. The
-    # map is a per-call local threaded through construction — no module-global is mutated, so
+    # The map is a per-call local threaded through construction — no module-global is mutated, so
     # concurrent writes of different-version models cannot corrupt each other.
-    version = model.version if model.version in _MATCHED_VERSIONS else "2.0"
-    if model.version is not None and model.version not in _MATCHED_VERSIONS:
-        # CityGML 3.0 restructures the geometry model, so emitting 3.0 namespaces with this writer's
-        # 2.0 element structure would be invalid 3.0. The reader reads 3.0 (version-agnostic by local
-        # name), but on write the model is downgraded to valid 2.0 — the version does not round-trip.
-        warnings.warn(
-            f"CityGML writer: a {model.version} source is written as valid CityGML 2.0 (this writer "
-            "emits the 2.0 building structure), so the CityGML version does not round-trip",
-            stacklevel=2,
-        )
+    version = _resolve_version(model)
     ns = _namespaces(version)
-
-    unreadable = sorted(
-        {
-            city_object.type
-            for city_object in model.objects.values()
-            if city_object.type not in _READABLE_OBJECT_TYPES
-        }
-    )
-    if unreadable:
-        warnings.warn(
-            "CityGML writer: object type(s) "
-            f"{', '.join(unreadable)} are written but not reconstructed by this package's "
-            "CityGML reader (it reads only Building/BuildingPart), so they will not round-trip",
-            stacklevel=2,
-        )
-
     root = ElementTree.Element(_q(ns, "core", "CityModel"))
     _add_envelope(ns, root, model)
 
@@ -935,11 +1398,17 @@ def write_citygml(model: CityModel, path: Any = None) -> str | None:
         materials, textures, vertices_texture, _UniqueIds(model.objects)
     )
     visited: set[str] = set()
+    # Per-feature notes collected during emission (geometry with no module slot → bldg: fallback; a
+    # semantic surface a module can't carry → demoted to plain geometry), each warned once below.
+    diagnostics = _WriteDiagnostics()
     for city_object in model.objects.values():
         if city_object.parents:
             continue  # emitted inside its parent
         member = ElementTree.SubElement(root, _q(ns, "core", "cityObjectMember"))
-        member.append(_feature_element(ns, city_object, model, visited, targets))
+        member.append(
+            _feature_element(ns, city_object, model, visited, targets, diagnostics)
+        )
+    _warn_diagnostics(diagnostics)
 
     # Appearances come after the city objects: each paints polygons by the gml:ids assigned above.
     for appearance_member in targets.appearance_members(ns):

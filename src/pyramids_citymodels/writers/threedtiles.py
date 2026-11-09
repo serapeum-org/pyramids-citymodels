@@ -386,15 +386,71 @@ def _tileset_from_rings(
     }
     if content_uri is not None:
         root["content"] = {"uri": content_uri}
-    return {
-        "asset": {
-            "version": "1.0",
-            "gltfUpAxis": "Z",
-            "generator": "pyramids-citymodels",
-        },
-        "geometricError": error,
-        "root": root,
+    return {"asset": dict(_ASSET), "geometricError": error, "root": root}
+
+
+#: The tileset ``asset`` block (``gltfUpAxis="Z"`` because the IR is z-up).
+_ASSET = {"version": "1.0", "gltfUpAxis": "Z", "generator": "pyramids-citymodels"}
+
+_Contributing = list[tuple[CityObject, list[list[tuple[float, float, float]]]]]
+
+
+def _centroid_xy(rings: list[list[tuple[float, float, float]]]) -> tuple[float, float]:
+    """The XY centroid (mean of every ring vertex) used to place an object in a quadrant."""
+    xs = [point[0] for ring in rings for point in ring]
+    ys = [point[1] for ring in rings for point in ring]
+    return (sum(xs) / len(xs), sum(ys) / len(ys))
+
+
+def _split_xy(
+    contributing: _Contributing, minima: list[float], maxima: list[float]
+) -> list[_Contributing]:
+    """Partition objects into up to four XY quadrants around the group's centre (non-empty buckets)."""
+    mid_x = (minima[0] + maxima[0]) / 2
+    mid_y = (minima[1] + maxima[1]) / 2
+    buckets: dict[tuple[bool, bool], _Contributing] = {}
+    for city_object, rings in contributing:
+        cx, cy = _centroid_xy(rings)
+        buckets.setdefault((cx >= mid_x, cy >= mid_y), []).append((city_object, rings))
+    return list(buckets.values())
+
+
+def _build_tile(
+    contributing: _Contributing, target: Path, counter: list[int], max_per_tile: int
+) -> dict[str, Any]:
+    """Recursively build a tileset node for ``contributing``, writing one ``b3dm`` per leaf.
+
+    A group larger than ``max_per_tile`` is split into XY quadrants (children); a group at or below
+    it — or one that cannot be split further (all objects in one quadrant) — is a leaf with its own
+    ``b3dm``. ``counter`` numbers the leaf content files across the whole tree.
+    """
+    all_rings = [ring for _city_object, rings in contributing for ring in rings]
+    minima, maxima = _bounds(all_rings)
+    diagonal = math.sqrt(sum((maxima[axis] - minima[axis]) ** 2 for axis in range(3)))
+    node: dict[str, Any] = {
+        "boundingVolume": {"box": _bounding_box(minima, maxima)},
+        "refine": "ADD",
     }
+    quadrants = (
+        _split_xy(contributing, minima, maxima)
+        if len(contributing) > max_per_tile
+        else [contributing]
+    )
+    if len(quadrants) > 1:  # genuinely subdivided
+        node["geometricError"] = diagonal
+        node["children"] = [
+            _build_tile(quadrant, target, counter, max_per_tile)
+            for quadrant in quadrants
+        ]
+    else:  # leaf (the finest LOD → geometricError 0)
+        node["geometricError"] = 0.0
+        b3dm = _b3dm_from_rings(contributing)
+        if b3dm is not None:
+            name = f"content_{counter[0]}.b3dm"
+            counter[0] += 1
+            (target / name).write_bytes(b3dm)
+            node["content"] = {"uri": name}
+    return node
 
 
 def build_b3dm(model: CityModel) -> bytes | None:
@@ -430,27 +486,36 @@ def build_tileset(model: CityModel, content_uri: str | None) -> dict[str, Any]:
     return _tileset_from_rings(_object_rings(model), content_uri)
 
 
-def write_3dtiles(model: CityModel, directory: Any) -> dict[str, Any]:
-    """Write ``model`` as a single-tile 3D Tiles tileset into ``directory``.
+def write_3dtiles(
+    model: CityModel, directory: Any, max_objects_per_tile: int | None = None
+) -> dict[str, Any]:
+    """Write ``model`` as a 3D Tiles tileset into ``directory``.
 
-    Writes ``tileset.json`` and (when the model has areal geometry) ``content.b3dm`` into
-    ``directory``, creating it if needed. See the module docstring for the format and its limits.
+    By default a **single-tile** tileset (``tileset.json`` + one ``content.b3dm``). When
+    ``max_objects_per_tile`` is given and the model has more contributing objects than that, the
+    objects are partitioned by footprint into an **XY quadtree**, writing one ``content_<n>.b3dm`` per
+    leaf and a nested ``tileset.json`` of bounding-volume tiles — so a large model streams tile by
+    tile. A quadtree is used (not 3D Tiles 1.1 implicit tiling — a documented follow-up); geometry is
+    passed through (no per-tile LOD/simplification). The output round-trips through this package's own
+    3D-Tiles reader either way.
 
     Args:
         model: The city model to serialize.
         directory: The output directory (created if missing); 3D Tiles is a multi-file format, so a
             directory — not a single file — is required.
+        max_objects_per_tile: When set, subdivide into tiles of at most this many objects. ``None``
+            (default) writes a single tile.
 
     Returns:
         The written ``tileset.json`` document.
 
     Note:
-        The round-trip contract is via the **tileset** (which declares ``gltfUpAxis="Z"``). Reading
-        the ``content.b3dm`` on its own, outside the tileset, applies the 3D-Tiles default y-up→z-up
-        rotation and rotates the footprints — read back through ``tileset.json``, not the bare tile.
+        The round-trip contract is via the **tileset** (which declares ``gltfUpAxis="Z"``). Reading a
+        ``b3dm`` on its own, outside the tileset, applies the 3D-Tiles default y-up→z-up rotation and
+        rotates the footprints — read back through ``tileset.json``, not a bare tile.
 
     Examples:
-        - A one-building model writes a tileset and a b3dm into the directory:
+        - A one-building model writes a single-tile tileset and a b3dm into the directory:
             ```python
             >>> import tempfile
             >>> from pathlib import Path
@@ -471,12 +536,20 @@ def write_3dtiles(model: CityModel, directory: Any) -> dict[str, Any]:
     target.mkdir(parents=True, exist_ok=True)
     # Gather the model's geometry once and feed both builders, rather than walking it twice.
     contributing = _object_rings(model)
-    b3dm = _b3dm_from_rings(contributing)
-    content_uri = _CONTENT_NAME if b3dm is not None else None
-    tileset = _tileset_from_rings(contributing, content_uri)
+    if max_objects_per_tile is not None and len(contributing) > max_objects_per_tile:
+        root = _build_tile(contributing, target, [0], max_objects_per_tile)
+        tileset = {
+            "asset": dict(_ASSET),
+            "geometricError": root["geometricError"],
+            "root": root,
+        }
+    else:
+        b3dm = _b3dm_from_rings(contributing)
+        content_uri = _CONTENT_NAME if b3dm is not None else None
+        tileset = _tileset_from_rings(contributing, content_uri)
+        if b3dm is not None:
+            (target / _CONTENT_NAME).write_bytes(b3dm)
     (target / "tileset.json").write_text(
         json.dumps(tileset, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    if b3dm is not None:
-        (target / _CONTENT_NAME).write_bytes(b3dm)
     return tileset

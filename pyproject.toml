@@ -83,6 +83,10 @@ dev = [
     "mypy>=1.10.0",
     "types-PyYAML>=6.0.0",
     "pytest-mock>=3.12.0",
+    # lxml powers the (vendor_data-only) XSD conformance test: it validates emitted CityGML against
+    # the official OGC 2.0/3.0 schemas. Test-only — the writer itself uses the stdlib ElementTree and
+    # declares no runtime XML dependency.
+    "lxml>=5.0.0",
     # ruff replaces black + isort + flake8 + pydocstyle (lint + format in one tool),
     # matching the parent pyramids. Pinned exactly and kept in step with the
     # `ruff-pre-commit` rev in `.pre-commit-config.yaml`, so `pixi run -e dev ruff
