@@ -77,3 +77,12 @@ def test_compress_merges_points_that_quantize_together() -> None:
     )
     doc = model.to_cityjson(compress=3)
     assert len(doc["vertices"]) == 2  # the two near points merged (3 distinct -> 2)
+
+
+def test_compress_on_a_coordinateless_model_writes_no_transform() -> None:
+    # A model with no geometry has nothing to quantize — compress is a no-op, not a crash.
+    doc = CityModel(objects={"b": CityObject(id="b", type="Building")}).to_cityjson(
+        compress=3
+    )
+    assert "transform" not in doc
+    assert doc["vertices"] == []
