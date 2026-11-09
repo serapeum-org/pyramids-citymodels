@@ -27,22 +27,94 @@ _SUBTREE_VERSION = 1
 
 
 def children_per_node(scheme: str) -> int:
-    """4 for a ``QUADTREE``, 8 for an ``OCTREE`` (case-insensitive)."""
+    """4 for a ``QUADTREE``, 8 for an ``OCTREE`` (case-insensitive).
+
+    Args:
+        scheme: The subdivision scheme name (``"quadtree"`` / ``"octree"``, any case).
+
+    Returns:
+        The number of children each node splits into (4 or 8).
+
+    Examples:
+        - A quadtree node has four children, an octree eight:
+            ```python
+            >>> from pyramids_citymodels._implicit_tiling import children_per_node
+            >>> children_per_node("QUADTREE")
+            4
+            >>> children_per_node("octree")
+            8
+
+            ```
+    """
     return 8 if scheme.upper() == "OCTREE" else 4
 
 
 def dimensions(scheme: str) -> int:
-    """The number of subdivided axes: 2 for a ``QUADTREE``, 3 for an ``OCTREE``."""
+    """The number of subdivided axes: 2 for a ``QUADTREE``, 3 for an ``OCTREE``.
+
+    Args:
+        scheme: The subdivision scheme name (``"quadtree"`` / ``"octree"``, any case).
+
+    Returns:
+        2 for a quadtree (XY), 3 for an octree (XYZ).
+
+    Examples:
+        - A quadtree subdivides two axes, an octree three:
+            ```python
+            >>> from pyramids_citymodels._implicit_tiling import dimensions
+            >>> dimensions("quadtree")
+            2
+            >>> dimensions("OCTREE")
+            3
+
+            ```
+    """
     return 3 if scheme.upper() == "OCTREE" else 2
 
 
 def level_offset(level: int, children: int) -> int:
-    """The availability index of the first node of ``level`` (sum of all shallower levels' node counts)."""
+    """The availability index of the first node of ``level`` (sum of all shallower levels' node counts).
+
+    Args:
+        level: The 0-based tree level.
+        children: Children per node (4 for a quadtree, 8 for an octree).
+
+    Returns:
+        The index at which ``level``'s nodes begin in a level-order availability array.
+
+    Examples:
+        - Quadtree level offsets are 0, 1, 5, 21 (each level adds ``4**level`` nodes):
+            ```python
+            >>> from pyramids_citymodels._implicit_tiling import level_offset
+            >>> [level_offset(level, 4) for level in range(4)]
+            [0, 1, 5, 21]
+
+            ```
+    """
     return int((children**level - 1) // (children - 1))
 
 
 def node_count(levels: int, children: int) -> int:
-    """The total number of nodes across ``levels`` levels of a complete ``children``-ary tree."""
+    """The total number of nodes across ``levels`` levels of a complete ``children``-ary tree.
+
+    Args:
+        levels: The number of levels (a one-level tree is just the root).
+        children: Children per node (4 for a quadtree, 8 for an octree).
+
+    Returns:
+        The node total, i.e. the length of a subtree's tile/content availability array.
+
+    Examples:
+        - A 3-level quadtree has 1 + 4 + 16 = 21 nodes; a 2-level octree 1 + 8 = 9:
+            ```python
+            >>> from pyramids_citymodels._implicit_tiling import node_count
+            >>> node_count(3, 4)
+            21
+            >>> node_count(2, 8)
+            9
+
+            ```
+    """
     return int((children**levels - 1) // (children - 1))
 
 
@@ -91,7 +163,27 @@ def _compact_1by2(value: int) -> int:
 
 
 def morton(coordinates: tuple[int, ...]) -> int:
-    """The Morton (Z-order) index that interleaves a cell's ``(x, y)`` or ``(x, y, z)`` coordinates."""
+    """The Morton (Z-order) index that interleaves a cell's ``(x, y)`` or ``(x, y, z)`` coordinates.
+
+    Args:
+        coordinates: A cell's ``(x, y)`` (quadtree) or ``(x, y, z)`` (octree) grid position.
+
+    Returns:
+        The Morton code locating the cell within its level's availability array.
+
+    Examples:
+        - ``x`` occupies the even bits, ``y`` the odd, so ``(1, 0)`` and ``(0, 1)`` differ by a bit:
+            ```python
+            >>> from pyramids_citymodels._implicit_tiling import morton
+            >>> morton((1, 0))
+            1
+            >>> morton((0, 1))
+            2
+            >>> morton((1, 1))
+            3
+
+            ```
+    """
     if len(coordinates) == 2:
         return _part_1by1(coordinates[0]) | (_part_1by1(coordinates[1]) << 1)
     return (
@@ -102,7 +194,28 @@ def morton(coordinates: tuple[int, ...]) -> int:
 
 
 def demorton(index: int, dimension: int) -> tuple[int, ...]:
-    """Recover a cell's ``(x, y)`` or ``(x, y, z)`` coordinates from its Morton ``index``."""
+    """Recover a cell's ``(x, y)`` or ``(x, y, z)`` coordinates from its Morton ``index``.
+
+    Args:
+        index: A Morton code (see :func:`morton`).
+        dimension: 2 for a quadtree cell, 3 for an octree cell.
+
+    Returns:
+        The cell's ``(x, y)`` or ``(x, y, z)`` coordinates — the inverse of :func:`morton`.
+
+    Examples:
+        - ``demorton`` undoes ``morton`` and splits a code back into its axes:
+            ```python
+            >>> from pyramids_citymodels._implicit_tiling import morton, demorton
+            >>> demorton(3, 2)
+            (1, 1)
+            >>> demorton(morton((2, 3)), 2)
+            (2, 3)
+            >>> demorton(morton((1, 2, 3)), 3)
+            (1, 2, 3)
+
+            ```
+    """
     if dimension == 2:
         return (_compact_1by1(index), _compact_1by1(index >> 1))
     return (
@@ -113,7 +226,25 @@ def demorton(index: int, dimension: int) -> tuple[int, ...]:
 
 
 def pack_bits(bits: list[bool]) -> bytes:
-    """Pack booleans into bytes, LSB-first within each byte (3D Tiles availability bit order)."""
+    """Pack booleans into bytes, LSB-first within each byte (3D Tiles availability bit order).
+
+    Args:
+        bits: The availability flags, bit 0 first.
+
+    Returns:
+        The packed bytes; bit ``i`` is the ``i & 7``-th bit (LSB-first) of byte ``i >> 3``.
+
+    Examples:
+        - Bits 0 and 2 set give ``0b00000101`` = ``0x05``; bit 8 is the LSB of byte 1:
+            ```python
+            >>> from pyramids_citymodels._implicit_tiling import pack_bits
+            >>> pack_bits([True, False, True]).hex()
+            '05'
+            >>> pack_bits([False] * 8 + [True]).hex()
+            '0001'
+
+            ```
+    """
     out = bytearray((len(bits) + 7) // 8)
     for position, bit in enumerate(bits):
         if bit:
@@ -122,7 +253,24 @@ def pack_bits(bits: list[bool]) -> bytes:
 
 
 def unpack_bits(data: bytes, count: int) -> list[bool]:
-    """Unpack ``count`` booleans from ``data``, LSB-first within each byte (inverse of :func:`pack_bits`)."""
+    """Unpack ``count`` booleans from ``data``, LSB-first within each byte (inverse of :func:`pack_bits`).
+
+    Args:
+        data: Packed availability bytes.
+        count: How many bits to read.
+
+    Returns:
+        ``count`` booleans, bit 0 first.
+
+    Examples:
+        - Reading back the bits packed into ``0x05``:
+            ```python
+            >>> from pyramids_citymodels._implicit_tiling import unpack_bits
+            >>> unpack_bits(b"\\x05", 3)
+            [True, False, True]
+
+            ```
+    """
     return [
         bool(data[position >> 3] & (1 << (position & 7))) for position in range(count)
     ]
@@ -164,6 +312,27 @@ def encode_subtree(
     A uniform array is stored as a ``constant`` (no bytes); a mixed one as a packed, 8-byte-aligned
     bitstream bufferView over the single binary buffer. The layout is the 24-byte header, the padded
     JSON chunk, then the binary chunk.
+
+    Args:
+        tile_availability: Which of the subtree's nodes exist, level-order Morton-indexed.
+        content_availability: Which existing nodes have tile content.
+        child_subtree_availability: Which child subtrees exist (the cells one level below).
+
+    Returns:
+        The ``.subtree`` file bytes, beginning with the ``subt`` magic.
+
+    Examples:
+        - Encoding a one-node subtree yields a file that starts with the ``subt`` magic and decodes
+          back to the same arrays:
+            ```python
+            >>> from pyramids_citymodels._implicit_tiling import encode_subtree, decode_subtree
+            >>> blob = encode_subtree([True], [True], [False, False, False, False])
+            >>> blob[:4]
+            b'subt'
+            >>> decode_subtree(blob, 1, 4)
+            ([True], [True], [False, False, False, False])
+
+            ```
     """
     binary = bytearray()
     buffer_views: list[dict[str, int]] = []
@@ -193,6 +362,28 @@ def decode_subtree(
 
     The tile and content arrays have ``node_count(subtree_levels)`` entries; the child-subtree array
     has ``children ** subtree_levels`` (the cells one level below the subtree).
+
+    Args:
+        data: The ``.subtree`` file bytes.
+        subtree_levels: How many levels the subtree spans (sets the array lengths).
+        children: Children per node (4 for a quadtree, 8 for an octree).
+
+    Returns:
+        ``(tile, content, child_subtree)`` availability arrays of booleans.
+
+    Raises:
+        ValueError: If ``data`` does not begin with the ``subt`` magic.
+
+    Examples:
+        - A bad-magic file is rejected:
+            ```python
+            >>> from pyramids_citymodels._implicit_tiling import decode_subtree
+            >>> decode_subtree(b"XXXX" + b"\\x00" * 20, 1, 4)
+            Traceback (most recent call last):
+                ...
+            ValueError: not a 3D Tiles .subtree file (bad magic)
+
+            ```
     """
     magic, _version, json_length, _binary_length = _SUBTREE_HEADER.unpack_from(data, 0)
     if magic != _SUBTREE_MAGIC:
@@ -217,7 +408,27 @@ def decode_subtree(
 
 
 def fill_template(template: str, level: int, coordinates: tuple[int, ...]) -> str:
-    """Substitute ``{level}``/``{x}``/``{y}``/``{z}`` in an implicit-tiling URI template."""
+    """Substitute ``{level}``/``{x}``/``{y}``/``{z}`` in an implicit-tiling URI template.
+
+    Args:
+        template: A 3D Tiles implicit content/subtrees URI template.
+        level: The tile level to substitute for ``{level}``.
+        coordinates: The ``(x, y)`` or ``(x, y, z)`` cell coordinates to substitute.
+
+    Returns:
+        The resolved path (unused placeholders, e.g. ``{z}`` for a quadtree, are left untouched).
+
+    Examples:
+        - Resolving a quadtree content path and an octree subtree path:
+            ```python
+            >>> from pyramids_citymodels._implicit_tiling import fill_template
+            >>> fill_template("content/{level}/{x}/{y}.b3dm", 2, (1, 3))
+            'content/2/1/3.b3dm'
+            >>> fill_template("subtrees/{level}/{x}/{y}/{z}.subtree", 0, (0, 0, 0))
+            'subtrees/0/0/0/0.subtree'
+
+            ```
+    """
     axes = {0: "x", 1: "y", 2: "z"}
     result = template.replace("{level}", str(level))
     for axis, value in enumerate(coordinates):

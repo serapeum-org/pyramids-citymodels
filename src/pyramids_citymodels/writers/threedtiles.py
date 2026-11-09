@@ -687,6 +687,24 @@ def write_3dtiles(
             True
 
             ```
+        - Implicit tiling writes a 3D Tiles 1.1 tileset — templated content + a `.subtree` file:
+            ```python
+            >>> import tempfile
+            >>> from pathlib import Path
+            >>> from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+            >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+            >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+            ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+            >>> out = Path(tempfile.mkdtemp())
+            >>> tileset = write_3dtiles(model, out, implicit_tiling=True)
+            >>> tileset["root"]["implicitTiling"]["subdivisionScheme"]
+            'QUADTREE'
+            >>> tileset["root"]["content"]["uri"]
+            'content/{level}/{x}/{y}.b3dm'
+            >>> (out / "subtrees" / "0" / "0" / "0.subtree").exists()
+            True
+
+            ```
     """
     target = Path(directory)
     target.mkdir(parents=True, exist_ok=True)
