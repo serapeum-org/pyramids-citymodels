@@ -39,17 +39,23 @@ class _VertexPool:
     The inverse of the reader's dereferencing step: every boundary coordinate is interned to a
     stable integer index (identical coordinates collapse to one vertex, exactly as a hand-written
     CityJSON file shares them), and :meth:`reindex` rewrites a dereferenced boundaries structure
-    back to those indices. Coordinates are kept verbatim (no quantization), so a round-trip through
-    the pool is exact.
+    back to those indices. Without a ``quantizer`` coordinates are kept verbatim (no quantization), so
+    a round-trip through the pool is exact; **with** one (the ``compress`` path) each coordinate is
+    snapped to an integer grid before interning, so near-coincident points merge and the pool holds
+    small integers — the reader restores them through the document ``transform``.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, quantizer: "Any | None" = None) -> None:
         self._index: dict[tuple[float, ...], int] = {}
         self.vertices: list[list[float]] = []
+        self._quantizer = quantizer
 
     def intern(self, coordinate: Any) -> int:
         """Return the index of ``coordinate`` in the pool, appending it on first sight."""
-        key = tuple(float(component) for component in coordinate)
+        if self._quantizer is None:
+            key: tuple[float, ...] = tuple(float(c) for c in coordinate)
+        else:
+            key = self._quantizer(coordinate)
         existing = self._index.get(key)
         if existing is not None:
             return existing
@@ -157,9 +163,80 @@ def _metadata(model: CityModel) -> dict[str, Any]:
     return metadata
 
 
-def _build_document(model: CityModel) -> dict[str, Any]:
-    """Build the full CityJSON document dict from the IR (no file I/O)."""
-    pool = _VertexPool()
+def _iter_coordinates(element: Any) -> "Any":
+    """Yield every coordinate (as a float list) anywhere in a boundaries structure."""
+    if is_coordinate(element):
+        yield [float(component) for component in element]
+    elif isinstance(element, list):
+        for child in element:
+            yield from _iter_coordinates(child)
+
+
+def _model_coordinates(model: CityModel) -> "Any":
+    """Yield ``(object_id, coordinate)`` for every coordinate in the model (flat over objects)."""
+    for object_id, city_object in model.objects.items():
+        for geometry in city_object.geometries:
+            for coordinate in _iter_coordinates(geometry.boundaries):
+                yield object_id, coordinate
+
+
+def _uniform_minima(model: CityModel) -> list[float] | None:
+    """Per-axis minimum over all coordinates, or ``None`` if the model has none.
+
+    Raises ``ValueError`` (naming the object) on a ragged model — ``compress`` writes one
+    document-wide ``transform``, so every coordinate must share one dimensionality.
+    """
+    minima: list[float] | None = None
+    dimension: int | None = None
+    for object_id, coordinate in _model_coordinates(model):
+        if minima is None:
+            minima, dimension = list(coordinate), len(coordinate)
+        elif len(coordinate) != dimension:
+            raise ValueError(
+                f"to_cityjson(compress=…) requires every coordinate to have the same dimension; "
+                f"object {object_id!r} has a {len(coordinate)}-D coordinate where {dimension}-D was "
+                f"seen first"
+            )
+        else:
+            minima = [min(low, c) for low, c in zip(minima, coordinate)]
+    return minima
+
+
+def _compress_transform(model: CityModel, digits: int) -> dict[str, Any] | None:
+    """A CityJSON ``transform`` (``scale`` + ``translate``) that quantizes coordinates to ``digits``.
+
+    ``translate`` is the per-axis minimum (keeps the integer grid small and non-negative) and ``scale``
+    is ``10 ** -digits`` on every axis. Returns ``None`` for a model with no coordinates.
+    """
+    minima = _uniform_minima(model)
+    if minima is None:
+        return None
+    step = 10.0**-digits
+    return {"scale": [step] * len(minima), "translate": minima}
+
+
+def _quantizer(transform: dict[str, Any]) -> "Any":
+    """A coordinate → integer-tuple function for a ``transform`` (the inverse of the reader's apply)."""
+    translate = transform["translate"]
+    scale = transform["scale"]
+
+    def quantize(coordinate: Any) -> tuple[int, ...]:
+        return tuple(
+            round((float(component) - translate[axis]) / scale[axis])
+            for axis, component in enumerate(coordinate)
+        )
+
+    return quantize
+
+
+def _build_document(model: CityModel, compress: int | None = None) -> dict[str, Any]:
+    """Build the full CityJSON document dict from the IR (no file I/O).
+
+    When ``compress`` is an integer, coordinates are quantized to that many decimal digits and a
+    ``transform`` is written, so the ``vertices`` are compact integers (the reader restores them).
+    """
+    transform = _compress_transform(model, compress) if compress is not None else None
+    pool = _VertexPool(_quantizer(transform) if transform is not None else None)
     city_objects = {
         object_id: _encode_city_object(city_object, pool)
         for object_id, city_object in model.objects.items()
@@ -170,6 +247,8 @@ def _build_document(model: CityModel) -> dict[str, Any]:
         "CityObjects": city_objects,
         "vertices": pool.vertices,
     }
+    if transform is not None:
+        document["transform"] = transform
     metadata = _metadata(model)
     if metadata:
         document["metadata"] = metadata
@@ -189,7 +268,9 @@ def _write_or_return(document: dict[str, Any], path: Any) -> dict[str, Any] | No
     return None
 
 
-def write_cityjson(model: CityModel, path: Any = None) -> dict[str, Any] | None:
+def write_cityjson(
+    model: CityModel, path: Any = None, compress: int | None = None
+) -> dict[str, Any] | None:
     """Serialize a :class:`~pyramids_citymodels.ir.CityModel` to CityJSON 2.0.
 
     Rebuilds the flat ``vertices`` pool and re-indexes every boundary from the IR's coordinate
@@ -199,9 +280,15 @@ def write_cityjson(model: CityModel, path: Any = None) -> dict[str, Any] | None:
     exception is a versionless model (``version is None``), which is normalized to ``"2.0"`` on
     output (a CityJSON document must carry a version).
 
+    With ``compress`` set, coordinates are quantized to that many decimal digits and written as
+    compact **integer** ``vertices`` plus a ``transform`` the reader multiplies back — the standard
+    CityJSON size reduction (lossy to the chosen precision; near-coincident points also merge).
+
     Args:
         model: The city model to serialize.
         path: A filesystem path to write the document to, or ``None`` to return the document dict.
+        compress: Decimal digits of coordinate precision to keep; ``None`` (default) writes exact
+            full-precision floats with no ``transform``.
 
     Returns:
         The CityJSON document as a ``dict`` when ``path`` is ``None``; otherwise ``None`` (the
@@ -237,8 +324,21 @@ def write_cityjson(model: CityModel, path: Any = None) -> dict[str, Any] | None:
             [[[0, 1, 2]]]
 
             ```
+        - `compress` quantizes to integer vertices and writes a `transform` the reader restores:
+            ```python
+            >>> from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+            >>> surface = [[(10.5, 20.25, 1.0), (11.5, 20.25, 1.0), (11.5, 21.25, 1.0)]]
+            >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+            ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+            >>> doc = write_cityjson(model, compress=2)
+            >>> doc["vertices"][0], doc["vertices"][1]
+            ([0, 0, 0], [100, 0, 0])
+            >>> doc["transform"]["scale"]
+            [0.01, 0.01, 0.01]
+
+            ```
     """
-    return _write_or_return(_build_document(model), path)
+    return _write_or_return(_build_document(model, compress), path)
 
 
 def _feature_document(root_id: str, members: dict[str, CityObject]) -> dict[str, Any]:

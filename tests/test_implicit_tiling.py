@@ -281,3 +281,91 @@ def test_empty_model_validates_implicit_args() -> None:
         empty.to_3dtiles(directory, implicit_tiling=True, scheme="octtree")
     with pytest.raises(ValueError, match="must be >= 1"):
         empty.to_3dtiles(directory, max_objects_per_tile=0, implicit_tiling=True)
+
+
+# ------------------------------------------------------------------ multi-subtree chaining (#58)
+
+
+def _spread_grid(n: int) -> CityModel:
+    """``n`` objects spread far apart so each lands in a distinct deepest cell (forces a deep tree)."""
+    objects = {}
+    for i in range(n):
+        x, y = (i % 10) * 1000.0, (i // 10) * 1000.0
+        surface = [
+            [(x, y, 0.0), (x + 10.0, y, 0.0), (x + 10.0, y + 10.0, 0.0), (x, y, 0.0)]
+        ]
+        objects[f"o{i}"] = CityObject(
+            id=f"o{i}",
+            type="Building",
+            attributes={"h": float(i)},
+            geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])],
+        )
+    return CityModel(objects=objects)
+
+
+def test_normal_depth_stays_a_single_subtree() -> None:
+    # A city-scale tree fits in one bounded subtree (no chaining, no per-leaf file explosion).
+    directory = _write(_spread_grid(100), max_objects_per_tile=1)
+    tileset = json.loads((directory / "tileset.json").read_text(encoding="utf-8"))
+    implicit_tiling = tileset["root"]["implicitTiling"]
+    assert (
+        implicit_tiling["subtreeLevels"] == implicit_tiling["availableLevels"]
+    )  # one subtree
+    assert len(list(directory.glob("subtrees/**/*.subtree"))) == 1
+
+
+def test_deep_tree_is_split_into_balanced_chained_subtrees_and_round_trips(
+    monkeypatch,
+) -> None:
+    # Force chaining by shrinking the single-subtree bound, then verify the tree is split into MULTIPLE
+    # chained .subtree files (not one per leaf) and still round-trips through the reader.
+    from pyramids_citymodels import _implicit_tiling as codec
+
+    monkeypatch.setattr(codec, "max_subtree_levels", lambda children: 3)
+    model = _spread_grid(100)
+    directory = _write(model, max_objects_per_tile=1)
+    tileset = json.loads((directory / "tileset.json").read_text(encoding="utf-8"))
+    implicit_tiling = tileset["root"]["implicitTiling"]
+    assert (
+        implicit_tiling["availableLevels"] > implicit_tiling["subtreeLevels"]
+    )  # genuinely chained
+    subtrees = list(directory.glob("subtrees/**/*.subtree"))
+    assert len(subtrees) > 1  # root + deeper subtrees
+    assert (
+        directory / "subtrees" / "0" / "0" / "0.subtree"
+    ).exists()  # the root subtree
+    deepest_root = implicit_tiling["availableLevels"] - 1
+    # not one 1-node subtree per occupied leaf: fewer subtree files than content files
+    assert len(subtrees) < len(list(directory.glob("content/**/*.b3dm")))
+    assert not any(
+        f"subtrees/{deepest_root}/" in p.as_posix() for p in subtrees
+    )  # deepest content lives inside a parent subtree, not its own
+    back = parse_3dtiles(directory / "tileset.json")
+    assert sorted(back.objects) == sorted(
+        model.objects
+    )  # all recovered via chained subtrees
+    assert back.objects["o57"].attributes["h"] == 57.0
+
+
+def test_subtree_sizing_never_puts_the_deepest_level_on_a_subtree_boundary() -> None:
+    # The no-per-leaf-explosion guarantee (M2) depends on the deepest level never landing on a subtree
+    # root boundary. Pin it at the PRODUCTION bounds over the full reachable depth, so a future change
+    # to MAX_SUBTREE_NODES / _MAX_AVAILABLE_LEVELS that reintroduces the explosion fails here.
+    from pyramids_citymodels import _implicit_tiling as codec
+    from pyramids_citymodels.writers.threedtiles import (
+        _MAX_AVAILABLE_LEVELS,
+        _subtree_levels,
+    )
+
+    for children in (4, 8):  # quadtree, octree
+        bound = codec.max_subtree_levels(children)
+        for levels in range(1, _MAX_AVAILABLE_LEVELS + 1):
+            subtree_levels = _subtree_levels(levels, children)
+            assert 1 <= subtree_levels <= bound  # within the decode bound
+            if (
+                levels > subtree_levels
+            ):  # chaining: the deepest level must be inside a subtree
+                assert (levels - 1) % subtree_levels != 0, (
+                    f"children={children} levels={levels} subtree_levels={subtree_levels} puts the "
+                    f"deepest level on a subtree boundary → one .subtree per leaf (M2 regression)"
+                )

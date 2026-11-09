@@ -504,20 +504,39 @@ def _centroid(
     return tuple(total / count for total in sums)
 
 
+#: Safety cap on the tileset's total depth. ``_choose_levels`` picks ~``log(count)`` levels, so this is
+#: only a guard against a pathological ``max_objects_per_tile``; multi-subtree chaining means it is not
+#: bounded by one subtree's size.
+_MAX_AVAILABLE_LEVELS = 16
+
+
+def _subtree_levels(levels: int, children: int) -> int:
+    """How many levels each ``.subtree`` spans for a tileset of ``levels`` total levels.
+
+    One subtree per tileset while the whole tree fits in a single bounded subtree
+    (``levels <= max_subtree_levels``, so no chaining for a normal city-scale tree); beyond that the
+    tree is split into the **fewest, balanced** blocks that each stay within the bound. Balancing
+    (rather than a fixed block size) keeps the deepest content *inside* a subtree instead of landing on
+    a subtree-root boundary — which would spawn one 1-node ``.subtree`` per occupied leaf.
+    """
+    bound = implicit.max_subtree_levels(children)
+    blocks = math.ceil(levels / bound)
+    return math.ceil(levels / blocks)
+
+
 def _choose_levels(count: int, max_per_tile: int, children: int) -> int:
     """The number of implicit levels: enough that the deepest grid has ~one cell per ``max_per_tile``.
 
     The deepest level ``L-1`` has ``children ** (L-1)`` cells; pick the smallest ``L`` whose cell count
-    covers ``ceil(count / max_per_tile)``, capped at :func:`._implicit_tiling.max_subtree_levels` so one
-    subtree's availability arrays stay bounded (scheme-aware — an octree caps shallower than a quadtree).
-    Objects cluster, so a cell may still exceed the target; the cap trades that for a bounded subtree.
+    covers ``ceil(count / max_per_tile)`` (capped at :data:`_MAX_AVAILABLE_LEVELS`). Objects cluster, so
+    a cell may still exceed the target. Depth is **not** bounded by one subtree's size — the tree is
+    split across chained subtrees (:func:`_subtree_descriptors`).
     """
-    cap = implicit.max_subtree_levels(children)
     if count <= max_per_tile:
         return 1
     cells_needed = math.ceil(count / max_per_tile)
     levels = 1
-    while children ** (levels - 1) < cells_needed and levels < cap:
+    while children ** (levels - 1) < cells_needed and levels < _MAX_AVAILABLE_LEVELS:
         levels += 1
     return levels
 
@@ -541,15 +560,94 @@ def _cell_of(
     return tuple(cell)
 
 
+def _existing_tiles(
+    occupied: set[tuple[int, ...]], deepest: int
+) -> dict[int, set[tuple[int, ...]]]:
+    """Every existing tile (each occupied leaf plus all its ancestors) grouped by tileset level."""
+    existing: dict[int, set[tuple[int, ...]]] = {}
+    for leaf in occupied:
+        for level in range(deepest + 1):
+            existing.setdefault(level, set()).add(
+                tuple(coord >> (deepest - level) for coord in leaf)
+            )
+    return existing
+
+
+def _local_cell(
+    cell: tuple[int, ...], root: tuple[int, ...], span: int, dimension: int
+) -> tuple[int, ...]:
+    """A descendant ``cell``'s coordinates relative to a subtree ``root`` ``span`` levels above it."""
+    return tuple(cell[axis] - root[axis] * (2**span) for axis in range(dimension))
+
+
+def _one_subtree(
+    root_level: int,
+    root: tuple[int, ...],
+    existing: dict[int, set[tuple[int, ...]]],
+    deepest: int,
+    subtree_levels: int,
+    children: int,
+    dimension: int,
+) -> tuple[list[bool], list[bool], list[bool]]:
+    """The ``(tile, content, child_subtree)`` availability for one subtree rooted at ``(root_level, root)``."""
+    node_total = implicit.node_count(subtree_levels, children)
+    tile_av = [False] * node_total
+    content_av = [False] * node_total
+    for local in range(min(subtree_levels, deepest + 1 - root_level)):
+        offset = implicit.level_offset(local, children)
+        for cell in existing.get(root_level + local, set()):
+            if tuple(coord >> local for coord in cell) != root:
+                continue  # not a descendant of this subtree root
+            index = offset + implicit.morton(_local_cell(cell, root, local, dimension))
+            tile_av[index] = True
+            if root_level + local == deepest:
+                content_av[index] = True
+    child_av = [False] * (children**subtree_levels)
+    for cell in existing.get(root_level + subtree_levels, set()):
+        if tuple(coord >> subtree_levels for coord in cell) == root:
+            child_av[
+                implicit.morton(_local_cell(cell, root, subtree_levels, dimension))
+            ] = True
+    return tile_av, content_av, child_av
+
+
+def _subtree_descriptors(
+    occupied: set[tuple[int, ...]],
+    deepest: int,
+    subtree_levels: int,
+    children: int,
+    dimension: int,
+) -> dict[tuple[int, tuple[int, ...]], tuple[list[bool], list[bool], list[bool]]]:
+    """Build the availability arrays for every subtree needed to describe the occupied tree.
+
+    The tree is partitioned into subtrees of ``subtree_levels`` levels rooted at tileset levels
+    ``0, subtree_levels, 2*subtree_levels, …``. For each subtree that contains an existing tile,
+    :func:`_one_subtree` returns its ``(tile, content, child_subtree)`` availability — content only on
+    the deepest-level occupied cells, and child-subtree bits pointing at the occupied subtrees one block
+    deeper, so the reader chains from the root subtree down.
+    """
+    existing = _existing_tiles(occupied, deepest)
+    return {
+        (root_level, root): _one_subtree(
+            root_level, root, existing, deepest, subtree_levels, children, dimension
+        )
+        for root_level in range(0, deepest + 1, subtree_levels)
+        for root in existing.get(root_level, set())
+    }
+
+
 def _write_implicit(
     contributing: _Contributing, target: Path, scheme: str, max_per_tile: int
 ) -> dict[str, Any]:
-    """Write a 3D Tiles 1.1 **implicit** tileset: templated ``b3dm`` content + one ``.subtree`` file.
+    """Write a 3D Tiles 1.1 **implicit** tileset: templated ``b3dm`` content + chained ``.subtree`` files.
 
     Objects are binned by centroid into a uniform quadtree/octree grid at the chosen depth; each
-    occupied deepest-level cell gets its own ``content/{level}/{x}/{y}[/{z}].b3dm``. One subtree file
-    carries the availability (which tiles exist, which have content); the root ``tileset.json`` holds
-    only the root box + the ``implicitTiling`` rule, so the whole tree is described, not enumerated.
+    occupied deepest-level cell gets its own ``content/{level}/{x}/{y}[/{z}].b3dm``. The tree is
+    described by **chained subtrees** (:func:`_subtree_levels` picks the span — one subtree for a
+    normal tree, balanced blocks beyond the single-subtree bound), one ``.subtree`` per
+    occupied subtree, linked by child-subtree availability), so an arbitrarily deep tileset needs only
+    small, bounded subtree files. The root ``tileset.json`` holds only the root box + the
+    ``implicitTiling`` rule.
     """
     children = implicit.children_per_node(scheme)
     dimension = implicit.dimensions(scheme)
@@ -559,6 +657,7 @@ def _write_implicit(
     diagonal = math.sqrt(sum((maxima[axis] - minima[axis]) ** 2 for axis in range(3)))
     levels = _choose_levels(len(contributing), max_per_tile, children)
     deepest = levels - 1
+    subtree_levels = _subtree_levels(levels, children)
     cells_per_axis = 2**deepest
 
     bins: dict[tuple[int, ...], _Contributing] = {}
@@ -571,35 +670,25 @@ def _write_implicit(
     axes_suffix = "/{z}" if dimension == 3 else ""
     content_template = "content/{level}/{x}/{y}" + axes_suffix + ".b3dm"
     subtree_template = "subtrees/{level}/{x}/{y}" + axes_suffix + ".subtree"
-    node_total = implicit.node_count(levels, children)
-    tile_availability = [False] * node_total
-    content_availability = [False] * node_total
+    occupied: set[tuple[int, ...]] = set()
     for cell, cell_contributing in bins.items():
         tile = _b3dm_from_rings(cell_contributing)
         if tile is None:
             continue
-        content_availability[
-            implicit.level_offset(deepest, children) + implicit.morton(cell)
-        ] = True
-        for level in range(levels):  # the cell and every ancestor is an existing tile
-            ancestor = tuple(coord >> (deepest - level) for coord in cell)
-            tile_availability[
-                implicit.level_offset(level, children) + implicit.morton(ancestor)
-            ] = True
+        occupied.add(cell)
         content_path = target / implicit.fill_template(content_template, deepest, cell)
         content_path.parent.mkdir(parents=True, exist_ok=True)
         content_path.write_bytes(tile)
 
-    root_cell = (0, 0, 0) if dimension == 3 else (0, 0)
-    subtree_path = target / implicit.fill_template(subtree_template, 0, root_cell)
-    subtree_path.parent.mkdir(parents=True, exist_ok=True)
-    subtree_path.write_bytes(
-        implicit.encode_subtree(
-            tile_availability,
-            content_availability,
-            [False] * (children**levels),  # one subtree: no child subtrees
-        )
+    descriptors = _subtree_descriptors(
+        occupied, deepest, subtree_levels, children, dimension
     )
+    for (root_level, root), (tile_av, content_av, child_av) in descriptors.items():
+        subtree_path = target / implicit.fill_template(
+            subtree_template, root_level, root
+        )
+        subtree_path.parent.mkdir(parents=True, exist_ok=True)
+        subtree_path.write_bytes(implicit.encode_subtree(tile_av, content_av, child_av))
     return {
         "asset": {
             "version": "1.1",
@@ -613,7 +702,7 @@ def _write_implicit(
             "geometricError": diagonal,
             "implicitTiling": {
                 "subdivisionScheme": scheme_name,
-                "subtreeLevels": levels,
+                "subtreeLevels": subtree_levels,
                 "availableLevels": levels,
                 "subtrees": {"uri": subtree_template},
             },
