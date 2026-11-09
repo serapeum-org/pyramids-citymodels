@@ -25,6 +25,37 @@ _SUBTREE_HEADER = struct.Struct("<4sIQQ")
 _SUBTREE_MAGIC = b"subt"
 _SUBTREE_VERSION = 1
 
+#: Upper bound on the cells in one subtree. A subtree's availability arrays are materialized in full,
+#: so this bounds both the depth the writer chooses and what the reader accepts from an untrusted file
+#: — a tiny ``.subtree`` that *declares* a huge ``subtreeLevels`` must not force a dense-tree allocation.
+MAX_SUBTREE_NODES = 1 << 20
+
+
+def max_subtree_levels(children: int) -> int:
+    """The deepest subtree whose cell count (``children ** levels``) stays within :data:`MAX_SUBTREE_NODES`.
+
+    Args:
+        children: Children per node (4 for a quadtree, 8 for an octree).
+
+    Returns:
+        The largest ``levels`` (≥ 1) with ``children ** levels <= MAX_SUBTREE_NODES``.
+
+    Examples:
+        - A quadtree allows 10 levels, an octree 6, within the ~1M-cell bound:
+            ```python
+            >>> from pyramids_citymodels._implicit_tiling import max_subtree_levels
+            >>> max_subtree_levels(4)
+            10
+            >>> max_subtree_levels(8)
+            6
+
+            ```
+    """
+    levels = 1
+    while children ** (levels + 1) <= MAX_SUBTREE_NODES:
+        levels += 1
+    return levels
+
 
 def children_per_node(scheme: str) -> int:
     """4 for a ``QUADTREE``, 8 for an ``OCTREE`` (case-insensitive).
@@ -372,7 +403,10 @@ def decode_subtree(
         ``(tile, content, child_subtree)`` availability arrays of booleans.
 
     Raises:
-        ValueError: If ``data`` does not begin with the ``subt`` magic.
+        ValueError: If ``data`` is not a well-formed ``.subtree`` (bad magic, truncated header,
+            unparseable JSON, missing availability), or if ``subtree_levels`` is out of the supported
+            range — ``children ** subtree_levels`` must not exceed :data:`MAX_SUBTREE_NODES`, so a tiny
+            file that declares a huge subtree is rejected rather than materialized.
 
     Examples:
         - A bad-magic file is rejected:
@@ -385,25 +419,35 @@ def decode_subtree(
 
             ```
     """
-    magic, _version, json_length, _binary_length = _SUBTREE_HEADER.unpack_from(data, 0)
-    if magic != _SUBTREE_MAGIC:
+    if subtree_levels < 1 or children**subtree_levels > MAX_SUBTREE_NODES:
+        raise ValueError(
+            f"subtreeLevels {subtree_levels} is out of the supported range for a "
+            f"{children}-ary subtree (cells would exceed {MAX_SUBTREE_NODES})"
+        )
+    if data[:4] != _SUBTREE_MAGIC:
         raise ValueError("not a 3D Tiles .subtree file (bad magic)")
-    json_start = _SUBTREE_HEADER.size
-    document = json.loads(data[json_start : json_start + json_length])
-    binary = data[json_start + json_length :]
     tile_nodes = node_count(subtree_levels, children)
     child_nodes = children**subtree_levels
+    try:
+        _magic, _version, json_length, _binary_length = _SUBTREE_HEADER.unpack_from(
+            data, 0
+        )
+        json_start = _SUBTREE_HEADER.size
+        document = json.loads(data[json_start : json_start + json_length])
+        binary = data[json_start + json_length :]
 
-    def read(availability: dict[str, Any], count: int) -> list[bool]:
-        if "constant" in availability:
-            return [bool(availability["constant"])] * count
-        view = document["bufferViews"][availability["bitstream"]]
-        chunk = binary[view["byteOffset"] : view["byteOffset"] + view["byteLength"]]
-        return unpack_bits(chunk, count)
+        def read(availability: dict[str, Any], count: int) -> list[bool]:
+            if "constant" in availability:
+                return [bool(availability["constant"])] * count
+            view = document["bufferViews"][availability["bitstream"]]
+            chunk = binary[view["byteOffset"] : view["byteOffset"] + view["byteLength"]]
+            return unpack_bits(chunk, count)
 
-    tile = read(document["tileAvailability"], tile_nodes)
-    content = read(document["contentAvailability"][0], tile_nodes)
-    child = read(document["childSubtreeAvailability"], child_nodes)
+        tile = read(document["tileAvailability"], tile_nodes)
+        content = read(document["contentAvailability"][0], tile_nodes)
+        child = read(document["childSubtreeAvailability"], child_nodes)
+    except (struct.error, ValueError, KeyError, IndexError, TypeError) as error:
+        raise ValueError(f"malformed 3D Tiles .subtree file: {error}") from error
     return tile, content, child
 
 

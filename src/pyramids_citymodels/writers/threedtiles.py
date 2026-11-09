@@ -490,11 +490,6 @@ def build_tileset(model: CityModel, content_uri: str | None) -> dict[str, Any]:
     return _tileset_from_rings(_object_rings(model), content_uri)
 
 
-#: Cap on a single subtree's depth (this writer emits one subtree per tileset). A quadtree at 12
-#: levels already addresses 2**11 cells per axis; deeper would need multi-subtree chaining (a follow-up).
-_MAX_IMPLICIT_LEVELS = 12
-
-
 def _centroid(
     rings: list[list[tuple[float, float, float]]], dimension: int
 ) -> tuple[float, ...]:
@@ -513,14 +508,16 @@ def _choose_levels(count: int, max_per_tile: int, children: int) -> int:
     """The number of implicit levels: enough that the deepest grid has ~one cell per ``max_per_tile``.
 
     The deepest level ``L-1`` has ``children ** (L-1)`` cells; pick the smallest ``L`` whose cell count
-    covers ``ceil(count / max_per_tile)`` (capped at :data:`_MAX_IMPLICIT_LEVELS`). Objects cluster, so
-    a cell may still exceed the target — the cap keeps one subtree's bitstream bounded.
+    covers ``ceil(count / max_per_tile)``, capped at :func:`._implicit_tiling.max_subtree_levels` so one
+    subtree's availability arrays stay bounded (scheme-aware — an octree caps shallower than a quadtree).
+    Objects cluster, so a cell may still exceed the target; the cap trades that for a bounded subtree.
     """
+    cap = implicit.max_subtree_levels(children)
     if count <= max_per_tile:
         return 1
     cells_needed = math.ceil(count / max_per_tile)
     levels = 1
-    while children ** (levels - 1) < cells_needed and levels < _MAX_IMPLICIT_LEVELS:
+    while children ** (levels - 1) < cells_needed and levels < cap:
         levels += 1
     return levels
 
@@ -554,6 +551,10 @@ def _write_implicit(
     carries the availability (which tiles exist, which have content); the root ``tileset.json`` holds
     only the root box + the ``implicitTiling`` rule, so the whole tree is described, not enumerated.
     """
+    if scheme.lower() not in ("quadtree", "octree"):
+        raise ValueError(f"scheme must be 'quadtree' or 'octree', got {scheme!r}")
+    if max_per_tile < 1:
+        raise ValueError(f"max_objects_per_tile must be >= 1, got {max_per_tile}")
     children = implicit.children_per_node(scheme)
     dimension = implicit.dimensions(scheme)
     scheme_name = "OCTREE" if dimension == 3 else "QUADTREE"
@@ -645,11 +646,19 @@ def write_3dtiles(
       templated ``content/{level}/{x}/{y}[/{z}].b3dm``, and a compact binary ``.subtree`` file carries
       the tile/content availability. The root ``tileset.json`` holds only the root box + the
       ``implicitTiling`` rule, so a million-tile model is *described*, not listed. ``scheme`` is
-      ignored unless ``implicit_tiling`` is set; ``max_objects_per_tile`` (default 64 here) sets the
-      target objects per cell.
+      ignored unless ``implicit_tiling`` is set (an invalid ``scheme`` raises ``ValueError``);
+      ``max_objects_per_tile`` (default 64 here, must be ≥ 1) sets the target objects per cell.
 
     Geometry is passed through per tile (no per-tile LOD/simplification), tile content stays ``b3dm``,
     and the output round-trips through this package's own 3D-Tiles reader in every mode.
+
+    Implicit-tiling limits (in addition to the plain-geometry limits above): objects are binned to a
+    cell by their **centroid** and the per-cell bounding box is **not** written — a 1.1 viewer derives
+    it by halving the root box per level, so an object whose footprint extends past its cell edge lies
+    partly outside the derived box and a strict viewer culling on that box could drop it near edges
+    (this package's own reader ignores implicit boxes and decodes every content cell, so there is **no**
+    round-trip data loss). An **empty** model writes a trivial single-tile 1.0 tileset regardless of
+    ``implicit_tiling`` — there is nothing to tile.
 
     Args:
         model: The city model to serialize.
@@ -711,9 +720,8 @@ def write_3dtiles(
     # Gather the model's geometry once and feed both builders, rather than walking it twice.
     contributing = _object_rings(model)
     if implicit_tiling and contributing:
-        tileset = _write_implicit(
-            contributing, target, scheme, max_objects_per_tile or 64
-        )
+        target_per_tile = 64 if max_objects_per_tile is None else max_objects_per_tile
+        tileset = _write_implicit(contributing, target, scheme, target_per_tile)
     elif max_objects_per_tile is not None and len(contributing) > max_objects_per_tile:
         root = _build_tile(contributing, target, [0], max_objects_per_tile)
         tileset = {
