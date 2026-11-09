@@ -48,6 +48,7 @@ from typing import Any
 
 import numpy as np
 
+from pyramids_citymodels import _implicit_tiling as implicit
 from pyramids_citymodels.errors import UnsupportedGeometryError
 from pyramids_citymodels.ir import CityModel, CityObject, Geometry
 from pyramids_citymodels.options import ObjectFilter
@@ -162,9 +163,10 @@ def _apply_selector(
 
     3D Tiles features are synthesized from decoded tiles rather than read from named file objects,
     so — unlike CityJSON/CityGML — their metadata and footprints only exist after decoding. The
-    subtree prefilter (:func:`_subtree_outside_bbox`) already skipped whole branches cheaply; this
-    applies the full filter to what remains, using each feature's decoded footprint extent for an
-    exact bbox test, then thins the survivors by any random sample.
+    explicit-tile bbox prefilter (:func:`_tile_content_outside_bbox`) may have skipped some tiles'
+    content cheaply (it does not run for implicit tiles, whose cells are all decoded); this applies the
+    full filter to what remains, using each feature's decoded footprint extent for an exact bbox test,
+    then thins the survivors by any random sample.
     """
     if selector is None:
         return objects
@@ -736,6 +738,133 @@ def _tile_transform(tile: dict[str, Any], parent: np.ndarray) -> np.ndarray:
     return parent @ np.array(raw, dtype=np.float64).reshape(4, 4).T
 
 
+def _expand_implicit(
+    tile: dict[str, Any],
+    implicit_tiling: dict[str, Any],
+    base: Path,
+    transform: np.ndarray,
+    up_axis: Any,
+    objects: dict[str, CityObject],
+    counter: list[int],
+    selector: "ObjectFilter | None",
+) -> None:
+    """Expand a 3D Tiles 1.1 implicit tile: read its subtree(s) and decode every available content cell.
+
+    The ``content.uri`` is a ``{level}/{x}/{y}[/{z}]`` template; the tree is described by one or more
+    ``.subtree`` files (availability bitstreams) rather than enumerated. This reads the root subtree and
+    recurses into available child subtrees, decoding one ``b3dm`` per content-available cell. The
+    read-time bbox prefilter is not applied to implicit cells (each decoded cell is still exact-filtered
+    by :func:`_apply_selector` in :func:`_decode_content`).
+    """
+    scheme = str(implicit_tiling.get("subdivisionScheme") or "QUADTREE")
+    children = implicit.children_per_node(scheme)
+    dimension = implicit.dimensions(scheme)
+    subtree_levels = int(implicit_tiling.get("subtreeLevels") or 1)
+    content_template = (tile.get("content") or {}).get("uri")
+    subtree_template = (implicit_tiling.get("subtrees") or {}).get("uri")
+    if not (content_template and subtree_template):
+        return
+    _expand_subtree(
+        0,
+        (0,) * dimension,
+        subtree_levels,
+        children,
+        dimension,
+        content_template,
+        subtree_template,
+        base,
+        transform,
+        up_axis,
+        objects,
+        counter,
+        selector,
+    )
+
+
+def _expand_subtree(
+    root_level: int,
+    root_coords: tuple[int, ...],
+    subtree_levels: int,
+    children: int,
+    dimension: int,
+    content_template: str,
+    subtree_template: str,
+    base: Path,
+    transform: np.ndarray,
+    up_axis: Any,
+    objects: dict[str, CityObject],
+    counter: list[int],
+    selector: "ObjectFilter | None",
+) -> None:
+    """Decode one subtree's content-available cells, then recurse into its available child subtrees.
+
+    A node at local level ``l``, local Morton ``m`` maps to tileset level ``root_level + l`` and tileset
+    coordinates ``root_coords * 2**l + demorton(m)``; an available child subtree at Morton ``m`` roots a
+    subtree at level ``root_level + subtree_levels``.
+    """
+    subtree_path = base / implicit.fill_template(
+        subtree_template, root_level, root_coords
+    )
+    if not subtree_path.exists():
+        return
+    try:
+        _tile_av, content_av, child_av = implicit.decode_subtree(
+            subtree_path.read_bytes(), subtree_levels, children
+        )
+    except (ValueError, OSError) as error:
+        # A malformed, truncated, or implausibly-large subtree is skipped (one bad subtree must not
+        # abort a whole multi-subtree read), mirroring the b3dm path's corruption handling.
+        warnings.warn(
+            f"3D Tiles: skipping unreadable subtree {subtree_path.name!r}: {error}",
+            UserWarning,
+            stacklevel=2,
+        )
+        return
+    decoded: set[Path] = (
+        set()
+    )  # a no-placeholder template resolves every cell to one path — decode once
+    for local_level in range(subtree_levels):
+        offset = implicit.level_offset(local_level, children)
+        factor = 2**local_level
+        for local_morton in range(children**local_level):
+            if not content_av[offset + local_morton]:
+                continue
+            local = implicit.demorton(local_morton, dimension)
+            coords = tuple(
+                root_coords[axis] * factor + local[axis] for axis in range(dimension)
+            )
+            path = base / implicit.fill_template(
+                content_template, root_level + local_level, coords
+            )
+            if path in decoded or not path.exists():
+                continue
+            decoded.add(path)
+            _decode_content(path, transform, up_axis, objects, counter, selector)
+    factor = 2**subtree_levels
+    for child_morton in range(children**subtree_levels):
+        if not child_av[child_morton]:
+            continue
+        local = implicit.demorton(child_morton, dimension)
+        child_root = tuple(
+            root_coords[axis] * factor + local[axis] for axis in range(dimension)
+        )
+        _expand_subtree(
+            root_level + subtree_levels,
+            child_root,
+            subtree_levels,
+            children,
+            dimension,
+            content_template,
+            subtree_template,
+            base,
+            transform,
+            up_axis,
+            objects,
+            counter,
+            selector,
+        )
+
+
 def _walk_tileset(
     tile: dict[str, Any],
     base: Path | None,
@@ -755,6 +884,22 @@ def _walk_tileset(
     its parent's, so skipping a whole subtree could drop an in-bbox descendant.
     """
     here = _tile_transform(tile, transform)
+    implicit_tiling = tile.get("implicitTiling")
+    if implicit_tiling and base is not None:
+        # An implicit tile's content.uri is a *template*, not a file; expand the subtree(s) instead of
+        # decoding the template or walking explicit children. An implicit tile should not also enumerate
+        # children (the subtrees describe the whole subtree); warn rather than silently dropping any.
+        if tile.get("children"):
+            warnings.warn(
+                "3D Tiles: an implicitTiling tile also declares explicit children; the children are "
+                "ignored (the subtree describes the tree)",
+                UserWarning,
+                stacklevel=2,
+            )
+        _expand_implicit(
+            tile, implicit_tiling, base, here, up_axis, objects, counter, selector
+        )
+        return
     content = tile.get("content") or {}
     uri = content.get("uri") or content.get("url")
     if (

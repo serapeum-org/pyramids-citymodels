@@ -1,10 +1,13 @@
 """Serialize the IR to a Cesium 3D Tiles tileset (feature #15 — tiling / packaging).
 
 3D Tiles is the runtime streaming format for massive city models: a ``tileset.json`` tree of bounding
-volumes whose leaves point at **binary** ``b3dm`` (Batched 3D Model) content. This writer produces a
-single-tile tileset — one ``tileset.json`` plus one ``.b3dm`` — which is the degenerate (but fully
-valid) tree every 3D-Tiles client reads; spatial subdivision into many tiles is a documented
-follow-up.
+volumes whose leaves point at **binary** ``b3dm`` (Batched 3D Model) content. This writer produces,
+depending on :func:`write_3dtiles`'s arguments, a **single-tile** tileset (one ``tileset.json`` + one
+``.b3dm``), an **explicit multi-tile** XY quadtree (one ``.b3dm`` per leaf, the tree enumerated in the
+JSON), or a **3D Tiles 1.1 implicit** tileset (a quadtree/octree described by a rule: templated content
+URIs + a compact binary ``.subtree`` of availability, so a huge tree is not enumerated — see
+:mod:`pyramids_citymodels._implicit_tiling`). All three round-trip through this package's own 3D-Tiles
+reader.
 
 The ``b3dm`` embeds a binary glTF (``glb``) built the same way as the :mod:`glTF writer
 <pyramids_citymodels.writers.gltf>` — every surface's exterior ring fan-triangulated into one
@@ -42,6 +45,7 @@ import struct
 from pathlib import Path
 from typing import Any
 
+from pyramids_citymodels import _implicit_tiling as implicit
 from pyramids_citymodels.ir import CityModel, CityObject, iter_surfaces
 from pyramids_citymodels.writers._geometry import open_ring, xyz
 
@@ -486,25 +490,192 @@ def build_tileset(model: CityModel, content_uri: str | None) -> dict[str, Any]:
     return _tileset_from_rings(_object_rings(model), content_uri)
 
 
+def _centroid(
+    rings: list[list[tuple[float, float, float]]], dimension: int
+) -> tuple[float, ...]:
+    """The mean of every ring vertex over the first ``dimension`` axes (XY for a quadtree, XYZ octree)."""
+    sums = [0.0] * dimension
+    count = 0
+    for ring in rings:
+        for point in ring:
+            for axis in range(dimension):
+                sums[axis] += point[axis]
+            count += 1
+    return tuple(total / count for total in sums)
+
+
+def _choose_levels(count: int, max_per_tile: int, children: int) -> int:
+    """The number of implicit levels: enough that the deepest grid has ~one cell per ``max_per_tile``.
+
+    The deepest level ``L-1`` has ``children ** (L-1)`` cells; pick the smallest ``L`` whose cell count
+    covers ``ceil(count / max_per_tile)``, capped at :func:`._implicit_tiling.max_subtree_levels` so one
+    subtree's availability arrays stay bounded (scheme-aware — an octree caps shallower than a quadtree).
+    Objects cluster, so a cell may still exceed the target; the cap trades that for a bounded subtree.
+    """
+    cap = implicit.max_subtree_levels(children)
+    if count <= max_per_tile:
+        return 1
+    cells_needed = math.ceil(count / max_per_tile)
+    levels = 1
+    while children ** (levels - 1) < cells_needed and levels < cap:
+        levels += 1
+    return levels
+
+
+def _cell_of(
+    centroid: tuple[float, ...],
+    minima: list[float],
+    maxima: list[float],
+    cells_per_axis: int,
+    dimension: int,
+) -> tuple[int, ...]:
+    """The ``(x, y[, z])`` grid cell a centroid falls in, over a ``cells_per_axis`` uniform grid."""
+    cell = []
+    for axis in range(dimension):
+        extent = maxima[axis] - minima[axis]
+        if extent <= 0:
+            cell.append(0)
+            continue
+        index = int((centroid[axis] - minima[axis]) / extent * cells_per_axis)
+        cell.append(min(max(index, 0), cells_per_axis - 1))
+    return tuple(cell)
+
+
+def _write_implicit(
+    contributing: _Contributing, target: Path, scheme: str, max_per_tile: int
+) -> dict[str, Any]:
+    """Write a 3D Tiles 1.1 **implicit** tileset: templated ``b3dm`` content + one ``.subtree`` file.
+
+    Objects are binned by centroid into a uniform quadtree/octree grid at the chosen depth; each
+    occupied deepest-level cell gets its own ``content/{level}/{x}/{y}[/{z}].b3dm``. One subtree file
+    carries the availability (which tiles exist, which have content); the root ``tileset.json`` holds
+    only the root box + the ``implicitTiling`` rule, so the whole tree is described, not enumerated.
+    """
+    children = implicit.children_per_node(scheme)
+    dimension = implicit.dimensions(scheme)
+    scheme_name = "OCTREE" if dimension == 3 else "QUADTREE"
+    all_rings = [ring for _city_object, rings in contributing for ring in rings]
+    minima, maxima = _bounds(all_rings)
+    diagonal = math.sqrt(sum((maxima[axis] - minima[axis]) ** 2 for axis in range(3)))
+    levels = _choose_levels(len(contributing), max_per_tile, children)
+    deepest = levels - 1
+    cells_per_axis = 2**deepest
+
+    bins: dict[tuple[int, ...], _Contributing] = {}
+    for city_object, rings in contributing:
+        cell = _cell_of(
+            _centroid(rings, dimension), minima, maxima, cells_per_axis, dimension
+        )
+        bins.setdefault(cell, []).append((city_object, rings))
+
+    axes_suffix = "/{z}" if dimension == 3 else ""
+    content_template = "content/{level}/{x}/{y}" + axes_suffix + ".b3dm"
+    subtree_template = "subtrees/{level}/{x}/{y}" + axes_suffix + ".subtree"
+    node_total = implicit.node_count(levels, children)
+    tile_availability = [False] * node_total
+    content_availability = [False] * node_total
+    for cell, cell_contributing in bins.items():
+        tile = _b3dm_from_rings(cell_contributing)
+        if tile is None:
+            continue
+        content_availability[
+            implicit.level_offset(deepest, children) + implicit.morton(cell)
+        ] = True
+        for level in range(levels):  # the cell and every ancestor is an existing tile
+            ancestor = tuple(coord >> (deepest - level) for coord in cell)
+            tile_availability[
+                implicit.level_offset(level, children) + implicit.morton(ancestor)
+            ] = True
+        content_path = target / implicit.fill_template(content_template, deepest, cell)
+        content_path.parent.mkdir(parents=True, exist_ok=True)
+        content_path.write_bytes(tile)
+
+    root_cell = (0, 0, 0) if dimension == 3 else (0, 0)
+    subtree_path = target / implicit.fill_template(subtree_template, 0, root_cell)
+    subtree_path.parent.mkdir(parents=True, exist_ok=True)
+    subtree_path.write_bytes(
+        implicit.encode_subtree(
+            tile_availability,
+            content_availability,
+            [False] * (children**levels),  # one subtree: no child subtrees
+        )
+    )
+    return {
+        "asset": {
+            "version": "1.1",
+            "gltfUpAxis": "Z",
+            "generator": "pyramids-citymodels",
+        },
+        "geometricError": diagonal,
+        "root": {
+            "boundingVolume": {"box": _bounding_box(minima, maxima)},
+            "refine": "REPLACE",
+            "geometricError": diagonal,
+            "implicitTiling": {
+                "subdivisionScheme": scheme_name,
+                "subtreeLevels": levels,
+                "availableLevels": levels,
+                "subtrees": {"uri": subtree_template},
+            },
+            "content": {"uri": content_template},
+        },
+    }
+
+
+def _validate_implicit_args(scheme: str, max_objects_per_tile: int | None) -> None:
+    """Raise ``ValueError`` for an invalid implicit-tiling ``scheme`` or a non-positive per-tile target."""
+    if scheme.lower() not in ("quadtree", "octree"):
+        raise ValueError(f"scheme must be 'quadtree' or 'octree', got {scheme!r}")
+    if max_objects_per_tile is not None and max_objects_per_tile < 1:
+        raise ValueError(
+            f"max_objects_per_tile must be >= 1, got {max_objects_per_tile}"
+        )
+
+
 def write_3dtiles(
-    model: CityModel, directory: Any, max_objects_per_tile: int | None = None
+    model: CityModel,
+    directory: Any,
+    max_objects_per_tile: int | None = None,
+    implicit_tiling: bool = False,
+    scheme: str = "quadtree",
 ) -> dict[str, Any]:
     """Write ``model`` as a 3D Tiles tileset into ``directory``.
 
-    By default a **single-tile** tileset (``tileset.json`` + one ``content.b3dm``). When
-    ``max_objects_per_tile`` is given and the model has more contributing objects than that, the
-    objects are partitioned by footprint into an **XY quadtree**, writing one ``content_<n>.b3dm`` per
-    leaf and a nested ``tileset.json`` of bounding-volume tiles — so a large model streams tile by
-    tile. A quadtree is used (not 3D Tiles 1.1 implicit tiling — a documented follow-up); geometry is
-    passed through (no per-tile LOD/simplification). The output round-trips through this package's own
-    3D-Tiles reader either way.
+    Three modes, in order of scale:
+
+    - **Single tile** (default): ``tileset.json`` + one ``content.b3dm``.
+    - **Explicit multi-tile** (``max_objects_per_tile=N``): objects are partitioned by footprint into
+      an **XY quadtree**, writing one ``content_<n>.b3dm`` per leaf and a nested ``tileset.json`` of
+      bounding-volume tiles — the whole tree enumerated in the JSON.
+    - **Implicit tiling** (``implicit_tiling=True``): 3D Tiles 1.1 implicit tiling — objects are binned
+      into a uniform ``scheme`` (``"quadtree"`` XY or ``"octree"`` XYZ) grid, each occupied cell gets a
+      templated ``content/{level}/{x}/{y}[/{z}].b3dm``, and a compact binary ``.subtree`` file carries
+      the tile/content availability. The root ``tileset.json`` holds only the root box + the
+      ``implicitTiling`` rule, so a million-tile model is *described*, not listed. ``scheme`` is
+      ignored unless ``implicit_tiling`` is set (an invalid ``scheme`` raises ``ValueError``);
+      ``max_objects_per_tile`` (default 64 here, must be ≥ 1) sets the target objects per cell.
+
+    Geometry is passed through per tile (no per-tile LOD/simplification), tile content stays ``b3dm``,
+    and the output round-trips through this package's own 3D-Tiles reader in every mode.
+
+    Implicit-tiling limits (in addition to the plain-geometry limits above): objects are binned to a
+    cell by their **centroid** and the per-cell bounding box is **not** written — a 1.1 viewer derives
+    it by halving the root box per level, so an object whose footprint extends past its cell edge lies
+    partly outside the derived box and a strict viewer culling on that box could drop it near edges
+    (this package's own reader ignores implicit boxes and decodes every content cell, so there is **no**
+    round-trip data loss). An **empty** model writes a trivial single-tile 1.0 tileset regardless of
+    ``implicit_tiling`` — there is nothing to tile.
 
     Args:
         model: The city model to serialize.
         directory: The output directory (created if missing); 3D Tiles is a multi-file format, so a
             directory — not a single file — is required.
-        max_objects_per_tile: When set, subdivide into tiles of at most this many objects. ``None``
-            (default) writes a single tile.
+        max_objects_per_tile: Target objects per tile for the multi-tile / implicit modes. ``None``
+            (default) with ``implicit_tiling=False`` writes a single tile; it defaults to 64 for
+            implicit tiling.
+        implicit_tiling: Write a 3D Tiles 1.1 implicit tileset (templated content + ``.subtree``) rather
+            than an explicit tree.
+        scheme: ``"quadtree"`` (XY, default) or ``"octree"`` (XYZ) subdivision — implicit tiling only.
 
     Returns:
         The written ``tileset.json`` document.
@@ -531,12 +702,37 @@ def write_3dtiles(
             True
 
             ```
+        - Implicit tiling writes a 3D Tiles 1.1 tileset — templated content + a `.subtree` file:
+            ```python
+            >>> import tempfile
+            >>> from pathlib import Path
+            >>> from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+            >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+            >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+            ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+            >>> out = Path(tempfile.mkdtemp())
+            >>> tileset = write_3dtiles(model, out, implicit_tiling=True)
+            >>> tileset["root"]["implicitTiling"]["subdivisionScheme"]
+            'QUADTREE'
+            >>> tileset["root"]["content"]["uri"]
+            'content/{level}/{x}/{y}.b3dm'
+            >>> (out / "subtrees" / "0" / "0" / "0.subtree").exists()
+            True
+
+            ```
     """
+    if implicit_tiling:
+        # Validated here (not in _write_implicit) so the contract is the same for an empty model, which
+        # never reaches _write_implicit.
+        _validate_implicit_args(scheme, max_objects_per_tile)
     target = Path(directory)
     target.mkdir(parents=True, exist_ok=True)
     # Gather the model's geometry once and feed both builders, rather than walking it twice.
     contributing = _object_rings(model)
-    if max_objects_per_tile is not None and len(contributing) > max_objects_per_tile:
+    if implicit_tiling and contributing:
+        target_per_tile = 64 if max_objects_per_tile is None else max_objects_per_tile
+        tileset = _write_implicit(contributing, target, scheme, target_per_tile)
+    elif max_objects_per_tile is not None and len(contributing) > max_objects_per_tile:
         root = _build_tile(contributing, target, [0], max_objects_per_tile)
         tileset = {
             "asset": dict(_ASSET),
