@@ -172,32 +172,43 @@ def _iter_coordinates(element: Any) -> "Any":
             yield from _iter_coordinates(child)
 
 
+def _model_coordinates(model: CityModel) -> "Any":
+    """Yield ``(object_id, coordinate)`` for every coordinate in the model (flat over objects)."""
+    for object_id, city_object in model.objects.items():
+        for geometry in city_object.geometries:
+            for coordinate in _iter_coordinates(geometry.boundaries):
+                yield object_id, coordinate
+
+
+def _uniform_minima(model: CityModel) -> list[float] | None:
+    """Per-axis minimum over all coordinates, or ``None`` if the model has none.
+
+    Raises ``ValueError`` (naming the object) on a ragged model — ``compress`` writes one
+    document-wide ``transform``, so every coordinate must share one dimensionality.
+    """
+    minima: list[float] | None = None
+    dimension: int | None = None
+    for object_id, coordinate in _model_coordinates(model):
+        if minima is None:
+            minima, dimension = list(coordinate), len(coordinate)
+        elif len(coordinate) != dimension:
+            raise ValueError(
+                f"to_cityjson(compress=…) requires every coordinate to have the same dimension; "
+                f"object {object_id!r} has a {len(coordinate)}-D coordinate where {dimension}-D was "
+                f"seen first"
+            )
+        else:
+            minima = [min(low, c) for low, c in zip(minima, coordinate)]
+    return minima
+
+
 def _compress_transform(model: CityModel, digits: int) -> dict[str, Any] | None:
     """A CityJSON ``transform`` (``scale`` + ``translate``) that quantizes coordinates to ``digits``.
 
     ``translate`` is the per-axis minimum (keeps the integer grid small and non-negative) and ``scale``
     is ``10 ** -digits`` on every axis. Returns ``None`` for a model with no coordinates.
     """
-    minima: list[float] | None = None
-    dimension: int | None = None
-    for object_id, city_object in model.objects.items():
-        for geometry in city_object.geometries:
-            for coordinate in _iter_coordinates(geometry.boundaries):
-                if minima is None:
-                    minima = list(coordinate)
-                    dimension = len(coordinate)
-                elif len(coordinate) != dimension:
-                    # compress emits one transform (scale/translate) for the whole document, so every
-                    # vertex must share one dimensionality — a mixed 2-D/3-D model (only possible for a
-                    # hand-built or merged one) is rejected clearly, not with a bare IndexError.
-                    raise ValueError(
-                        f"to_cityjson(compress=…) requires every coordinate to have the same "
-                        f"dimension; object {object_id!r} has a {len(coordinate)}-D coordinate where "
-                        f"{dimension}-D was seen first"
-                    )
-                else:
-                    for axis in range(dimension):
-                        minima[axis] = min(minima[axis], coordinate[axis])
+    minima = _uniform_minima(model)
     if minima is None:
         return None
     step = 10.0**-digits

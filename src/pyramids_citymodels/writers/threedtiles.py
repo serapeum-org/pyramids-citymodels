@@ -560,6 +560,57 @@ def _cell_of(
     return tuple(cell)
 
 
+def _existing_tiles(
+    occupied: set[tuple[int, ...]], deepest: int
+) -> dict[int, set[tuple[int, ...]]]:
+    """Every existing tile (each occupied leaf plus all its ancestors) grouped by tileset level."""
+    existing: dict[int, set[tuple[int, ...]]] = {}
+    for leaf in occupied:
+        for level in range(deepest + 1):
+            existing.setdefault(level, set()).add(
+                tuple(coord >> (deepest - level) for coord in leaf)
+            )
+    return existing
+
+
+def _local_cell(
+    cell: tuple[int, ...], root: tuple[int, ...], span: int, dimension: int
+) -> tuple[int, ...]:
+    """A descendant ``cell``'s coordinates relative to a subtree ``root`` ``span`` levels above it."""
+    return tuple(cell[axis] - root[axis] * (2**span) for axis in range(dimension))
+
+
+def _one_subtree(
+    root_level: int,
+    root: tuple[int, ...],
+    existing: dict[int, set[tuple[int, ...]]],
+    deepest: int,
+    subtree_levels: int,
+    children: int,
+    dimension: int,
+) -> tuple[list[bool], list[bool], list[bool]]:
+    """The ``(tile, content, child_subtree)`` availability for one subtree rooted at ``(root_level, root)``."""
+    node_total = implicit.node_count(subtree_levels, children)
+    tile_av = [False] * node_total
+    content_av = [False] * node_total
+    for local in range(min(subtree_levels, deepest + 1 - root_level)):
+        offset = implicit.level_offset(local, children)
+        for cell in existing.get(root_level + local, set()):
+            if tuple(coord >> local for coord in cell) != root:
+                continue  # not a descendant of this subtree root
+            index = offset + implicit.morton(_local_cell(cell, root, local, dimension))
+            tile_av[index] = True
+            if root_level + local == deepest:
+                content_av[index] = True
+    child_av = [False] * (children**subtree_levels)
+    for cell in existing.get(root_level + subtree_levels, set()):
+        if tuple(coord >> subtree_levels for coord in cell) == root:
+            child_av[
+                implicit.morton(_local_cell(cell, root, subtree_levels, dimension))
+            ] = True
+    return tile_av, content_av, child_av
+
+
 def _subtree_descriptors(
     occupied: set[tuple[int, ...]],
     deepest: int,
@@ -570,50 +621,19 @@ def _subtree_descriptors(
     """Build the availability arrays for every subtree needed to describe the occupied tree.
 
     The tree is partitioned into subtrees of ``subtree_levels`` levels rooted at tileset levels
-    ``0, subtree_levels, 2*subtree_levels, …``. For each subtree that contains an existing tile, this
-    returns its ``(tile, content, child_subtree)`` availability — content only on the deepest-level
-    occupied cells, and child-subtree bits pointing at the occupied subtrees one block deeper, so the
-    reader chains from the root subtree down.
+    ``0, subtree_levels, 2*subtree_levels, …``. For each subtree that contains an existing tile,
+    :func:`_one_subtree` returns its ``(tile, content, child_subtree)`` availability — content only on
+    the deepest-level occupied cells, and child-subtree bits pointing at the occupied subtrees one block
+    deeper, so the reader chains from the root subtree down.
     """
-    # Every ancestor of every occupied leaf is an existing tile; group them by tileset level.
-    existing: dict[int, set[tuple[int, ...]]] = {}
-    for leaf in occupied:
-        for level in range(deepest + 1):
-            existing.setdefault(level, set()).add(
-                tuple(coord >> (deepest - level) for coord in leaf)
-            )
-    available_levels = deepest + 1
-    node_total = implicit.node_count(subtree_levels, children)
-    descriptors: dict[
-        tuple[int, tuple[int, ...]], tuple[list[bool], list[bool], list[bool]]
-    ] = {}
-    for root_level in range(0, available_levels, subtree_levels):
-        for root in existing.get(root_level, set()):
-            tile_av = [False] * node_total
-            content_av = [False] * node_total
-            child_av = [False] * (children**subtree_levels)
-            for local in range(min(subtree_levels, available_levels - root_level)):
-                offset = implicit.level_offset(local, children)
-                for cell in existing.get(root_level + local, set()):
-                    if tuple(coord >> local for coord in cell) != root:
-                        continue  # not a descendant of this subtree root
-                    local_cell = tuple(
-                        cell[a] - root[a] * (2**local) for a in range(dimension)
-                    )
-                    index = offset + implicit.morton(local_cell)
-                    tile_av[index] = True
-                    if root_level + local == deepest:
-                        content_av[index] = True
-            child_level = root_level + subtree_levels
-            for cell in existing.get(child_level, set()):
-                if tuple(coord >> subtree_levels for coord in cell) != root:
-                    continue
-                local_cell = tuple(
-                    cell[a] - root[a] * (2**subtree_levels) for a in range(dimension)
-                )
-                child_av[implicit.morton(local_cell)] = True
-            descriptors[(root_level, root)] = (tile_av, content_av, child_av)
-    return descriptors
+    existing = _existing_tiles(occupied, deepest)
+    return {
+        (root_level, root): _one_subtree(
+            root_level, root, existing, deepest, subtree_levels, children, dimension
+        )
+        for root_level in range(0, deepest + 1, subtree_levels)
+        for root in existing.get(root_level, set())
+    }
 
 
 def _write_implicit(
