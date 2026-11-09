@@ -302,6 +302,19 @@ def write_cityjson(
             [[[0, 1, 2]]]
 
             ```
+        - `compress` quantizes to integer vertices and writes a `transform` the reader restores:
+            ```python
+            >>> from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+            >>> surface = [[(10.5, 20.25, 1.0), (11.5, 20.25, 1.0), (11.5, 21.25, 1.0)]]
+            >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+            ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+            >>> doc = write_cityjson(model, compress=2)
+            >>> doc["vertices"][0], doc["vertices"][1]
+            ([0, 0, 0], [100, 0, 0])
+            >>> doc["transform"]["scale"]
+            [0.01, 0.01, 0.01]
+
+            ```
     """
     return _write_or_return(_build_document(model, compress), path)
 
