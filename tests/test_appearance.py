@@ -261,3 +261,89 @@ def test_citygml_unpainted_surface_gets_a_null_material_value() -> None:
         .appearance["material"]["rgb"]["values"]
     )
     assert values == [0, None]  # roof painted (index 0), wall unpainted (null)
+
+
+# --- appearance pool preservation (#60) ---------------------------------------------------------
+
+
+def test_cityjson_preserves_the_full_appearance_pool_and_indices() -> None:
+    """CityJSON ⇄ CityJSON keeps the pool composition **and** index values verbatim — including an
+    unpainted entry — since CityJSON's pool is a first-class indexed array the writer re-emits as-is."""
+    from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+
+    surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+    model = CityModel(
+        appearances={
+            "materials": [
+                {
+                    "name": "unused",
+                    "diffuseColor": [0.0, 0.0, 1.0],
+                },  # index 0, painted by nobody
+                {"name": "red", "diffuseColor": [1.0, 0.0, 0.0]},  # index 1
+            ]
+        },
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[surface],
+                        appearance={
+                            "material": {"t": {"values": [1]}}
+                        },  # paints index 1
+                    )
+                ],
+            )
+        },
+    )
+    back = parse_cityjson(write_cityjson(model))
+    assert (
+        back.appearances["materials"] == model.appearances["materials"]
+    )  # composition verbatim
+    assert back.objects["b"].geometries[0].appearance["material"]["t"]["values"] == [
+        1
+    ]  # index kept
+
+
+def test_citygml_round_trip_keeps_per_surface_appearance_but_recompacts_the_pool() -> (
+    None
+):
+    """A CityGML round-trip preserves each surface's painted material but **recompacts** the pool —
+    CityGML has no indexed appearance pool (surface→material is by gml:id), so an unpainted entry is
+    dropped and indices are renumbered. This documents an inherent format limit, not a bug."""
+    from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+    from pyramids_citymodels.writers.citygml import write_citygml
+
+    surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+    model = CityModel(
+        appearances={
+            "materials": [
+                {"name": "unused", "diffuseColor": [0.0, 0.0, 1.0]},
+                {"name": "red", "diffuseColor": [1.0, 0.0, 0.0]},
+            ]
+        },
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[surface],
+                        appearance={"material": {"t": {"values": [1]}}},
+                    )
+                ],
+            )
+        },
+    )
+    back = parse_citygml(write_citygml(model))
+    pool = back.appearances["materials"]
+    assert len(pool) == 1  # the unpainted entry is dropped (no indexed pool in CityGML)
+    assert pool[0]["diffuseColor"] == [1.0, 0.0, 0.0]  # the painted colour survives...
+    assert back.objects["b"].geometries[0].appearance["material"]["t"]["values"] == [
+        0
+    ]  # ...renumbered
