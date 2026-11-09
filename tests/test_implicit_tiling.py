@@ -345,3 +345,27 @@ def test_deep_tree_is_split_into_balanced_chained_subtrees_and_round_trips(
         model.objects
     )  # all recovered via chained subtrees
     assert back.objects["o57"].attributes["h"] == 57.0
+
+
+def test_subtree_sizing_never_puts_the_deepest_level_on_a_subtree_boundary() -> None:
+    # The no-per-leaf-explosion guarantee (M2) depends on the deepest level never landing on a subtree
+    # root boundary. Pin it at the PRODUCTION bounds over the full reachable depth, so a future change
+    # to MAX_SUBTREE_NODES / _MAX_AVAILABLE_LEVELS that reintroduces the explosion fails here.
+    from pyramids_citymodels import _implicit_tiling as codec
+    from pyramids_citymodels.writers.threedtiles import (
+        _MAX_AVAILABLE_LEVELS,
+        _subtree_levels,
+    )
+
+    for children in (4, 8):  # quadtree, octree
+        bound = codec.max_subtree_levels(children)
+        for levels in range(1, _MAX_AVAILABLE_LEVELS + 1):
+            subtree_levels = _subtree_levels(levels, children)
+            assert 1 <= subtree_levels <= bound  # within the decode bound
+            if (
+                levels > subtree_levels
+            ):  # chaining: the deepest level must be inside a subtree
+                assert (levels - 1) % subtree_levels != 0, (
+                    f"children={children} levels={levels} subtree_levels={subtree_levels} puts the "
+                    f"deepest level on a subtree boundary → one .subtree per leaf (M2 regression)"
+                )
