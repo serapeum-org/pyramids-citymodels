@@ -62,8 +62,11 @@ _ARRAY_BUFFER, _ELEMENT_ARRAY_BUFFER, _TRIANGLES = 34962, 34963, 4
 #: The b3dm header: the 4-byte magic then seven uint32 (version, byteLength, and the four table
 #: lengths) — 28 bytes, matching the reader's ``_B3DM_HEADER``.
 _B3DM_HEADER = struct.Struct("<4sIIIIII")
-#: The default content file name written beside ``tileset.json``.
+#: The default content file name written beside ``tileset.json`` (b3dm); glTF content uses ``content.glb``.
 _CONTENT_NAME = "content.b3dm"
+
+#: One city object paired with its surfaces' exterior rings (opened, ≥3 vertices, as xyz triples).
+_Contributing = list[tuple[CityObject, list[list[tuple[float, float, float]]]]]
 
 
 def _exterior_rings(
@@ -368,11 +371,330 @@ def _b3dm_from_rings(
     return _encode_b3dm(glb, len(contributing), _batch_table(contributing))
 
 
+# --- glTF tile content (3D Tiles 1.1) -------------------------------------------------------------
+# 1.1 deprecates the ``b3dm`` wrapper: the tile is a plain ``.glb`` whose per-object identity and
+# attributes live *inside* the glTF through two metadata extensions — ``EXT_mesh_features`` (a
+# ``_FEATURE_ID_0`` vertex attribute replacing ``_BATCHID``) and ``EXT_structural_metadata`` (a
+# property table replacing the batch table). Each city object is one feature; its ``id`` and ``type``
+# are STRING properties and its remaining attributes ride in a single JSON-encoded STRING property.
+# Any **JSON-representable** attribute round-trips, including nested dicts/lists and heterogeneous /
+# sparse keys the columnar batch table cannot carry; a non-finite float or a non-JSON value (set,
+# bytes, …) raises a clear ``ValueError`` naming the object rather than emitting invalid JSON. JSON's
+# own coercions still apply (a tuple becomes a list, an integer dict key becomes a string). The
+# geometry blobs are built as for ``b3dm`` except the feature-id attribute is FLOAT, not UNSIGNED_INT:
+# glTF 2.0 does not allow an integer ``componentType`` for a vertex attribute, and ``EXT_mesh_features``
+# stores feature ids as ``FLOAT`` (the reader upcasts to float and rounds to int, so decode is
+# unaffected).
+
+#: The two glTF extensions a glTF-content tile declares.
+_EXT_MESH_FEATURES = "EXT_mesh_features"
+_EXT_STRUCTURAL_METADATA = "EXT_structural_metadata"
+#: The metadata class and the property name carrying the JSON-encoded attribute dict.
+_FEATURE_CLASS = "feature"
+_ATTRIBUTES_PROPERTY = "attributes"
+#: The EXT_structural_metadata schema id (required by the extension schema; ^[a-zA-Z_]\w*$).
+_SCHEMA_ID = "pyramids_citymodels"
+
+
+def _attributes_json(city_object: CityObject) -> str:
+    """JSON-encode a city object's attributes for the metadata STRING pool, or raise a clear error.
+
+    ``allow_nan=False`` so a non-finite float (and, via the stdlib, a non-JSON value such as a set or
+    bytes) raises ``ValueError`` naming the object instead of emitting the non-standard ``NaN`` /
+    ``Infinity`` tokens or a bare ``TypeError`` — a strict JSON consumer of the property must be able to
+    parse it back.
+    """
+    try:
+        return json.dumps(
+            city_object.attributes, ensure_ascii=False, sort_keys=True, allow_nan=False
+        )
+    except (ValueError, TypeError) as error:
+        raise ValueError(
+            f"to_3dtiles(content='gltf') cannot encode the attributes of object "
+            f"{city_object.id!r} as JSON metadata: {error}"
+        ) from error
+
+
+#: Feature ids are a ``FLOAT`` ``_FEATURE_ID_0`` attribute (glTF forbids an integer vertex attribute),
+#: and float32 represents integers exactly only up to 2**24, so a single tile must hold fewer features.
+#: The multi-tile / implicit modes keep per-tile counts far below this; only a single tile with an
+#: absurd object count can reach it.
+_MAX_FEATURES_PER_TILE = 1 << 24
+
+
+def _validate_gltf_encodable(contributing: _Contributing) -> None:
+    """Pre-flight the glTF-content write: raise before any file is written if a tile cannot be encoded.
+
+    The explicit and implicit writers emit content files incrementally, so a per-tile encode error
+    partway through would leave orphaned ``.glb`` files and no ``tileset.json``. Validating every
+    object's attributes (and the per-tile feature-count ceiling) up front makes the whole write
+    fail-fast and atomic: on a bad input nothing is written.
+    """
+    for city_object, _rings in contributing:
+        _attributes_json(city_object)
+
+
+def _string_column(values: list[str]) -> tuple[bytes, bytes]:
+    """Encode strings as an ``EXT_structural_metadata`` STRING property: ``(values, stringOffsets)``.
+
+    ``values`` is the UTF-8 bytes of every string concatenated; ``stringOffsets`` is ``len+1`` little-
+    endian ``uint32`` byte offsets into it (so string ``i`` is ``values[offsets[i]:offsets[i+1]]``).
+    """
+    encoded = [value.encode("utf-8") for value in values]
+    values_blob = b"".join(encoded)
+    offset = 0
+    offsets = [0]
+    for chunk in encoded:
+        offset += len(chunk)
+        offsets.append(offset)
+    offsets_blob = b"".join(struct.pack("<I", value) for value in offsets)
+    return values_blob, offsets_blob
+
+
+def _structural_metadata(
+    contributing: _Contributing, base_offset: int, first_buffer_view: int
+) -> tuple[bytes, list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
+    """Build the ``EXT_structural_metadata`` binary + bufferViews + schema + property table.
+
+    One feature per city object, with three STRING properties — ``id``, ``type`` and a JSON-encoded
+    ``attributes`` blob. The binary is appended after the geometry (``base_offset`` is where it starts
+    in the glb buffer); every bufferView is 4-aligned and carries **no** ``target`` (metadata, not
+    vertex data). ``first_buffer_view`` is the index of the first metadata bufferView (geometry owns
+    ``0..first_buffer_view-1``).
+
+    Returns:
+        ``(binary, buffer_views, schema, property_table)``.
+    """
+    columns = {
+        "id": [city_object.id for city_object, _rings in contributing],
+        "type": [city_object.type for city_object, _rings in contributing],
+        _ATTRIBUTES_PROPERTY: [
+            _attributes_json(city_object) for city_object, _rings in contributing
+        ],
+    }
+    binary = b""
+    buffer_views: list[dict[str, Any]] = []
+    properties: dict[str, Any] = {}
+
+    def add_view(blob: bytes) -> int:
+        nonlocal binary
+        pad = (
+            -(base_offset + len(binary))
+        ) % 4  # 4-align the view start within the buffer
+        binary += b"\x00" * pad
+        view = {
+            "buffer": 0,
+            "byteOffset": base_offset + len(binary),
+            "byteLength": len(blob),
+        }
+        binary += blob
+        buffer_views.append(view)
+        return first_buffer_view + len(buffer_views) - 1
+
+    for name, values in columns.items():
+        values_blob, offsets_blob = _string_column(values)
+        values_view = add_view(values_blob)
+        offsets_view = add_view(offsets_blob)
+        properties[name] = {
+            "values": values_view,
+            "stringOffsets": offsets_view,
+            "stringOffsetType": "UINT32",
+        }
+    schema = {
+        # ``id`` is required by the EXT_structural_metadata schema; it must match ^[a-zA-Z_]\w*$.
+        "id": _SCHEMA_ID,
+        "classes": {
+            _FEATURE_CLASS: {
+                "properties": {name: {"type": "STRING"} for name in columns}
+            }
+        },
+    }
+    property_table = {
+        "class": _FEATURE_CLASS,
+        "count": len(contributing),
+        "properties": properties,
+    }
+    return binary, buffer_views, schema, property_table
+
+
+def _glb_feature_document(
+    position_blob: bytes,
+    featureid_blob: bytes,
+    index_blob: bytes,
+    vertex_count: int,
+    triangle_count: int,
+    translate: list[float],
+    feature_count: int,
+    metadata_views: list[dict[str, Any]],
+    schema: dict[str, Any],
+    property_table: dict[str, Any],
+    buffer_length: int,
+) -> dict[str, Any]:
+    """The glTF JSON for a feature mesh: ``_FEATURE_ID_0`` + the two 3D Tiles 1.1 metadata extensions."""
+    stored = [
+        struct.unpack_from("<3f", position_blob, vertex * 12)
+        for vertex in range(vertex_count)
+    ]
+    minima = [min(point[axis] for point in stored) for axis in range(3)]
+    maxima = [max(point[axis] for point in stored) for axis in range(3)]
+    featureid_offset = len(position_blob)
+    index_offset = featureid_offset + len(featureid_blob)
+    return {
+        "asset": {"version": "2.0", "generator": "pyramids-citymodels"},
+        "extensionsUsed": [_EXT_MESH_FEATURES, _EXT_STRUCTURAL_METADATA],
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"mesh": 0, "translation": translate}],
+        "meshes": [
+            {
+                "primitives": [
+                    {
+                        "attributes": {"POSITION": 0, "_FEATURE_ID_0": 1},
+                        "indices": 2,
+                        "mode": _TRIANGLES,
+                        "extensions": {
+                            _EXT_MESH_FEATURES: {
+                                "featureIds": [
+                                    {
+                                        "featureCount": feature_count,
+                                        "attribute": 0,
+                                        "propertyTable": 0,
+                                    }
+                                ]
+                            }
+                        },
+                    }
+                ]
+            }
+        ],
+        "buffers": [{"byteLength": buffer_length}],
+        "bufferViews": [
+            {
+                "buffer": 0,
+                "byteOffset": 0,
+                "byteLength": len(position_blob),
+                "target": _ARRAY_BUFFER,
+            },
+            {
+                "buffer": 0,
+                "byteOffset": featureid_offset,
+                "byteLength": len(featureid_blob),
+                "target": _ARRAY_BUFFER,
+            },
+            {
+                "buffer": 0,
+                "byteOffset": index_offset,
+                "byteLength": len(index_blob),
+                "target": _ELEMENT_ARRAY_BUFFER,
+            },
+            *metadata_views,
+        ],
+        "accessors": [
+            {
+                "bufferView": 0,
+                "componentType": _FLOAT,
+                "count": vertex_count,
+                "type": "VEC3",
+                "min": minima,
+                "max": maxima,
+            },
+            {
+                # FLOAT, not UNSIGNED_INT: glTF 2.0 forbids an integer componentType for a vertex
+                # attribute, and EXT_mesh_features stores feature ids as FLOAT.
+                "bufferView": 1,
+                "componentType": _FLOAT,
+                "count": vertex_count,
+                "type": "SCALAR",
+            },
+            {
+                "bufferView": 2,
+                "componentType": _UINT,  # indices — UNSIGNED_INT is the element-array type
+                "count": triangle_count * 3,
+                "type": "SCALAR",
+            },
+        ],
+        "extensions": {
+            _EXT_STRUCTURAL_METADATA: {
+                "schema": schema,
+                "propertyTables": [property_table],
+            }
+        },
+    }
+
+
+def _gltf_from_rings(contributing: _Contributing) -> bytes | None:
+    """Encode an already-gathered ``contributing`` list into glTF-content ``glb`` bytes (``None`` if empty).
+
+    The geometry (positions + ``_FEATURE_ID_0`` + indices) is built exactly as for ``b3dm``; the
+    per-feature metadata is appended as an ``EXT_structural_metadata`` property table in the same glb
+    buffer, so one ``.glb`` carries both — the 3D Tiles 1.1-native content format.
+    """
+    if not contributing:
+        return None
+    if len(contributing) > _MAX_FEATURES_PER_TILE:
+        raise ValueError(
+            f"to_3dtiles(content='gltf') cannot put {len(contributing)} features in one tile: the "
+            f"FLOAT _FEATURE_ID_0 attribute represents integer ids exactly only up to "
+            f"{_MAX_FEATURES_PER_TILE} (2**24). Use max_objects_per_tile / implicit tiling to split it."
+        )
+    all_rings = [ring for _city_object, rings in contributing for ring in rings]
+    minima, _maxima = _bounds(all_rings)
+    position_blob, batchid_blob, index_blob, vertices, tris = _mesh_buffers(
+        contributing, minima
+    )
+    # _mesh_buffers packs feature ids as uint32 (the b3dm _BATCHID convention); re-pack them as float32
+    # for _FEATURE_ID_0, since glTF 2.0 disallows an integer vertex-attribute componentType.
+    id_count = len(batchid_blob) // 4
+    featureid_blob = struct.pack(
+        f"<{id_count}f", *struct.unpack(f"<{id_count}I", batchid_blob)
+    )
+    geometry = position_blob + featureid_blob + index_blob
+    metadata_blob, metadata_views, schema, property_table = _structural_metadata(
+        contributing, base_offset=len(geometry), first_buffer_view=3
+    )
+    buffer = geometry + metadata_blob
+    document = _glb_feature_document(
+        position_blob,
+        featureid_blob,
+        index_blob,
+        vertices,
+        tris,
+        minima,
+        len(contributing),
+        metadata_views,
+        schema,
+        property_table,
+        len(buffer),
+    )
+    return _encode_glb(document, buffer)
+
+
+#: A tile-content format: how to encode a ``contributing`` group and the file suffix / tileset version
+#: it implies. ``b3dm`` is 3D Tiles 1.0 content; ``gltf`` is the 1.1-native ``.glb`` content.
+_CONTENT_FORMATS: dict[str, tuple[Any, str, str]] = {
+    "b3dm": (_b3dm_from_rings, ".b3dm", "1.0"),
+    "gltf": (_gltf_from_rings, ".glb", "1.1"),
+}
+
+
+def _content_format(content: str) -> tuple[Any, str, str]:
+    """Resolve a ``content=`` keyword to ``(encode, suffix, tileset_version)``; raise on an unknown one."""
+    try:
+        return _CONTENT_FORMATS[content]
+    except KeyError:
+        raise ValueError(f"content must be 'b3dm' or 'gltf', got {content!r}") from None
+
+
 def _tileset_from_rings(
     contributing: list[tuple[CityObject, list[list[tuple[float, float, float]]]]],
     content_uri: str | None,
+    asset: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Build the ``tileset.json`` document from an already-gathered ``contributing`` list."""
+    """Build the ``tileset.json`` document from an already-gathered ``contributing`` list.
+
+    ``asset`` is the tileset ``asset`` block (defaults to the 1.0 b3dm-content block); glTF content
+    passes a 1.1 block.
+    """
     if contributing:
         all_rings = [ring for _city_object, rings in contributing for ring in rings]
         minima, maxima = _bounds(all_rings)
@@ -390,13 +712,24 @@ def _tileset_from_rings(
     }
     if content_uri is not None:
         root["content"] = {"uri": content_uri}
-    return {"asset": dict(_ASSET), "geometricError": error, "root": root}
+    return {
+        "asset": dict(asset) if asset is not None else dict(_ASSET),
+        "geometricError": error,
+        "root": root,
+    }
 
 
 #: The tileset ``asset`` block (``gltfUpAxis="Z"`` because the IR is z-up).
 _ASSET = {"version": "1.0", "gltfUpAxis": "Z", "generator": "pyramids-citymodels"}
 
-_Contributing = list[tuple[CityObject, list[list[tuple[float, float, float]]]]]
+
+def _asset(tileset_version: str) -> dict[str, str]:
+    """A tileset ``asset`` block at ``tileset_version`` (``gltfUpAxis="Z"`` — the IR is z-up)."""
+    return {
+        "version": tileset_version,
+        "gltfUpAxis": "Z",
+        "generator": "pyramids-citymodels",
+    }
 
 
 def _centroid_xy(rings: list[list[tuple[float, float, float]]]) -> tuple[float, float]:
@@ -420,13 +753,19 @@ def _split_xy(
 
 
 def _build_tile(
-    contributing: _Contributing, target: Path, counter: list[int], max_per_tile: int
+    contributing: _Contributing,
+    target: Path,
+    counter: list[int],
+    max_per_tile: int,
+    encode: Any,
+    suffix: str,
 ) -> dict[str, Any]:
-    """Recursively build a tileset node for ``contributing``, writing one ``b3dm`` per leaf.
+    """Recursively build a tileset node for ``contributing``, writing one content file per leaf.
 
     A group larger than ``max_per_tile`` is split into XY quadrants (children); a group at or below
     it — or one that cannot be split further (all objects in one quadrant) — is a leaf with its own
-    ``b3dm``. ``counter`` numbers the leaf content files across the whole tree.
+    content file (``encode`` → bytes, named ``content_<n><suffix>``). ``counter`` numbers the leaf
+    content files across the whole tree.
     """
     all_rings = [ring for _city_object, rings in contributing for ring in rings]
     minima, maxima = _bounds(all_rings)
@@ -443,16 +782,16 @@ def _build_tile(
     if len(quadrants) > 1:  # genuinely subdivided
         node["geometricError"] = diagonal
         node["children"] = [
-            _build_tile(quadrant, target, counter, max_per_tile)
+            _build_tile(quadrant, target, counter, max_per_tile, encode, suffix)
             for quadrant in quadrants
         ]
     else:  # leaf (the finest LOD → geometricError 0)
         node["geometricError"] = 0.0
-        b3dm = _b3dm_from_rings(contributing)
-        if b3dm is not None:
-            name = f"content_{counter[0]}.b3dm"
+        content = encode(contributing)
+        if content is not None:
+            name = f"content_{counter[0]}{suffix}"
             counter[0] += 1
-            (target / name).write_bytes(b3dm)
+            (target / name).write_bytes(content)
             node["content"] = {"uri": name}
     return node
 
@@ -637,16 +976,21 @@ def _subtree_descriptors(
 
 
 def _write_implicit(
-    contributing: _Contributing, target: Path, scheme: str, max_per_tile: int
+    contributing: _Contributing,
+    target: Path,
+    scheme: str,
+    max_per_tile: int,
+    encode: Any,
+    suffix: str,
 ) -> dict[str, Any]:
-    """Write a 3D Tiles 1.1 **implicit** tileset: templated ``b3dm`` content + chained ``.subtree`` files.
+    """Write a 3D Tiles 1.1 **implicit** tileset: templated content + chained ``.subtree`` files.
 
     Objects are binned by centroid into a uniform quadtree/octree grid at the chosen depth; each
-    occupied deepest-level cell gets its own ``content/{level}/{x}/{y}[/{z}].b3dm``. The tree is
-    described by **chained subtrees** (:func:`_subtree_levels` picks the span — one subtree for a
-    normal tree, balanced blocks beyond the single-subtree bound), one ``.subtree`` per
-    occupied subtree, linked by child-subtree availability), so an arbitrarily deep tileset needs only
-    small, bounded subtree files. The root ``tileset.json`` holds only the root box + the
+    occupied deepest-level cell gets its own ``content/{level}/{x}/{y}[/{z}]<suffix>`` (``encode`` →
+    bytes). The tree is described by **chained subtrees** (:func:`_subtree_levels` picks the span —
+    one subtree for a normal tree, balanced blocks beyond the single-subtree bound), one ``.subtree``
+    per occupied subtree, linked by child-subtree availability), so an arbitrarily deep tileset needs
+    only small, bounded subtree files. The root ``tileset.json`` holds only the root box + the
     ``implicitTiling`` rule.
     """
     children = implicit.children_per_node(scheme)
@@ -668,11 +1012,11 @@ def _write_implicit(
         bins.setdefault(cell, []).append((city_object, rings))
 
     axes_suffix = "/{z}" if dimension == 3 else ""
-    content_template = "content/{level}/{x}/{y}" + axes_suffix + ".b3dm"
+    content_template = "content/{level}/{x}/{y}" + axes_suffix + suffix
     subtree_template = "subtrees/{level}/{x}/{y}" + axes_suffix + ".subtree"
     occupied: set[tuple[int, ...]] = set()
     for cell, cell_contributing in bins.items():
-        tile = _b3dm_from_rings(cell_contributing)
+        tile = encode(cell_contributing)
         if tile is None:
             continue
         occupied.add(cell)
@@ -727,25 +1071,38 @@ def write_3dtiles(
     max_objects_per_tile: int | None = None,
     implicit_tiling: bool = False,
     scheme: str = "quadtree",
+    content: str = "b3dm",
 ) -> dict[str, Any]:
     """Write ``model`` as a 3D Tiles tileset into ``directory``.
 
     Three modes, in order of scale:
 
-    - **Single tile** (default): ``tileset.json`` + one ``content.b3dm``.
+    - **Single tile** (default): ``tileset.json`` + one ``content.b3dm`` (``content.glb`` for glTF).
     - **Explicit multi-tile** (``max_objects_per_tile=N``): objects are partitioned by footprint into
-      an **XY quadtree**, writing one ``content_<n>.b3dm`` per leaf and a nested ``tileset.json`` of
-      bounding-volume tiles — the whole tree enumerated in the JSON.
+      an **XY quadtree**, writing one ``content_<n>.b3dm`` (or ``.glb``) per leaf and a nested
+      ``tileset.json`` of bounding-volume tiles — the whole tree enumerated in the JSON.
     - **Implicit tiling** (``implicit_tiling=True``): 3D Tiles 1.1 implicit tiling — objects are binned
       into a uniform ``scheme`` (``"quadtree"`` XY or ``"octree"`` XYZ) grid, each occupied cell gets a
-      templated ``content/{level}/{x}/{y}[/{z}].b3dm``, and a compact binary ``.subtree`` file carries
-      the tile/content availability. The root ``tileset.json`` holds only the root box + the
-      ``implicitTiling`` rule, so a million-tile model is *described*, not listed. ``scheme`` is
+      templated ``content/{level}/{x}/{y}[/{z}].b3dm`` (or ``.glb``), and a compact binary ``.subtree``
+      file carries the tile/content availability. The root ``tileset.json`` holds only the root box +
+      the ``implicitTiling`` rule, so a million-tile model is *described*, not listed. ``scheme`` is
       ignored unless ``implicit_tiling`` is set (an invalid ``scheme`` raises ``ValueError``);
       ``max_objects_per_tile`` (default 64 here, must be ≥ 1) sets the target objects per cell.
 
-    Geometry is passed through per tile (no per-tile LOD/simplification), tile content stays ``b3dm``,
-    and the output round-trips through this package's own 3D-Tiles reader in every mode.
+    **Tile-content format** (``content=``): ``"b3dm"`` (default) writes legacy Batched 3D Model tiles;
+    ``"gltf"`` writes 3D Tiles 1.1-native ``.glb`` tiles, where each city object is a glTF feature via
+    ``EXT_mesh_features`` (a ``_FEATURE_ID_0`` vertex attribute) and its ``id`` / ``type`` / attributes
+    live in an ``EXT_structural_metadata`` property table (attributes as one JSON-encoded property).
+    Any **JSON-representable** attribute round-trips — including nested dicts/lists and heterogeneous /
+    sparse keys the columnar b3dm batch table cannot carry — subject to JSON's own coercions (a tuple
+    becomes a list, an integer dict key a string); a non-finite float or a non-JSON value (set, bytes)
+    raises ``ValueError`` naming the object. The glTF path sets the tileset ``asset.version`` to
+    ``"1.1"``; ``b3dm`` keeps ``"1.0"`` (``"1.1"`` for implicit tiling either way). An unknown
+    ``content`` raises ``ValueError``. Both formats round-trip through this package's own reader in
+    every mode.
+
+    Geometry is passed through per tile (no per-tile LOD/simplification), and the output round-trips
+    through this package's own 3D-Tiles reader in every mode.
 
     Implicit-tiling limits (in addition to the plain-geometry limits above): objects are binned to a
     cell by their **centroid** and the per-cell bounding box is **not** written — a 1.1 viewer derives
@@ -765,6 +1122,7 @@ def write_3dtiles(
         implicit_tiling: Write a 3D Tiles 1.1 implicit tileset (templated content + ``.subtree``) rather
             than an explicit tree.
         scheme: ``"quadtree"`` (XY, default) or ``"octree"`` (XYZ) subdivision — implicit tiling only.
+        content: Tile-content format — ``"b3dm"`` (default) or ``"gltf"`` (3D Tiles 1.1 ``.glb``).
 
     Returns:
         The written ``tileset.json`` document.
@@ -809,7 +1167,26 @@ def write_3dtiles(
             True
 
             ```
+        - glTF content writes a 3D Tiles 1.1 ``.glb`` tile (no b3dm wrapper):
+            ```python
+            >>> import tempfile
+            >>> from pathlib import Path
+            >>> from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+            >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+            >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+            ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+            >>> out = Path(tempfile.mkdtemp())
+            >>> tileset = write_3dtiles(model, out, content="gltf")
+            >>> tileset["root"]["content"]["uri"]
+            'content.glb'
+            >>> tileset["asset"]["version"]
+            '1.1'
+            >>> (out / "content.glb").read_bytes()[:4]
+            b'glTF'
+
+            ```
     """
+    encode, suffix, version = _content_format(content)
     if implicit_tiling:
         # Validated here (not in _write_implicit) so the contract is the same for an empty model, which
         # never reaches _write_implicit.
@@ -818,22 +1195,34 @@ def write_3dtiles(
     target.mkdir(parents=True, exist_ok=True)
     # Gather the model's geometry once and feed both builders, rather than walking it twice.
     contributing = _object_rings(model)
+    if content == "gltf":
+        # Fail before writing any file: the explicit/implicit writers emit content per leaf, so a
+        # per-tile encode error partway through would otherwise orphan .glb files with no tileset.json.
+        _validate_gltf_encodable(contributing)
     if implicit_tiling and contributing:
         target_per_tile = 64 if max_objects_per_tile is None else max_objects_per_tile
-        tileset = _write_implicit(contributing, target, scheme, target_per_tile)
+        tileset = _write_implicit(
+            contributing, target, scheme, target_per_tile, encode, suffix
+        )
     elif max_objects_per_tile is not None and len(contributing) > max_objects_per_tile:
-        root = _build_tile(contributing, target, [0], max_objects_per_tile)
+        root = _build_tile(
+            contributing, target, [0], max_objects_per_tile, encode, suffix
+        )
         tileset = {
-            "asset": dict(_ASSET),
+            "asset": _asset(version),
             "geometricError": root["geometricError"],
             "root": root,
         }
     else:
-        b3dm = _b3dm_from_rings(contributing)
-        content_uri = _CONTENT_NAME if b3dm is not None else None
-        tileset = _tileset_from_rings(contributing, content_uri)
-        if b3dm is not None:
-            (target / _CONTENT_NAME).write_bytes(b3dm)
+        tile = encode(contributing)
+        content_name = f"content{suffix}"
+        content_uri = content_name if tile is not None else None
+        # An empty model has no content and no glTF features, so it stays a trivial 1.0 tileset.
+        tileset = _tileset_from_rings(
+            contributing, content_uri, _asset(version) if tile is not None else None
+        )
+        if tile is not None:
+            (target / content_name).write_bytes(tile)
     (target / "tileset.json").write_text(
         json.dumps(tileset, ensure_ascii=False, indent=2), encoding="utf-8"
     )

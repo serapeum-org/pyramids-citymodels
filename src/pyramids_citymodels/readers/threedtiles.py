@@ -469,14 +469,20 @@ def _up_axis_to_zup(axis: Any) -> np.ndarray:
 
 
 def _mesh_vertices(
-    gltf: dict[str, Any], binary: bytes
+    gltf: dict[str, Any], binary: bytes, attribute: str = "_BATCHID"
 ) -> tuple[np.ndarray, np.ndarray | None]:
-    """Collect every mesh vertex (with node transforms applied) and its ``_BATCHID``, if any.
+    """Collect every mesh vertex (with node transforms applied) and its feature id, if any.
+
+    Args:
+        gltf: The parsed glTF document.
+        binary: The glb binary buffer.
+        attribute: The per-vertex feature-id attribute to read — ``_BATCHID`` for a ``b3dm`` tile,
+            ``_FEATURE_ID_0`` for a 3D Tiles 1.1 glTF-content tile.
 
     Returns:
-        ``(points, batch_ids)`` where ``points`` is an ``(n, 3)`` array in the glTF's root frame and
-        ``batch_ids`` is an ``(n,)`` integer array, or ``None`` when no primitive declares
-        ``_BATCHID`` (the whole tile is then one feature).
+        ``(points, feature_ids)`` where ``points`` is an ``(n, 3)`` array in the glTF's root frame and
+        ``feature_ids`` is an ``(n,)`` integer array, or ``None`` when no primitive declares
+        ``attribute`` (the whole tile is then one feature).
     """
     mesh_transforms = _mesh_world_transforms(gltf)
     all_points: list[np.ndarray] = []
@@ -492,11 +498,9 @@ def _mesh_vertices(
             homogeneous = np.column_stack([points, np.ones(len(points))])
             world = (transform @ homogeneous.T).T[:, :3]
             all_points.append(world)
-            if "_BATCHID" in attributes:
+            if attribute in attributes:
                 saw_batch = True
-                batch = _accessor_array(gltf, binary, attributes["_BATCHID"]).reshape(
-                    -1
-                )
+                batch = _accessor_array(gltf, binary, attributes[attribute]).reshape(-1)
             else:
                 batch = np.zeros(len(points))
             all_batch.append(batch)
@@ -661,6 +665,32 @@ def _decode_b3dm(
     if len(points) == 0:
         return []
     rtc = feature_table.get("RTC_CENTER")
+    batch_length = (int(batch_ids.max()) + 1) if batch_ids is not None else 1
+    rows = _batch_table_rows(batch_table, batch_length)
+    # b3dm carries id/type as batch-table columns, so they live in each feature's row.
+    return _build_features(
+        points, batch_ids, rows, tile_transform, up_axis, source_id, rtc=rtc
+    )
+
+
+def _build_features(
+    points: np.ndarray,
+    feature_ids: np.ndarray | None,
+    rows: list[dict[str, Any]],
+    tile_transform: np.ndarray,
+    up_axis: Any,
+    source_id: str,
+    rtc: Any = None,
+    ids: list[str] | None = None,
+    types: list[str] | None = None,
+) -> list[CityObject]:
+    """Place a mesh's vertices and group them by feature id into footprint :class:`CityObject` s.
+
+    Shared by the ``b3dm`` and glTF-content decoders. ``rows[i]`` is feature ``i``'s attribute dict.
+    When ``ids`` / ``types`` are given (glTF content, whose id/type are separate metadata properties)
+    they set each object's id/type and the attribute rows stay clean; otherwise (``b3dm``) the id/type
+    are read from the row's ``id``/``name``/``type`` keys, matching the batch-table columns.
+    """
     if rtc:
         points = points + np.array(rtc, dtype=np.float64)
     # Bring the y-up glTF content into the z-up tile frame (gltfUpAxis), then place the tile.
@@ -668,34 +698,21 @@ def _decode_b3dm(
     homogeneous = np.column_stack([points, np.ones(len(points))])
     points = (placement @ homogeneous.T).T[:, :3]
 
-    if batch_ids is None:
-        groups = {0: np.arange(len(points))}
-        batch_length = 1
-    else:
-        # Group over the batch ids actually present rather than range(BATCH_LENGTH): a too-small
-        # declared BATCH_LENGTH then cannot drop out-of-range vertices, and a too-large (malformed or
-        # hostile) one cannot drive an O(BATCH_LENGTH) loop — the cost is bounded by real vertices.
-        groups = {
-            int(batch): np.where(batch_ids == batch)[0]
-            for batch in np.unique(batch_ids)
-        }
-        batch_length = int(batch_ids.max()) + 1
-    rows = _batch_table_rows(batch_table, batch_length)
-
     objects: list[CityObject] = []
-    for batch, indices in groups.items():
+    for batch, indices in _group_by_feature(points, feature_ids).items():
         if len(indices) == 0:
             continue
         ring = _convex_hull_ring(points[indices][:, :2])
         if ring is None:
             continue
         attributes = dict(rows[batch]) if batch < len(rows) else {}
-        generated = f"{source_id}/feature-{batch}" if source_id else f"feature-{batch}"
-        identifier = str(attributes.get("id") or attributes.get("name") or generated)
+        identifier, type_name = _feature_identity(
+            batch, attributes, source_id, ids, types
+        )
         objects.append(
             CityObject(
                 id=identifier,
-                type=str(attributes.get("type", "Building")),
+                type=type_name,
                 attributes=attributes,
                 geometries=[
                     Geometry(type="MultiSurface", lod=None, boundaries=[[ring]])
@@ -703,6 +720,185 @@ def _decode_b3dm(
             )
         )
     return objects
+
+
+def _group_by_feature(
+    points: np.ndarray, feature_ids: np.ndarray | None
+) -> dict[int, np.ndarray]:
+    """Map each feature id to the vertex indices that carry it (one group when there are no ids).
+
+    Grouping over the feature ids actually present (not ``range(count)``) bounds the cost by real
+    vertices: a too-small declared count cannot drop out-of-range vertices, and a too-large (malformed
+    or hostile) one cannot drive an ``O(count)`` loop.
+    """
+    if feature_ids is None:
+        return {0: np.arange(len(points))}
+    return {
+        int(batch): np.nonzero(feature_ids == batch)[0]
+        for batch in np.unique(feature_ids)
+    }
+
+
+def _feature_identity(
+    batch: int,
+    attributes: dict[str, Any],
+    source_id: str,
+    ids: list[str] | None,
+    types: list[str] | None,
+) -> tuple[str, str]:
+    """The ``(id, type)`` for feature ``batch``.
+
+    glTF content passes explicit ``ids`` / ``types`` columns (attributes stay clean); ``b3dm`` passes
+    neither, so id/type come from the attribute row's ``id`` / ``name`` / ``type`` keys. A missing or
+    empty value falls back to a generated id and ``"Building"``.
+    """
+    generated = f"{source_id}/feature-{batch}" if source_id else f"feature-{batch}"
+    if ids is not None:
+        column_id = ids[batch] if batch < len(ids) else ""
+        type_value = types[batch] if types is not None and batch < len(types) else ""
+        return (
+            str(column_id) if column_id else generated,
+            str(type_value) if type_value else "Building",
+        )
+    identifier = str(attributes.get("id") or attributes.get("name") or generated)
+    return identifier, str(attributes.get("type", "Building"))
+
+
+def _read_string_property(
+    gltf: dict[str, Any], binary: bytes, spec: dict[str, Any], count: int
+) -> list[str]:
+    """Read an ``EXT_structural_metadata`` STRING property table column into a list of strings.
+
+    ``spec`` names a ``values`` bufferView (UTF-8 bytes) and a ``stringOffsets`` bufferView (``count+1``
+    ``uint32`` byte offsets); string ``i`` is ``values[offsets[i]:offsets[i + 1]]``.
+    """
+    values = _buffer_view_bytes(gltf, binary, spec["values"])
+    offsets_blob = _buffer_view_bytes(gltf, binary, spec["stringOffsets"])
+    offsets = struct.unpack_from(f"<{count + 1}I", offsets_blob, 0)
+    return [
+        values[offsets[index] : offsets[index + 1]].decode("utf-8")
+        for index in range(count)
+    ]
+
+
+def _buffer_view_bytes(gltf: dict[str, Any], binary: bytes, view_index: int) -> bytes:
+    """The raw bytes a glTF bufferView spans in the single embedded glb buffer."""
+    view = gltf["bufferViews"][view_index]
+    start = view.get("byteOffset", 0)
+    return bytes(binary[start : start + view["byteLength"]])
+
+
+def _maybe_json_object(text: str) -> dict[str, Any] | None:
+    """Parse ``text`` as a JSON object, or ``None`` if it is not one (so a plain string stays a string)."""
+    try:
+        parsed = json.loads(text) if text else {}
+    except ValueError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _structural_metadata_columns(
+    gltf: dict[str, Any], binary: bytes
+) -> tuple[list[str], list[str], list[dict[str, Any]]] | None:
+    """Read ``EXT_structural_metadata``'s first property table into ``(ids, types, attribute_rows)``.
+
+    Only STRING properties (``values`` + ``stringOffsets``) are read — a numeric or binary metadata
+    property is skipped, as the ``b3dm`` reader skips a binary batch-table column. The writer's own
+    ``attributes`` property is a JSON-encoded dict and is expanded into each row; any other string
+    property becomes a plain attribute of its own name. ``None`` when the glTF carries no property table.
+    """
+    extension = (gltf.get("extensions") or {}).get("EXT_structural_metadata") or {}
+    tables = extension.get("propertyTables") or []
+    if not tables:
+        return None
+    table = tables[0]
+    count = int(table.get("count", 0))
+    columns = _string_columns(gltf, binary, table.get("properties") or {}, count)
+    ids = columns.get("id", [""] * count)
+    types = columns.get("type", [""] * count)
+    rows = [_attribute_row(index, columns) for index in range(count)]
+    return ids, types, rows
+
+
+def _string_columns(
+    gltf: dict[str, Any], binary: bytes, properties: dict[str, Any], count: int
+) -> dict[str, list[str]]:
+    """Every STRING property (``values`` + ``stringOffsets``) read into a ``name -> list[str]`` map.
+
+    A property without both keys (a numeric or binary column) is skipped, as the ``b3dm`` reader skips
+    a binary batch-table column, so an unknown-typed column never corrupts the attributes.
+    """
+    columns: dict[str, list[str]] = {}
+    for name, spec in properties.items():
+        if isinstance(spec, dict) and "values" in spec and "stringOffsets" in spec:
+            columns[name] = _read_string_property(gltf, binary, spec, count)
+    return columns
+
+
+def _attribute_row(index: int, columns: dict[str, list[str]]) -> dict[str, Any]:
+    """Feature ``index``'s attribute dict from the string columns (``id`` / ``type`` are handled apart).
+
+    The writer's own ``attributes`` property is a JSON-encoded object and is expanded into the row; any
+    other string property becomes a plain attribute of its own name.
+    """
+    row: dict[str, Any] = {}
+    for name, values in columns.items():
+        if name in ("id", "type"):
+            continue
+        if name == "attributes":
+            parsed = _maybe_json_object(values[index])
+            if parsed is not None:
+                row.update(parsed)
+                continue
+        row[name] = values[index]
+    return row
+
+
+def _parse_gltf_tile(
+    data: bytes, tile_transform: np.ndarray, up_axis: Any = "Y", source_id: str = ""
+) -> list[CityObject]:
+    """Decode one 3D Tiles 1.1 glTF-content (``.glb``) tile into footprint :class:`CityObject` s.
+
+    Each glTF feature (grouped by the ``_FEATURE_ID_0`` vertex attribute of ``EXT_mesh_features``)
+    becomes one object, recovering its id / type / attributes from the ``EXT_structural_metadata``
+    property table. Expected-on-corruption errors are wrapped as :class:`UnsupportedGeometryError`,
+    like :func:`_parse_b3dm_tile`.
+    """
+    try:
+        return _decode_gltf(data, tile_transform, up_axis, source_id)
+    except UnsupportedGeometryError:
+        raise
+    except (ValueError, IndexError, KeyError, struct.error) as error:
+        raise UnsupportedGeometryError(
+            f"glTF tile payload is malformed and could not be decoded: {error!r}"
+        ) from error
+
+
+def _decode_gltf(
+    data: bytes, tile_transform: np.ndarray, up_axis: Any, source_id: str
+) -> list[CityObject]:
+    """The raw glTF-content decode, whose expected-on-corruption errors :func:`_parse_gltf_tile` wraps."""
+    gltf, binary = _parse_glb(data)
+    _reject_compressed(gltf)
+    points, feature_ids = _mesh_vertices(gltf, binary, attribute="_FEATURE_ID_0")
+    if len(points) == 0:
+        return []
+    metadata = _structural_metadata_columns(gltf, binary)
+    if metadata is None:
+        ids = types = None
+        rows: list[dict[str, Any]] = []
+    else:
+        ids, types, rows = metadata
+    return _build_features(
+        points,
+        feature_ids,
+        rows,
+        tile_transform,
+        up_axis,
+        source_id,
+        ids=ids,
+        types=types,
+    )
 
 
 def _insert_object(objects: dict[str, CityObject], city_object: CityObject) -> None:
@@ -963,7 +1159,10 @@ def _decode_content(
         return
     source_id = f"{path.stem}#{counter[0]}"
     counter[0] += 1
-    for city_object in _parse_b3dm_tile(data, transform, up_axis, source_id):
+    # A bare glb (3D Tiles 1.1 glTF content) decodes via EXT_mesh_features/EXT_structural_metadata;
+    # anything else is treated as a b3dm payload (which validates the magic itself).
+    parse = _parse_gltf_tile if data[:4] == b"glTF" else _parse_b3dm_tile
+    for city_object in parse(data, transform, up_axis, source_id):
         _insert_object(objects, city_object)
 
 
@@ -1029,8 +1228,9 @@ def parse_3dtiles(source: Any, selector: "ObjectFilter | None" = None) -> CityMo
         )
 
     data = _read_bytes(source)
-    if data is not None and len(data) >= 4 and data[:4] == b"b3dm":
-        for city_object in _parse_b3dm_tile(data, np.eye(4), "Y", "tile"):
+    if data is not None and len(data) >= 4 and data[:4] in (b"b3dm", b"glTF"):
+        parse = _parse_gltf_tile if data[:4] == b"glTF" else _parse_b3dm_tile
+        for city_object in parse(data, np.eye(4), "Y", "tile"):
             _insert_object(objects, city_object)
         return CityModel(
             objects=_apply_selector(objects, selector), source_format="3DTiles"
