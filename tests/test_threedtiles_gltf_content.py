@@ -146,7 +146,8 @@ def test_gltf_attribute_round_trip_is_lossless_and_typed() -> None:
     }
     assert isinstance(recovered.attributes["floors"], int)
     assert isinstance(recovered.attributes["listed"], bool)
-    assert "id" not in recovered.attributes and "type" not in recovered.attributes
+    assert "id" not in recovered.attributes
+    assert "type" not in recovered.attributes
 
 
 def test_gltf_keeps_a_sparse_attribute_only_where_present() -> None:
@@ -193,7 +194,8 @@ def test_gltf_content_round_trips_in_every_tiling_mode(mode: dict) -> None:
     model.to_3dtiles(out, content="gltf", **mode)
     # Every content file is a .glb, never a .b3dm.
     glbs = list(out.rglob("*.glb"))
-    assert glbs and not list(out.rglob("*.b3dm"))
+    assert glbs  # at least one glTF content file written
+    assert not list(out.rglob("*.b3dm"))  # and never a legacy b3dm
     back = parse_3dtiles(out / "tileset.json")
     assert sorted(back.objects) == ["o0", "o1", "o2", "o3"]
     assert back.objects["o2"].attributes == {
@@ -223,8 +225,10 @@ def test_empty_model_gltf_content_is_a_trivial_tileset() -> None:
 
 
 def test_unknown_content_format_raises() -> None:
+    model = _model(1)
+    out = tempfile.mkdtemp()
     with pytest.raises(ValueError, match="content must be 'b3dm' or 'gltf'"):
-        _model(1).to_3dtiles(tempfile.mkdtemp(), content="obj")
+        model.to_3dtiles(out, content="obj")
 
 
 def test_gltf_content_round_trips_non_ascii_strings() -> None:
@@ -372,8 +376,10 @@ def test_too_many_features_in_one_tile_raises(monkeypatch: pytest.MonkeyPatch) -
     from pyramids_citymodels.writers import threedtiles as writer
 
     monkeypatch.setattr(writer, "_MAX_FEATURES_PER_TILE", 1)
+    model = _model(2)
+    out = tempfile.mkdtemp()
     with pytest.raises(ValueError, match="features in one tile"):
-        _model(2).to_3dtiles(tempfile.mkdtemp(), content="gltf")
+        model.to_3dtiles(out, content="gltf")
 
 
 def test_non_json_attribute_value_raises_a_clear_error() -> None:
@@ -389,8 +395,9 @@ def test_non_json_attribute_value_raises_a_clear_error() -> None:
             )
         }
     )
+    out = tempfile.mkdtemp()
     with pytest.raises(ValueError, match="cannot encode the attributes of object 'b'"):
-        model.to_3dtiles(tempfile.mkdtemp(), content="gltf")
+        model.to_3dtiles(out, content="gltf")
 
 
 def test_json_coercions_are_documented_not_silent_data_loss() -> None:

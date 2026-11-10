@@ -698,38 +698,17 @@ def _build_features(
     homogeneous = np.column_stack([points, np.ones(len(points))])
     points = (placement @ homogeneous.T).T[:, :3]
 
-    if feature_ids is None:
-        groups = {0: np.arange(len(points))}
-    else:
-        # Group over the feature ids actually present rather than range(count): a too-small declared
-        # count then cannot drop out-of-range vertices, and a too-large (malformed or hostile) one
-        # cannot drive an O(count) loop — the cost is bounded by real vertices.
-        groups = {
-            int(batch): np.where(feature_ids == batch)[0]
-            for batch in np.unique(feature_ids)
-        }
-
     objects: list[CityObject] = []
-    for batch, indices in groups.items():
+    for batch, indices in _group_by_feature(points, feature_ids).items():
         if len(indices) == 0:
             continue
         ring = _convex_hull_ring(points[indices][:, :2])
         if ring is None:
             continue
         attributes = dict(rows[batch]) if batch < len(rows) else {}
-        generated = f"{source_id}/feature-{batch}" if source_id else f"feature-{batch}"
-        if ids is not None:
-            column_id = ids[batch] if batch < len(ids) else ""
-            identifier = str(column_id) if column_id else generated
-            type_value = (
-                types[batch] if types is not None and batch < len(types) else ""
-            )
-            type_name = str(type_value) if type_value else "Building"
-        else:
-            identifier = str(
-                attributes.get("id") or attributes.get("name") or generated
-            )
-            type_name = str(attributes.get("type", "Building"))
+        identifier, type_name = _feature_identity(
+            batch, attributes, source_id, ids, types
+        )
         objects.append(
             CityObject(
                 id=identifier,
@@ -741,6 +720,48 @@ def _build_features(
             )
         )
     return objects
+
+
+def _group_by_feature(
+    points: np.ndarray, feature_ids: np.ndarray | None
+) -> dict[int, np.ndarray]:
+    """Map each feature id to the vertex indices that carry it (one group when there are no ids).
+
+    Grouping over the feature ids actually present (not ``range(count)``) bounds the cost by real
+    vertices: a too-small declared count cannot drop out-of-range vertices, and a too-large (malformed
+    or hostile) one cannot drive an ``O(count)`` loop.
+    """
+    if feature_ids is None:
+        return {0: np.arange(len(points))}
+    return {
+        int(batch): np.nonzero(feature_ids == batch)[0]
+        for batch in np.unique(feature_ids)
+    }
+
+
+def _feature_identity(
+    batch: int,
+    attributes: dict[str, Any],
+    source_id: str,
+    ids: list[str] | None,
+    types: list[str] | None,
+) -> tuple[str, str]:
+    """The ``(id, type)`` for feature ``batch``.
+
+    glTF content passes explicit ``ids`` / ``types`` columns (attributes stay clean); ``b3dm`` passes
+    neither, so id/type come from the attribute row's ``id`` / ``name`` / ``type`` keys. A missing or
+    empty value falls back to a generated id and ``"Building"``.
+    """
+    generated = f"{source_id}/feature-{batch}" if source_id else f"feature-{batch}"
+    if ids is not None:
+        column_id = ids[batch] if batch < len(ids) else ""
+        type_value = types[batch] if types is not None and batch < len(types) else ""
+        return (
+            str(column_id) if column_id else generated,
+            str(type_value) if type_value else "Building",
+        )
+    identifier = str(attributes.get("id") or attributes.get("name") or generated)
+    return identifier, str(attributes.get("type", "Building"))
 
 
 def _read_string_property(
@@ -792,27 +813,45 @@ def _structural_metadata_columns(
         return None
     table = tables[0]
     count = int(table.get("count", 0))
-    properties = table.get("properties") or {}
+    columns = _string_columns(gltf, binary, table.get("properties") or {}, count)
+    ids = columns.get("id", [""] * count)
+    types = columns.get("type", [""] * count)
+    rows = [_attribute_row(index, columns) for index in range(count)]
+    return ids, types, rows
+
+
+def _string_columns(
+    gltf: dict[str, Any], binary: bytes, properties: dict[str, Any], count: int
+) -> dict[str, list[str]]:
+    """Every STRING property (``values`` + ``stringOffsets``) read into a ``name -> list[str]`` map.
+
+    A property without both keys (a numeric or binary column) is skipped, as the ``b3dm`` reader skips
+    a binary batch-table column, so an unknown-typed column never corrupts the attributes.
+    """
     columns: dict[str, list[str]] = {}
     for name, spec in properties.items():
         if isinstance(spec, dict) and "values" in spec and "stringOffsets" in spec:
             columns[name] = _read_string_property(gltf, binary, spec, count)
-    ids = columns.get("id", [""] * count)
-    types = columns.get("type", [""] * count)
-    rows: list[dict[str, Any]] = []
-    for index in range(count):
-        row: dict[str, Any] = {}
-        for name, values in columns.items():
-            if name in ("id", "type"):
+    return columns
+
+
+def _attribute_row(index: int, columns: dict[str, list[str]]) -> dict[str, Any]:
+    """Feature ``index``'s attribute dict from the string columns (``id`` / ``type`` are handled apart).
+
+    The writer's own ``attributes`` property is a JSON-encoded object and is expanded into the row; any
+    other string property becomes a plain attribute of its own name.
+    """
+    row: dict[str, Any] = {}
+    for name, values in columns.items():
+        if name in ("id", "type"):
+            continue
+        if name == "attributes":
+            parsed = _maybe_json_object(values[index])
+            if parsed is not None:
+                row.update(parsed)
                 continue
-            if name == "attributes":
-                parsed = _maybe_json_object(values[index])
-                if parsed is not None:
-                    row.update(parsed)
-                    continue
-            row[name] = values[index]
-        rows.append(row)
-    return ids, types, rows
+        row[name] = values[index]
+    return row
 
 
 def _parse_gltf_tile(
