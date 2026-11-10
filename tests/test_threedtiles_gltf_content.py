@@ -304,10 +304,76 @@ def test_non_finite_attribute_value_raises_a_clear_error() -> None:
             )
         }
     )
+    out = Path(tempfile.mkdtemp())
     with pytest.raises(ValueError, match="object 'tower'"):
-        model.to_3dtiles(tempfile.mkdtemp(), content="gltf")
-    # And no invalid-JSON token leaks into any emitted bytes (nothing is written on the error).
-    assert not list(Path(tempfile.mkdtemp()).rglob("*.glb"))
+        model.to_3dtiles(out, content="gltf")
+    assert not list(
+        out.rglob("*.glb")
+    )  # nothing written on the error (assert on the real target)
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        {},  # single tile
+        {"max_objects_per_tile": 1},  # explicit quadtree (writes content per leaf)
+        {
+            "implicit_tiling": True,
+            "max_objects_per_tile": 1,
+        },  # implicit (writes content per cell)
+    ],
+)
+def test_a_rejected_attribute_leaves_nothing_written_in_any_mode(mode: dict) -> None:
+    # The multi-tile writers emit content incrementally; a later object's bad attribute must still
+    # leave the output empty (validated up front), not orphan .glb tiles with no tileset.json.
+    model = CityModel(
+        objects={
+            "ok": CityObject(
+                id="ok",
+                type="Building",
+                attributes={"h": 1},
+                geometries=[
+                    Geometry(type="MultiSurface", lod="2", boundaries=[_square(0, 0)])
+                ],
+            ),
+            "bad": CityObject(
+                id="bad",
+                type="Building",
+                attributes={"x": float("nan")},
+                geometries=[
+                    Geometry(
+                        type="MultiSurface", lod="2", boundaries=[_square(100, 100)]
+                    )
+                ],
+            ),
+        }
+    )
+    out = Path(tempfile.mkdtemp())
+    with pytest.raises(ValueError, match="object 'bad'"):
+        model.to_3dtiles(out, content="gltf", **mode)
+    assert list(out.rglob("*")) == []  # fail-fast: no content, no tileset.json
+
+
+def test_structural_metadata_schema_has_a_valid_id() -> None:
+    # EXT_structural_metadata requires a schema `id` matching ^[a-zA-Z_]\w*$; omitting it makes the
+    # schema invalid for a conformant validator.
+    import re
+
+    out = Path(tempfile.mkdtemp())
+    _model(1).to_3dtiles(out, content="gltf")
+    document = _glb_document((out / "content.glb").read_bytes())
+    schema = document["extensions"]["EXT_structural_metadata"]["schema"]
+    assert re.fullmatch(r"[a-zA-Z_]\w*", schema["id"]), schema.get("id")
+
+
+def test_too_many_features_in_one_tile_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A FLOAT feature id is exact only up to 2**24; a single tile beyond that is rejected rather than
+    # silently aliasing ids. Shrink the ceiling to exercise the guard without building 16M objects.
+    from pyramids_citymodels.writers import threedtiles as writer
+
+    monkeypatch.setattr(writer, "_MAX_FEATURES_PER_TILE", 1)
+    with pytest.raises(ValueError, match="features in one tile"):
+        _model(2).to_3dtiles(tempfile.mkdtemp(), content="gltf")
 
 
 def test_non_json_attribute_value_raises_a_clear_error() -> None:

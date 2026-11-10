@@ -392,6 +392,8 @@ _EXT_STRUCTURAL_METADATA = "EXT_structural_metadata"
 #: The metadata class and the property name carrying the JSON-encoded attribute dict.
 _FEATURE_CLASS = "feature"
 _ATTRIBUTES_PROPERTY = "attributes"
+#: The EXT_structural_metadata schema id (required by the extension schema; ^[a-zA-Z_]\w*$).
+_SCHEMA_ID = "pyramids_citymodels"
 
 
 def _attributes_json(city_object: CityObject) -> str:
@@ -411,6 +413,25 @@ def _attributes_json(city_object: CityObject) -> str:
             f"to_3dtiles(content='gltf') cannot encode the attributes of object "
             f"{city_object.id!r} as JSON metadata: {error}"
         ) from error
+
+
+#: Feature ids are a ``FLOAT`` ``_FEATURE_ID_0`` attribute (glTF forbids an integer vertex attribute),
+#: and float32 represents integers exactly only up to 2**24, so a single tile must hold fewer features.
+#: The multi-tile / implicit modes keep per-tile counts far below this; only a single tile with an
+#: absurd object count can reach it.
+_MAX_FEATURES_PER_TILE = 1 << 24
+
+
+def _validate_gltf_encodable(contributing: _Contributing) -> None:
+    """Pre-flight the glTF-content write: raise before any file is written if a tile cannot be encoded.
+
+    The explicit and implicit writers emit content files incrementally, so a per-tile encode error
+    partway through would leave orphaned ``.glb`` files and no ``tileset.json``. Validating every
+    object's attributes (and the per-tile feature-count ceiling) up front makes the whole write
+    fail-fast and atomic: on a bad input nothing is written.
+    """
+    for city_object, _rings in contributing:
+        _attributes_json(city_object)
 
 
 def _string_column(values: list[str]) -> tuple[bytes, bytes]:
@@ -480,11 +501,13 @@ def _structural_metadata(
             "stringOffsetType": "UINT32",
         }
     schema = {
+        # ``id`` is required by the EXT_structural_metadata schema; it must match ^[a-zA-Z_]\w*$.
+        "id": _SCHEMA_ID,
         "classes": {
             _FEATURE_CLASS: {
                 "properties": {name: {"type": "STRING"} for name in columns}
             }
-        }
+        },
     }
     property_table = {
         "class": _FEATURE_CLASS,
@@ -608,6 +631,12 @@ def _gltf_from_rings(contributing: _Contributing) -> bytes | None:
     """
     if not contributing:
         return None
+    if len(contributing) > _MAX_FEATURES_PER_TILE:
+        raise ValueError(
+            f"to_3dtiles(content='gltf') cannot put {len(contributing)} features in one tile: the "
+            f"FLOAT _FEATURE_ID_0 attribute represents integer ids exactly only up to "
+            f"{_MAX_FEATURES_PER_TILE} (2**24). Use max_objects_per_tile / implicit tiling to split it."
+        )
     all_rings = [ring for _city_object, rings in contributing for ring in rings]
     minima, _maxima = _bounds(all_rings)
     position_blob, batchid_blob, index_blob, vertices, tris = _mesh_buffers(
@@ -1166,6 +1195,10 @@ def write_3dtiles(
     target.mkdir(parents=True, exist_ok=True)
     # Gather the model's geometry once and feed both builders, rather than walking it twice.
     contributing = _object_rings(model)
+    if content == "gltf":
+        # Fail before writing any file: the explicit/implicit writers emit content per leaf, so a
+        # per-tile encode error partway through would otherwise orphan .glb files with no tileset.json.
+        _validate_gltf_encodable(contributing)
     if implicit_tiling and contributing:
         target_per_tile = 64 if max_objects_per_tile is None else max_objects_per_tile
         tileset = _write_implicit(
