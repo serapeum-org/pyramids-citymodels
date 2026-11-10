@@ -225,6 +225,79 @@ def test_unknown_content_format_raises() -> None:
         _model(1).to_3dtiles(tempfile.mkdtemp(), content="obj")
 
 
+def test_gltf_content_round_trips_non_ascii_strings() -> None:
+    # The EXT_structural_metadata STRING pool is UTF-8; multibyte characters must survive the
+    # values/stringOffsets byte-offset math in id, type and the attributes JSON.
+    model = CityModel(
+        objects={
+            "café": CityObject(
+                id="café",
+                type="Bâtiment",
+                attributes={"nom": "Hôtel de Ville", "ville": "Zürich"},
+                geometries=[
+                    Geometry(type="MultiSurface", lod="2", boundaries=[_square(0, 0)])
+                ],
+            )
+        }
+    )
+    out = Path(tempfile.mkdtemp())
+    model.to_3dtiles(out, content="gltf")
+    recovered = parse_3dtiles(out / "tileset.json").objects["café"]
+    assert recovered.type == "Bâtiment"
+    assert recovered.attributes == {"nom": "Hôtel de Ville", "ville": "Zürich"}
+
+
+def test_gltf_content_round_trips_nested_attribute_values() -> None:
+    # Attributes ride as one JSON-encoded property, so nested dicts/lists round-trip losslessly —
+    # something the flat, columnar b3dm batch table cannot represent.
+    attrs = {
+        "stories": [1, 2, 3],
+        "roof": {"type": "gable", "pitch": 35.0},
+        "tags": ["heritage", "listed"],
+    }
+    model = CityModel(
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                attributes=attrs,
+                geometries=[
+                    Geometry(type="MultiSurface", lod="2", boundaries=[_square(0, 0)])
+                ],
+            )
+        }
+    )
+    out = Path(tempfile.mkdtemp())
+    model.to_3dtiles(out, content="gltf")
+    assert parse_3dtiles(out / "tileset.json").objects["b"].attributes == attrs
+
+
+def test_gltf_feature_spans_multiple_surfaces_of_one_object() -> None:
+    # One object with several surfaces is a single feature — all its vertices share one
+    # _FEATURE_ID_0 — so it round-trips to one object (not one per surface).
+    model = CityModel(
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                attributes={"h": 9},
+                geometries=[
+                    Geometry(
+                        type="MultiSurface",
+                        lod="2",
+                        boundaries=[_square(0, 0), _square(5, 0), _square(0, 5)],
+                    )
+                ],
+            )
+        }
+    )
+    out = Path(tempfile.mkdtemp())
+    model.to_3dtiles(out, content="gltf")
+    back = parse_3dtiles(out / "tileset.json")
+    assert list(back.objects) == ["b"]
+    assert back.objects["b"].attributes == {"h": 9}
+
+
 # --- robustness / interop with other tools' glTF content ------------------------------------------
 
 
