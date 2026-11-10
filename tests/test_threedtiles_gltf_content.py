@@ -5,8 +5,10 @@ each city object is a glTF feature via `EXT_mesh_features` (a `_FEATURE_ID_0` ve
 its id / type / attributes live in an `EXT_structural_metadata` property table (attributes as one
 JSON-encoded STRING property). The output round-trips through this package's own 3D-Tiles reader in
 every tiling mode (single tile, explicit quadtree, implicit quadtree/octree), and — unlike the
-columnar `b3dm` batch table — the attribute round-trip is lossless: types are preserved and a sparse
-key is kept only on the objects that carry it.
+columnar `b3dm` batch table — any JSON-representable attribute round-trips (types preserved, nested
+values kept, a sparse key kept only on the objects that carry it). The feature-id attribute is FLOAT
+(glTF forbids an integer vertex attribute), and a non-finite or non-JSON attribute value raises a
+clear error rather than emitting invalid JSON.
 """
 
 import json
@@ -270,6 +272,80 @@ def test_gltf_content_round_trips_nested_attribute_values() -> None:
     out = Path(tempfile.mkdtemp())
     model.to_3dtiles(out, content="gltf")
     assert parse_3dtiles(out / "tileset.json").objects["b"].attributes == attrs
+
+
+def test_feature_id_attribute_uses_a_gltf_legal_component_type() -> None:
+    # glTF 2.0 forbids an integer componentType for a vertex attribute; _FEATURE_ID_0 must be FLOAT
+    # (5126), not UNSIGNED_INT (5125). Asserted at the glTF level, not via the package's own (lenient)
+    # reader — a conformance check the round-trip tests cannot make.
+    out = Path(tempfile.mkdtemp())
+    _model(2).to_3dtiles(out, content="gltf")
+    document = _glb_document((out / "content.glb").read_bytes())
+    primitive = document["meshes"][0]["primitives"][0]
+    feature_id_accessor = primitive["attributes"]["_FEATURE_ID_0"]
+    assert document["accessors"][feature_id_accessor]["componentType"] == 5126  # FLOAT
+    assert (
+        document["accessors"][primitive["indices"]]["componentType"] == 5125
+    )  # UINT indices
+
+
+def test_non_finite_attribute_value_raises_a_clear_error() -> None:
+    # NaN / Infinity would serialize to non-standard JSON tokens a strict client cannot parse; the
+    # writer rejects them with a ValueError naming the object instead.
+    model = CityModel(
+        objects={
+            "tower": CityObject(
+                id="tower",
+                type="Building",
+                attributes={"height": float("inf")},
+                geometries=[
+                    Geometry(type="MultiSurface", lod="2", boundaries=[_square(0, 0)])
+                ],
+            )
+        }
+    )
+    with pytest.raises(ValueError, match="object 'tower'"):
+        model.to_3dtiles(tempfile.mkdtemp(), content="gltf")
+    # And no invalid-JSON token leaks into any emitted bytes (nothing is written on the error).
+    assert not list(Path(tempfile.mkdtemp()).rglob("*.glb"))
+
+
+def test_non_json_attribute_value_raises_a_clear_error() -> None:
+    model = CityModel(
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                attributes={"tags": {"a", "b"}},  # a set is not JSON-serializable
+                geometries=[
+                    Geometry(type="MultiSurface", lod="2", boundaries=[_square(0, 0)])
+                ],
+            )
+        }
+    )
+    with pytest.raises(ValueError, match="cannot encode the attributes of object 'b'"):
+        model.to_3dtiles(tempfile.mkdtemp(), content="gltf")
+
+
+def test_json_coercions_are_documented_not_silent_data_loss() -> None:
+    # JSON has no tuple or non-string-key dict, so those coerce (tuple -> list, int key -> str). This
+    # pins the real, documented behavior rather than pretending it is byte-lossless.
+    model = CityModel(
+        objects={
+            "b": CityObject(
+                id="b",
+                type="Building",
+                attributes={"span": (1, 2), "levels": {1: "ground", 2: "first"}},
+                geometries=[
+                    Geometry(type="MultiSurface", lod="2", boundaries=[_square(0, 0)])
+                ],
+            )
+        }
+    )
+    out = Path(tempfile.mkdtemp())
+    model.to_3dtiles(out, content="gltf")
+    recovered = parse_3dtiles(out / "tileset.json").objects["b"].attributes
+    assert recovered == {"span": [1, 2], "levels": {"1": "ground", "2": "first"}}
 
 
 def test_gltf_feature_spans_multiple_surfaces_of_one_object() -> None:

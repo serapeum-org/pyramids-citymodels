@@ -376,9 +376,15 @@ def _b3dm_from_rings(
 # attributes live *inside* the glTF through two metadata extensions — ``EXT_mesh_features`` (a
 # ``_FEATURE_ID_0`` vertex attribute replacing ``_BATCHID``) and ``EXT_structural_metadata`` (a
 # property table replacing the batch table). Each city object is one feature; its ``id`` and ``type``
-# are STRING properties and its remaining attributes ride in a single JSON-encoded STRING property, so
-# arbitrary / heterogeneous attributes round-trip **losslessly** (unlike the columnar batch table,
-# which null-fills a sparse key). The geometry blobs are built exactly as for ``b3dm``.
+# are STRING properties and its remaining attributes ride in a single JSON-encoded STRING property.
+# Any **JSON-representable** attribute round-trips, including nested dicts/lists and heterogeneous /
+# sparse keys the columnar batch table cannot carry; a non-finite float or a non-JSON value (set,
+# bytes, …) raises a clear ``ValueError`` naming the object rather than emitting invalid JSON. JSON's
+# own coercions still apply (a tuple becomes a list, an integer dict key becomes a string). The
+# geometry blobs are built as for ``b3dm`` except the feature-id attribute is FLOAT, not UNSIGNED_INT:
+# glTF 2.0 does not allow an integer ``componentType`` for a vertex attribute, and ``EXT_mesh_features``
+# stores feature ids as ``FLOAT`` (the reader upcasts to float and rounds to int, so decode is
+# unaffected).
 
 #: The two glTF extensions a glTF-content tile declares.
 _EXT_MESH_FEATURES = "EXT_mesh_features"
@@ -386,6 +392,25 @@ _EXT_STRUCTURAL_METADATA = "EXT_structural_metadata"
 #: The metadata class and the property name carrying the JSON-encoded attribute dict.
 _FEATURE_CLASS = "feature"
 _ATTRIBUTES_PROPERTY = "attributes"
+
+
+def _attributes_json(city_object: CityObject) -> str:
+    """JSON-encode a city object's attributes for the metadata STRING pool, or raise a clear error.
+
+    ``allow_nan=False`` so a non-finite float (and, via the stdlib, a non-JSON value such as a set or
+    bytes) raises ``ValueError`` naming the object instead of emitting the non-standard ``NaN`` /
+    ``Infinity`` tokens or a bare ``TypeError`` — a strict JSON consumer of the property must be able to
+    parse it back.
+    """
+    try:
+        return json.dumps(
+            city_object.attributes, ensure_ascii=False, sort_keys=True, allow_nan=False
+        )
+    except (ValueError, TypeError) as error:
+        raise ValueError(
+            f"to_3dtiles(content='gltf') cannot encode the attributes of object "
+            f"{city_object.id!r} as JSON metadata: {error}"
+        ) from error
 
 
 def _string_column(values: list[str]) -> tuple[bytes, bytes]:
@@ -423,8 +448,7 @@ def _structural_metadata(
         "id": [city_object.id for city_object, _rings in contributing],
         "type": [city_object.type for city_object, _rings in contributing],
         _ATTRIBUTES_PROPERTY: [
-            json.dumps(city_object.attributes, ensure_ascii=False, sort_keys=True)
-            for city_object, _rings in contributing
+            _attributes_json(city_object) for city_object, _rings in contributing
         ],
     }
     binary = b""
@@ -552,14 +576,16 @@ def _glb_feature_document(
                 "max": maxima,
             },
             {
+                # FLOAT, not UNSIGNED_INT: glTF 2.0 forbids an integer componentType for a vertex
+                # attribute, and EXT_mesh_features stores feature ids as FLOAT.
                 "bufferView": 1,
-                "componentType": _UINT,
+                "componentType": _FLOAT,
                 "count": vertex_count,
                 "type": "SCALAR",
             },
             {
                 "bufferView": 2,
-                "componentType": _UINT,
+                "componentType": _UINT,  # indices — UNSIGNED_INT is the element-array type
                 "count": triangle_count * 3,
                 "type": "SCALAR",
             },
@@ -584,8 +610,14 @@ def _gltf_from_rings(contributing: _Contributing) -> bytes | None:
         return None
     all_rings = [ring for _city_object, rings in contributing for ring in rings]
     minima, _maxima = _bounds(all_rings)
-    position_blob, featureid_blob, index_blob, vertices, tris = _mesh_buffers(
+    position_blob, batchid_blob, index_blob, vertices, tris = _mesh_buffers(
         contributing, minima
+    )
+    # _mesh_buffers packs feature ids as uint32 (the b3dm _BATCHID convention); re-pack them as float32
+    # for _FEATURE_ID_0, since glTF 2.0 disallows an integer vertex-attribute componentType.
+    id_count = len(batchid_blob) // 4
+    featureid_blob = struct.pack(
+        f"<{id_count}f", *struct.unpack(f"<{id_count}I", batchid_blob)
     )
     geometry = position_blob + featureid_blob + index_blob
     metadata_blob, metadata_views, schema, property_table = _structural_metadata(
@@ -1031,10 +1063,14 @@ def write_3dtiles(
     **Tile-content format** (``content=``): ``"b3dm"`` (default) writes legacy Batched 3D Model tiles;
     ``"gltf"`` writes 3D Tiles 1.1-native ``.glb`` tiles, where each city object is a glTF feature via
     ``EXT_mesh_features`` (a ``_FEATURE_ID_0`` vertex attribute) and its ``id`` / ``type`` / attributes
-    live in an ``EXT_structural_metadata`` property table (attributes as one JSON-encoded property, so
-    they round-trip losslessly). The glTF path sets the tileset ``asset.version`` to ``"1.1"``; ``b3dm``
-    keeps ``"1.0"`` (``"1.1"`` for implicit tiling either way). An unknown ``content`` raises
-    ``ValueError``. Both formats round-trip through this package's own reader in every mode.
+    live in an ``EXT_structural_metadata`` property table (attributes as one JSON-encoded property).
+    Any **JSON-representable** attribute round-trips — including nested dicts/lists and heterogeneous /
+    sparse keys the columnar b3dm batch table cannot carry — subject to JSON's own coercions (a tuple
+    becomes a list, an integer dict key a string); a non-finite float or a non-JSON value (set, bytes)
+    raises ``ValueError`` naming the object. The glTF path sets the tileset ``asset.version`` to
+    ``"1.1"``; ``b3dm`` keeps ``"1.0"`` (``"1.1"`` for implicit tiling either way). An unknown
+    ``content`` raises ``ValueError``. Both formats round-trip through this package's own reader in
+    every mode.
 
     Geometry is passed through per tile (no per-tile LOD/simplification), and the output round-trips
     through this package's own 3D-Tiles reader in every mode.
