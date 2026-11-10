@@ -599,15 +599,18 @@ class CityModel:
         max_objects_per_tile: int | None = None,
         implicit_tiling: bool = False,
         scheme: str = "quadtree",
+        content: str = "b3dm",
     ) -> "dict[str, Any]":
         """Write this model as a 3D Tiles tileset into ``directory``.
 
-        Writes ``tileset.json`` plus batched ``b3dm`` content (one batch per city object, with a batch
-        table of each object's id/type/attributes) — the tiling/packaging export (features #15/#51/#55).
+        Writes ``tileset.json`` plus per-object tile content (one feature per city object, carrying each
+        object's id/type/attributes) — the tiling/packaging export (features #15/#51/#55/#56).
         By default a single tile; with ``max_objects_per_tile`` set, a model with more objects is
         subdivided into an **explicit XY quadtree** of tiles; with ``implicit_tiling=True`` it is written
         as a **3D Tiles 1.1 implicit tileset** (templated content + a binary ``.subtree``) over a
-        ``scheme`` (``"quadtree"`` XY or ``"octree"`` XYZ) grid. See
+        ``scheme`` (``"quadtree"`` XY or ``"octree"`` XYZ) grid. ``content`` selects the tile-content
+        format — ``"b3dm"`` (default, Batched 3D Model) or ``"gltf"`` (3D Tiles 1.1-native ``.glb`` with
+        ``EXT_mesh_features`` + ``EXT_structural_metadata``). See
         :func:`.writers.threedtiles.write_3dtiles` for the format and its limits. 3D Tiles is
         multi-file, so a directory is required.
 
@@ -617,6 +620,7 @@ class CityModel:
                 (default, non-implicit) writes a single tile.
             implicit_tiling: Write a 3D Tiles 1.1 implicit tileset instead of an explicit tree.
             scheme: ``"quadtree"`` (XY, default) or ``"octree"`` (XYZ) — implicit tiling only.
+            content: Tile-content format — ``"b3dm"`` (default) or ``"gltf"`` (3D Tiles 1.1 ``.glb``).
 
         Returns:
             The written ``tileset.json`` document.
@@ -636,11 +640,22 @@ class CityModel:
                 'Z'
 
                 ```
+            - ``content="gltf"`` writes 3D Tiles 1.1 ``.glb`` content instead:
+                ```python
+                >>> import tempfile
+                >>> from pathlib import Path
+                >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+                >>> model.to_3dtiles(Path(tempfile.mkdtemp()), content="gltf")["root"]["content"]["uri"]
+                'content.glb'
+
+                ```
         """
         from pyramids_citymodels.writers.threedtiles import write_3dtiles
 
         return write_3dtiles(
-            self, directory, max_objects_per_tile, implicit_tiling, scheme
+            self, directory, max_objects_per_tile, implicit_tiling, scheme, content
         )
 
     def to_file(self, path: Any) -> "dict[str, Any] | str | None":
