@@ -228,6 +228,10 @@ class ImageCopier:
         resolved = source.resolve()
         if resolved in self._by_source:
             return self._by_source[resolved]
+        # The source already sits beside the output under its own name — reference it in place (no copy).
+        if resolved == (self._out_dir / source.name).resolve():
+            self._by_source[resolved] = source.name
+            return source.name
         name = self._unique_name(source)
         shutil.copyfile(source, self._out_dir / name)
         self._by_source[resolved] = name

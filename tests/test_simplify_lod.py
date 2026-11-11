@@ -263,6 +263,26 @@ class TestTilesetLOD:
         ):
             model.to_3dtiles(tmp_path, implicit_tiling=True, simplify=0.1)
 
+    def test_coarse_tile_drops_zigzag_collapsing_to_two_vertices(self):
+        """A ring that snaps to an alternating ``A,B,A,B`` (2 distinct) is dropped from a coarse tile (R2-L1).
+
+        Test scenario:
+            ``_simplify_rings`` uses the same distinct-vertex drop criterion as ``CityModel.simplify``, so a
+            zig-zag that keeps >= 3 *vertices* but only 2 *distinct* ones does not survive as a sliver.
+        """
+        from pyramids_citymodels.writers.threedtiles import _simplify_rings
+
+        obj = CityObject(id="z", type="Building", geometries=[])
+        zigzag = [
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (0.1, 0.0, 0.0),
+            (0.9, 0.0, 0.0),
+        ]  # snaps to 0,1,0,1 -> 2 distinct
+        assert _simplify_rings([(obj, [zigzag])], 1.0) == [], (
+            "a 2-distinct-vertex zig-zag must be dropped, not kept as a sliver"
+        )
+
     def test_simplify_without_subdivision_warns(self, tmp_path):
         """``simplify`` on a model that writes a single tile warns that it had no effect (L3).
 

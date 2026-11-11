@@ -906,11 +906,16 @@ def _simplify_rings(contributing: _Contributing, cell_size: float) -> _Contribut
     """Vertex-cluster every object's rings to a ``cell_size`` grid for a coarse LOD tile (snap + dedup).
 
     Uses the shared :func:`pyramids_citymodels.transform.cluster_ring` (snap to grid, drop consecutive
-    duplicates and a trailing vertex equal to the first) so it cannot drift from ``CityModel.simplify``; a
-    ring that collapses below three vertices is removed, as is an object left with no ring — so a coarse
-    tile carries fewer vertices (and fewer features) than the full detail below it.
+    duplicates and a trailing vertex equal to the first) and the shared ``is_degenerate_ring`` drop
+    criterion so it cannot drift from ``CityModel.simplify``; a ring that collapses below three *distinct*
+    vertices is removed, as is an object left with no ring — so a coarse tile carries fewer vertices (and
+    fewer features) than the full detail below it.
     """
-    from pyramids_citymodels.transform import cluster_ring, grid_snapper
+    from pyramids_citymodels.transform import (
+        cluster_ring,
+        grid_snapper,
+        is_degenerate_ring,
+    )
 
     snap = grid_snapper(cell_size)
     simplified: _Contributing = []
@@ -918,7 +923,7 @@ def _simplify_rings(contributing: _Contributing, cell_size: float) -> _Contribut
         kept = [
             clustered
             for ring in rings
-            if len(clustered := cluster_ring(ring, snap)) >= 3
+            if not is_degenerate_ring(clustered := cluster_ring(ring, snap))
         ]
         if kept:
             simplified.append((city_object, kept))

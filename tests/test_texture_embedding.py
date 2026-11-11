@@ -236,6 +236,37 @@ class TestEmbedCollisions:
         )
 
 
+class TestImageCopierInPlace:
+    """Tests that ImageCopier references a source already beside the output without re-copying (R2-L2)."""
+
+    def test_image_already_in_output_dir_is_referenced_in_place(self, tmp_path):
+        """When ``texture_base`` is the output dir and the image already lives there, no copy is made.
+
+        Test scenario:
+            The image is already ``out/wall.png``; embedding references ``wall.png`` in place and does not
+            create a disambiguated ``wall_1.png``.
+        """
+        out = tmp_path / "out"
+        out.mkdir()
+        (out / "wall.png").write_bytes(_PNG)
+        write_obj(
+            _textured_model(),
+            out / "m.obj",
+            materials=True,
+            embed_textures=True,
+            texture_base=out,
+        )
+        assert "map_Kd wall.png" in (out / "m.mtl").read_text(), (
+            "the in-place image must be referenced as-is"
+        )
+        assert not (out / "wall_1.png").exists(), (
+            "no redundant copy of the in-place image may be made"
+        )
+        assert (out / "wall.png").read_bytes() == _PNG, (
+            "the in-place image is untouched"
+        )
+
+
 class TestColladaEmbedding:
     """Tests for COLLADA texture copying."""
 

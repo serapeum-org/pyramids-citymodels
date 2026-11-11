@@ -136,9 +136,14 @@ def cluster_ring(
     return cleaned
 
 
-def _distinct_count(ring: list[Any]) -> int:
-    """The number of distinct vertices in a ring."""
-    return len({tuple(point) for point in ring})
+def is_degenerate_ring(ring: list[Any]) -> bool:
+    """True when a ring has fewer than three distinct vertices (it has collapsed to a point or a line).
+
+    The single drop criterion shared by :func:`simplify` and the 3D-Tiles LOD builder, so a ring counting
+    repeated or alternating vertices (e.g. a zig-zag ``A, B, A, B`` that snaps to two points) is dropped
+    the same way everywhere, not kept as a degenerate sliver in one path.
+    """
+    return len({tuple(point) for point in ring}) < 3
 
 
 def _is_ring(node: Any) -> bool:
@@ -163,9 +168,9 @@ def _prune_surfaces(
     """
     if _is_surface_node(boundary):
         rings = [cluster_ring(ring, snap) for ring in boundary]
-        if _distinct_count(rings[0]) < 3:
+        if is_degenerate_ring(rings[0]):
             return None
-        kept = [rings[0]] + [r for r in rings[1:] if _distinct_count(r) >= 3]
+        kept = [rings[0]] + [r for r in rings[1:] if not is_degenerate_ring(r)]
         return kept, semantic
     if not isinstance(boundary, list):
         return boundary, semantic
