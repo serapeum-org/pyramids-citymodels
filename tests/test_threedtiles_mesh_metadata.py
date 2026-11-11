@@ -212,12 +212,14 @@ class TestTypedMetadata:
         assert a0["active"] is True, (
             f"active should round-trip as True, got {a0['active']!r}"
         )
-        assert a0["floors"] == 2 and isinstance(a0["floors"], int), (
-            "floors should be int 2"
+        assert isinstance(a0["floors"], int), (
+            f"floors should be an int, got {type(a0['floors'])}"
         )
-        assert a0["height"] == 3.5 and isinstance(a0["height"], float), (
-            "height should be float 3.5"
+        assert a0["floors"] == 2, f"floors should be 2, got {a0['floors']}"
+        assert isinstance(a0["height"], float), (
+            f"height should be a float, got {type(a0['height'])}"
         )
+        assert a0["height"] == 3.5, f"height should be 3.5, got {a0['height']}"
         assert a0["note"] == "x", "the sparse key must survive via the JSON blob"
         assert back["o1"].attributes["meta"] == {"k": [1]}, (
             "the nested key must survive via the JSON blob"
@@ -368,8 +370,9 @@ class TestTypedMetadata:
             ``metadata='columns'`` is not a valid shape and is rejected.
         """
         out = Path(tempfile.mkdtemp())
+        model = self._model()
         with pytest.raises(ValueError, match="metadata must be 'json' or 'typed'"):
-            self._model().to_3dtiles(out, content="gltf", metadata="columns")
+            model.to_3dtiles(out, content="gltf", metadata="columns")
 
     def test_user_attributes_named_id_or_type_round_trip_in_typed_mode(self):
         """User attribute keys ``id``/``type`` do not collide with the reserved identity columns (R2-H1).
