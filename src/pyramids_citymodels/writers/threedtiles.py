@@ -408,6 +408,10 @@ _EXT_STRUCTURAL_METADATA = "EXT_structural_metadata"
 #: The metadata class and the property name carrying the JSON-encoded attribute dict.
 _FEATURE_CLASS = "feature"
 _ATTRIBUTES_PROPERTY = "attributes"
+#: The property names the table reserves — the identity columns and the JSON-attributes blob. A user
+#: attribute whose key is one of these is never promoted to a typed column (it would overwrite the
+#: reserved property); it rides in the JSON blob instead, which round-trips it.
+_RESERVED_PROPERTIES = ("id", "type", _ATTRIBUTES_PROPERTY)
 #: The EXT_structural_metadata schema id (required by the extension schema; ^[a-zA-Z_]\w*$).
 _SCHEMA_ID = "pyramids_citymodels"
 
@@ -541,10 +545,11 @@ def _structural_metadata(
     typed_keys: dict[str, tuple[str, str]] = {}
     if metadata == "typed":
         for key in sorted({name for co in features for name in co.attributes}):
-            # Never promote a user key named like the reserved JSON-blob property: it would collide
-            # with the leftover blob (same property name) and be silently overwritten. Leaving it in
-            # the blob round-trips it losslessly (the blob is a JSON object that can hold the key).
-            if key == _ATTRIBUTES_PROPERTY:
+            # Never promote a user key named like a reserved property (id / type / attributes): a typed
+            # column of that name would overwrite the reserved identity column or the JSON blob and be
+            # silently lost (and corrupt the feature's id/type). Leaving it in the blob round-trips it
+            # losslessly (the blob is a JSON object that can hold the key).
+            if key in _RESERVED_PROPERTIES:
                 continue
             if all(key in co.attributes for co in features):
                 kind = _scalar_kind([co.attributes[key] for co in features])

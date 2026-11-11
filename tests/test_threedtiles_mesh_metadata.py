@@ -371,6 +371,56 @@ class TestTypedMetadata:
         with pytest.raises(ValueError, match="metadata must be 'json' or 'typed'"):
             self._model().to_3dtiles(out, content="gltf", metadata="columns")
 
+    def test_user_attributes_named_id_or_type_round_trip_in_typed_mode(self):
+        """User attribute keys ``id``/``type`` do not collide with the reserved identity columns (R2-H1).
+
+        Test scenario:
+            Both features carry attributes ``id`` and ``type``; typed mode must keep the object's real
+            identity/type AND preserve the attributes (they ride in the JSON blob, not a typed column
+            that would overwrite the reserved id/type properties).
+        """
+        model = CityModel(
+            objects={
+                "building-A": CityObject(
+                    id="building-A",
+                    type="Building",
+                    attributes={"id": 888, "type": "CUSTOM_X", "height": 10},
+                    geometries=[
+                        Geometry(
+                            type="MultiSurface", lod="2", boundaries=[_square(0, 0)]
+                        )
+                    ],
+                ),
+                "building-B": CityObject(
+                    id="building-B",
+                    type="Building",
+                    attributes={"id": 999, "type": "CUSTOM_Y", "height": 20},
+                    geometries=[
+                        Geometry(
+                            type="MultiSurface", lod="2", boundaries=[_square(50, 50)]
+                        )
+                    ],
+                ),
+            }
+        )
+        out = Path(tempfile.mkdtemp())
+        model.to_3dtiles(out, content="gltf", metadata="typed")
+        back = {
+            o.id: o for o in parse_3dtiles(str(out / "tileset.json")).objects.values()
+        }
+        assert set(back) == {"building-A", "building-B"}, (
+            f"real ids must survive, got {set(back)}"
+        )
+        assert back["building-A"].type == "Building", (
+            "the real object type must survive"
+        )
+        assert back["building-A"].attributes["id"] == 888, (
+            "the user 'id' attribute must survive"
+        )
+        assert back["building-A"].attributes["type"] == "CUSTOM_X", (
+            "the user 'type' attribute must survive"
+        )
+
     def test_non_finite_float_rejected_in_typed_mode_with_accurate_message(self):
         """A non-finite float is rejected in typed mode too, with a metadata-general message (L2).
 
