@@ -234,6 +234,24 @@ def _texture_for_ring(
     return entry[0], uv_indices
 
 
+def _ring_group(
+    surface: Any, material_leaf: Any, texture_leaf: Any, uv_pool: list[Any]
+) -> tuple[_GroupKey, _Ring] | None:
+    """The ``(group key, ring)`` for one surface, or ``None`` when it has no meshable exterior ring.
+
+    The group key is ``(material index, texture index)``; ``None`` for either when the surface carries
+    no (valid) material/texture.
+    """
+    if not surface:
+        return None
+    ring = [_xyz(coordinate) for coordinate in _open_ring(surface[0])]
+    if len(ring) < 3:
+        return None
+    material_index = material_leaf if isinstance(material_leaf, int) else None
+    texture_index, uv_indices = _texture_for_ring(texture_leaf, len(ring), uv_pool)
+    return (material_index, texture_index), (ring, uv_indices)
+
+
 def _collect_groups(model: CityModel) -> dict[_GroupKey, list[_Ring]]:
     """Group every exterior ring by its ``(material index, texture index)`` appearance key.
 
@@ -254,21 +272,16 @@ def _collect_groups(model: CityModel) -> dict[_GroupKey, list[_Ring]]:
                 iter_surfaces(geometry.boundaries, texture_values),
             )
             for (surface, material_leaf), (_surface, texture_leaf) in paired:
-                if not surface:
-                    continue
-                ring = [_xyz(coordinate) for coordinate in _open_ring(surface[0])]
-                if len(ring) < 3:
-                    continue
-                material_index = (
-                    material_leaf if isinstance(material_leaf, int) else None
-                )
-                texture_index, uv_indices = _texture_for_ring(
-                    texture_leaf, len(ring), uv_pool
-                )
-                groups.setdefault((material_index, texture_index), []).append(
-                    (ring, uv_indices)
-                )
+                grouped = _ring_group(surface, material_leaf, texture_leaf, uv_pool)
+                if grouped is not None:
+                    key, ring = grouped
+                    groups.setdefault(key, []).append(ring)
     return groups
+
+
+def _ring_uv(uv_pool: list[Any], uv_indices: list[int] | None, vertex: int) -> Any:
+    """The ``(u, v)`` for a ring vertex from the pool, or ``None`` when the ring is untextured."""
+    return tuple(uv_pool[uv_indices[vertex]]) if uv_indices is not None else None
 
 
 def _primitive_blobs(
@@ -287,28 +300,30 @@ def _primitive_blobs(
     positions: list[tuple[float, float, float]] = []
     texcoords: list[tuple[float, float]] = []
     triangles: list[tuple[int, int, int]] = []
+
+    def intern(coordinate: tuple[float, float, float], uv: Any) -> int:
+        shifted = (
+            coordinate[0] - translate[0],
+            coordinate[1] - translate[1],
+            coordinate[2] - translate[2],
+        )
+        key = (shifted, uv)
+        index = pool.get(key)
+        if index is None:
+            index = len(positions)
+            pool[key] = index
+            positions.append(shifted)
+            if textured:
+                texcoords.append(uv if uv is not None else (0.0, 0.0))
+        return index
+
     for ring, uv_indices in rings:
-        indices = []
-        for vertex, coordinate in enumerate(ring):
-            shifted = (
-                coordinate[0] - translate[0],
-                coordinate[1] - translate[1],
-                coordinate[2] - translate[2],
+        indices = [
+            intern(
+                coordinate, _ring_uv(uv_pool, uv_indices, vertex) if textured else None
             )
-            uv = (
-                tuple(uv_pool[uv_indices[vertex]])
-                if textured and uv_indices is not None
-                else None
-            )
-            key = (shifted, uv)
-            index = pool.get(key)
-            if index is None:
-                index = len(positions)
-                pool[key] = index
-                positions.append(shifted)
-                if textured:
-                    texcoords.append(uv if uv is not None else (0.0, 0.0))
-            indices.append(index)
+            for vertex, coordinate in enumerate(ring)
+        ]
         for apex in range(1, len(indices) - 1):
             triangles.append((indices[0], indices[apex], indices[apex + 1]))
     position_blob = b"".join(struct.pack("<3f", *position) for position in positions)
@@ -362,6 +377,161 @@ def _pbr_material(
     return {"pbrMetallicRoughness": pbr}
 
 
+class _GltfBuilder:
+    """Assemble a textured glTF document group by group — one primitive per ``(material, texture)``.
+
+    Holds the single growing binary buffer and the glTF arrays, and dedupes images/textures (by CityJSON
+    source) and materials (by ``(material, resolved texture)``) as groups are added, so the assembly
+    loop in :func:`_build_textured_gltf` stays a flat `for group: add_group`.
+    """
+
+    def __init__(
+        self,
+        translate: list[float],
+        materials_pool: list[Any],
+        textures_pool: list[Any],
+        uv_pool: list[Any],
+    ) -> None:
+        self.translate = translate
+        self._materials_pool = materials_pool
+        self._textures_pool = textures_pool
+        self._uv_pool = uv_pool
+        self.buffer = b""
+        self.buffer_views: list[dict[str, Any]] = []
+        self.accessors: list[dict[str, Any]] = []
+        self.primitives: list[dict[str, Any]] = []
+        self.materials: list[dict[str, Any]] = []
+        self.images: list[dict[str, Any]] = []
+        self.textures: list[dict[str, Any]] = []
+        self._texture_by_source: dict[int, int] = {}
+        self._material_by_key: dict[tuple[int | None, int | None], int] = {}
+
+    def _add_view(self, blob: bytes, target: int) -> int:
+        self.buffer += b"\x00" * (-len(self.buffer) % 4)  # 4-align (float32 / uint32)
+        self.buffer_views.append(
+            {
+                "buffer": 0,
+                "byteOffset": len(self.buffer),
+                "byteLength": len(blob),
+                "target": target,
+            }
+        )
+        self.buffer += blob
+        return len(self.buffer_views) - 1
+
+    def _add_accessor(self, spec: dict[str, Any]) -> int:
+        self.accessors.append(spec)
+        return len(self.accessors) - 1
+
+    def _texture_index(self, source: int | None) -> int | None:
+        """The glTF texture index for a CityJSON texture source, deduped by source (``None`` if no image)."""
+        if source is None:
+            return None
+        entry = (
+            self._textures_pool[source] if source < len(self._textures_pool) else None
+        )
+        image = entry.get("image") if isinstance(entry, dict) else None
+        if not image:
+            return None
+        if source not in self._texture_by_source:
+            # Percent-encode unsafe characters (e.g. spaces) while preserving URL/path structure and
+            # any existing escapes (``%`` is in the safe set), so a path never yields an invalid URI.
+            self.images.append({"uri": quote(image, safe="/:?#[]@!$&'()*+,;=~-._%")})
+            self.textures.append({"source": len(self.images) - 1, "sampler": 0})
+            self._texture_by_source[source] = len(self.textures) - 1
+        return self._texture_by_source[source]
+
+    def _material_index(
+        self,
+        material_index: int | None,
+        texture_index: int | None,
+        gltf_texture: int | None,
+    ) -> int:
+        """The glTF material index for a group, deduped by ``(material, resolved texture)``."""
+        key = (material_index, gltf_texture)
+        if key not in self._material_by_key:
+            self.materials.append(
+                _pbr_material(
+                    material_index, texture_index, self._materials_pool, gltf_texture
+                )
+            )
+            self._material_by_key[key] = len(self.materials) - 1
+        return self._material_by_key[key]
+
+    def add_group(self, group_key: _GroupKey, rings: list[_Ring]) -> None:
+        """Weld one appearance group into its own primitive (+ accessors, material, texture)."""
+        material_index, texture_index = group_key
+        gltf_texture = self._texture_index(texture_index)
+        textured = gltf_texture is not None
+        position_blob, texcoord_blob, index_blob, vertices, tris = _primitive_blobs(
+            rings, self.translate, self._uv_pool, textured
+        )
+        stored = [
+            struct.unpack_from("<3f", position_blob, v * 12) for v in range(vertices)
+        ]
+        attributes = {
+            "POSITION": self._add_accessor(
+                {
+                    "bufferView": self._add_view(position_blob, _ARRAY_BUFFER),
+                    "componentType": _FLOAT,
+                    "count": vertices,
+                    "type": "VEC3",
+                    "min": [min(p[a] for p in stored) for a in range(3)],
+                    "max": [max(p[a] for p in stored) for a in range(3)],
+                }
+            )
+        }
+        if textured:
+            attributes["TEXCOORD_0"] = self._add_accessor(
+                {
+                    "bufferView": self._add_view(texcoord_blob, _ARRAY_BUFFER),
+                    "componentType": _FLOAT,
+                    "count": vertices,
+                    "type": "VEC2",
+                }
+            )
+        primitive: dict[str, Any] = {
+            "attributes": attributes,
+            "indices": self._add_accessor(
+                {
+                    "bufferView": self._add_view(index_blob, _ELEMENT_ARRAY_BUFFER),
+                    "componentType": _UINT,
+                    "count": tris * 3,
+                    "type": "SCALAR",
+                }
+            ),
+            "mode": _TRIANGLES,
+        }
+        if material_index is not None or textured:
+            primitive["material"] = self._material_index(
+                material_index, texture_index, gltf_texture
+            )
+        self.primitives.append(primitive)
+
+    def document(self) -> dict[str, Any]:
+        """The assembled glTF document (materials/textures/images/samplers only when non-empty)."""
+        uri = "data:application/octet-stream;base64," + base64.b64encode(
+            self.buffer
+        ).decode("ascii")
+        document: dict[str, Any] = {
+            "asset": {"version": "2.0", "generator": "pyramids-citymodels"},
+            "scene": 0,
+            "scenes": [{"nodes": [0]}],
+            "nodes": [{"mesh": 0, "translation": self.translate}],
+            "meshes": [{"primitives": self.primitives}],
+            "buffers": [{"byteLength": len(self.buffer), "uri": uri}],
+            "bufferViews": self.buffer_views,
+            "accessors": self.accessors,
+        }
+        if self.materials:
+            document["materials"] = self.materials
+        if self.textures:
+            document["textures"] = self.textures
+            document["images"] = self.images
+            document["samplers"] = [{}]
+        return document
+
+
 def _build_textured_gltf(model: CityModel) -> dict[str, Any]:
     """Build a glTF document carrying IR appearances (feature #14) — PBR materials + textures.
 
@@ -377,133 +547,15 @@ def _build_textured_gltf(model: CityModel) -> dict[str, Any]:
     if not all_positions:
         return _empty_gltf()
     translate = [min(point[axis] for point in all_positions) for axis in range(3)]
-    materials_pool = model.appearances.get("materials") or []
-    textures_pool = model.appearances.get("textures") or []
-    uv_pool = model.appearances.get("vertices-texture") or []
-
-    buffer = b""
-    buffer_views: list[dict[str, Any]] = []
-    accessors: list[dict[str, Any]] = []
-    primitives: list[dict[str, Any]] = []
-    materials: list[dict[str, Any]] = []
-    images: list[dict[str, Any]] = []
-    textures: list[dict[str, Any]] = []
-    texture_by_source: dict[
-        int, int
-    ] = {}  # CityJSON texture index -> glTF texture index
-    material_by_key: dict[
-        tuple[int | None, int | None], int
-    ] = {}  # (material index, glTF texture) -> glTF material index
-
-    def add_view(blob: bytes, target: int) -> int:
-        nonlocal buffer
-        buffer += b"\x00" * (-len(buffer) % 4)  # 4-align (float32 / uint32 components)
-        buffer_views.append(
-            {
-                "buffer": 0,
-                "byteOffset": len(buffer),
-                "byteLength": len(blob),
-                "target": target,
-            }
-        )
-        buffer += blob
-        return len(buffer_views) - 1
-
-    def gltf_texture_for(source: int) -> int | None:
-        entry = textures_pool[source] if source < len(textures_pool) else None
-        image = entry.get("image") if isinstance(entry, dict) else None
-        if not image:
-            return None
-        if source not in texture_by_source:
-            # Percent-encode unsafe characters (e.g. spaces) while preserving URL/path structure and
-            # any existing escapes (``%`` is in the safe set), so a path never yields an invalid URI.
-            images.append({"uri": quote(image, safe="/:?#[]@!$&'()*+,;=~-._%")})
-            textures.append({"source": len(images) - 1, "sampler": 0})
-            texture_by_source[source] = len(textures) - 1
-        return texture_by_source[source]
-
-    for (material_index, texture_index), rings in groups.items():
-        gltf_texture = (
-            gltf_texture_for(texture_index) if texture_index is not None else None
-        )
-        textured = gltf_texture is not None
-        position_blob, texcoord_blob, index_blob, vertices, tris = _primitive_blobs(
-            rings, translate, uv_pool, textured
-        )
-        stored = [
-            struct.unpack_from("<3f", position_blob, v * 12) for v in range(vertices)
-        ]
-        position_view = add_view(position_blob, _ARRAY_BUFFER)
-        accessors.append(
-            {
-                "bufferView": position_view,
-                "componentType": _FLOAT,
-                "count": vertices,
-                "type": "VEC3",
-                "min": [min(p[a] for p in stored) for a in range(3)],
-                "max": [max(p[a] for p in stored) for a in range(3)],
-            }
-        )
-        attributes = {"POSITION": len(accessors) - 1}
-        if textured:
-            texcoord_view = add_view(texcoord_blob, _ARRAY_BUFFER)
-            accessors.append(
-                {
-                    "bufferView": texcoord_view,
-                    "componentType": _FLOAT,
-                    "count": vertices,
-                    "type": "VEC2",
-                }
-            )
-            attributes["TEXCOORD_0"] = len(accessors) - 1
-        index_view = add_view(index_blob, _ELEMENT_ARRAY_BUFFER)
-        accessors.append(
-            {
-                "bufferView": index_view,
-                "componentType": _UINT,
-                "count": tris * 3,
-                "type": "SCALAR",
-            }
-        )
-        primitive: dict[str, Any] = {
-            "attributes": attributes,
-            "indices": len(accessors) - 1,
-            "mode": _TRIANGLES,
-        }
-        if material_index is not None or textured:
-            # Dedupe: the same (material, resolved glTF texture) yields an identical glTF material, so
-            # reuse it across groups rather than appending a copy per group.
-            material_key = (material_index, gltf_texture)
-            if material_key not in material_by_key:
-                materials.append(
-                    _pbr_material(
-                        material_index, texture_index, materials_pool, gltf_texture
-                    )
-                )
-                material_by_key[material_key] = len(materials) - 1
-            primitive["material"] = material_by_key[material_key]
-        primitives.append(primitive)
-
-    uri = "data:application/octet-stream;base64," + base64.b64encode(buffer).decode(
-        "ascii"
+    builder = _GltfBuilder(
+        translate,
+        model.appearances.get("materials") or [],
+        model.appearances.get("textures") or [],
+        model.appearances.get("vertices-texture") or [],
     )
-    document: dict[str, Any] = {
-        "asset": {"version": "2.0", "generator": "pyramids-citymodels"},
-        "scene": 0,
-        "scenes": [{"nodes": [0]}],
-        "nodes": [{"mesh": 0, "translation": translate}],
-        "meshes": [{"primitives": primitives}],
-        "buffers": [{"byteLength": len(buffer), "uri": uri}],
-        "bufferViews": buffer_views,
-        "accessors": accessors,
-    }
-    if materials:
-        document["materials"] = materials
-    if textures:
-        document["textures"] = textures
-        document["images"] = images
-        document["samplers"] = [{}]
-    return document
+    for group_key, rings in groups.items():
+        builder.add_group(group_key, rings)
+    return builder.document()
 
 
 def write_gltf(
