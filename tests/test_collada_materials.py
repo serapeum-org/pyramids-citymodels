@@ -138,6 +138,104 @@ class TestColladaMaterials:
             "expected two materials"
         )
 
+    def test_distinct_textures_make_distinct_images(self):
+        """Two surfaces with different textures declare two ``<image>`` entries.
+
+        Test scenario:
+            Surface 0 -> texture 0 (a.png), surface 1 -> texture 1 (b.png); library_images has both.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle(0.0), _triangle(5.0)],
+            appearance={
+                "material": {"": {"values": [0, 1]}},
+                "texture": {"": {"values": [[[0, 0, 1, 2]], [[1, 0, 1, 2]]]}},
+            },
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "materials": [
+                    {"name": "a", "diffuseColor": [1.0, 0.0, 0.0]},
+                    {"name": "b", "diffuseColor": [0.0, 1.0, 0.0]},
+                ],
+                "textures": [{"image": "a.png"}, {"image": "b.png"}],
+                "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            },
+        )
+        document = minidom.parseString(write_collada(model, materials=True))
+        assert len(document.getElementsByTagName("image")) == 2, (
+            "two textures must declare two images"
+        )
+
+    def test_textured_and_untextured_groups_coexist(self):
+        """A textured group and a colour-only group share one mesh; only the textured one has TEXCOORD.
+
+        Test scenario:
+            Surface 0 is textured, surface 1 is colour-only; exactly one ``<triangles>`` carries a
+            TEXCOORD input.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle(0.0), _triangle(5.0)],
+            appearance={
+                "material": {"": {"values": [0, 1]}},
+                "texture": {"": {"values": [[[0, 0, 1, 2]], None]}},
+            },
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "materials": [
+                    {"name": "a", "diffuseColor": [1.0, 0.0, 0.0]},
+                    {"name": "b", "diffuseColor": [0.0, 1.0, 0.0]},
+                ],
+                "textures": [{"image": "t.png"}],
+                "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            },
+        )
+        document = minidom.parseString(write_collada(model, materials=True))
+        with_texcoord = [
+            triangles
+            for triangles in document.getElementsByTagName("triangles")
+            if any(
+                inp.getAttribute("semantic") == "TEXCOORD"
+                for inp in triangles.getElementsByTagName("input")
+            )
+        ]
+        assert len(with_texcoord) == 1, (
+            "exactly one group should carry a TEXCOORD input"
+        )
+
+    def test_solid_geometry_is_materialled(self):
+        """A ``Solid`` (deeper nesting) pairs material values in lock-step into per-material triangles.
+
+        Test scenario:
+            A one-shell Solid of two surfaces with materials [0, 1] yields two material-bound triangles.
+        """
+        shell = [_triangle(0.0), _triangle(5.0)]
+        geometry = Geometry(
+            type="Solid",
+            lod="2",
+            boundaries=[shell],
+            appearance={"material": {"": {"values": [[0, 1]]}}},
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "materials": [
+                    {"name": "a", "diffuseColor": [1.0, 0.0, 0.0]},
+                    {"name": "b", "diffuseColor": [0.0, 0.0, 1.0]},
+                ]
+            },
+        )
+        document = minidom.parseString(write_collada(model, materials=True))
+        assert len(document.getElementsByTagName("triangles")) == 2, (
+            "a Solid's two surfaces -> two groups"
+        )
+
     def test_material_without_diffuse_is_grey(self):
         """A material with no ``diffuseColor`` degrades to the default grey colour, not a crash.
 

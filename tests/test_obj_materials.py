@@ -198,6 +198,36 @@ class TestObjMaterials:
             f"a material with no diffuseColor should be grey, got:\n{mtl}"
         )
 
+    def test_shared_uv_is_deduplicated_in_vt(self):
+        """Two textured surfaces referencing the same UVs share the ``vt`` pool (3 vt, not 6).
+
+        Test scenario:
+            Both surfaces of one textured material reference the same three UV indices, so the OBJ emits
+            three ``vt`` lines, not six.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle(0.0), _triangle(5.0)],
+            appearance={
+                "material": {"": {"values": [0, 0]}},
+                "texture": {"": {"values": [[[0, 0, 1, 2]], [[0, 0, 1, 2]]]}},
+            },
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "materials": [{"name": "m", "diffuseColor": [1.0, 0.0, 0.0]}],
+                "textures": [{"type": "PNG", "image": "t.png"}],
+                "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            },
+        )
+        obj, _mtl = _write(model)
+        vt_lines = [line for line in obj.splitlines() if line.startswith("vt ")]
+        assert len(vt_lines) == 3, (
+            f"shared UVs should dedupe to 3 vt lines, got {len(vt_lines)}"
+        )
+
     def test_missing_image_writes_kd_without_map(self):
         """A material with a texture whose entry has no image writes ``Kd`` but no ``map_Kd``.
 
