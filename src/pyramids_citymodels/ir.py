@@ -456,11 +456,19 @@ class CityModel:
 
         return write_jsonfg(self, path)
 
-    def to_obj(self, path: Any = None) -> str | None:
+    def to_obj(self, path: Any = None, materials: bool = False) -> str | None:
         """Serialize this model to Wavefront OBJ (see :func:`.writers.obj.write_obj`).
 
-        A plain-geometry mesh export (feature #14): each surface's exterior ring becomes one face.
-        Returns the OBJ text as a ``str`` when ``path`` is ``None``, else writes it.
+        A mesh export (feature #14): each surface's exterior ring becomes one face. With
+        ``materials=False`` (default) it is plain geometry grouped by object; with ``materials=True`` the
+        IR appearances ride along as a ``.mtl`` sidecar (``Kd`` from ``diffuseColor``, ``map_Kd`` texture)
+        plus ``vt`` texture coordinates, grouped by material — which needs a file path (``materials=True``
+        with ``path=None`` raises). Returns the OBJ text as a ``str`` when ``path`` is ``None``, else
+        writes it.
+
+        Args:
+            path: A path to write the ``.obj`` (and ``.mtl`` sidecar) to, or ``None`` to return the text.
+            materials: Carry IR appearances as a ``.mtl`` sidecar + UVs instead of plain geometry.
 
         Examples:
             - Each object's faces are grouped under an ``o`` marker:
@@ -475,7 +483,7 @@ class CityModel:
         """
         from pyramids_citymodels.writers.obj import write_obj
 
-        return write_obj(self, path)
+        return write_obj(self, path, materials)
 
     def to_gltf(
         self, path: Any = None, materials: bool = False
