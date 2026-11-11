@@ -398,3 +398,27 @@ class TestTextures:
         )
         document = write_gltf(model, materials=True)
         assert "TEXCOORD_0" not in document["meshes"][0]["primitives"][0]["attributes"]
+
+    def test_non_2d_uv_pool_entry_does_not_crash(self):
+        """A non-2D ``vertices-texture`` entry is treated as untextured, never a ``struct.error`` (M1).
+
+        Test scenario:
+            The UV pool holds 3-component entries; the surface meshes untextured rather than crashing.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle()],
+            appearance={"texture": {"": {"values": [[[0, 0, 1, 2]]]}}},
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "textures": [{"type": "PNG", "image": "wall.png"}],
+                "vertices-texture": [[0.0, 0.0, 9.0], [1.0, 0.0, 9.0], [1.0, 1.0, 9.0]],
+            },
+        )
+        document = write_gltf(model, materials=True)
+        assert (
+            "TEXCOORD_0" not in document["meshes"][0]["primitives"][0]["attributes"]
+        ), "a non-2D UV pool entry must fall back to untextured, not raise"

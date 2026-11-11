@@ -188,16 +188,26 @@ def _appearance_values(geometry: Geometry, kind: str, default_theme: Any) -> Any
     return (block.get(theme) or {}).get("values")
 
 
+def _is_uv(point: Any) -> bool:
+    """True when ``point`` is a 2-component numeric ``vertices-texture`` entry (packable as ``<2f``)."""
+    return (
+        isinstance(point, (list, tuple))
+        and len(point) == 2
+        and all(isinstance(component, (int, float)) for component in point)
+    )
+
+
 def _texture_for_ring(
-    texture_leaf: Any, ring_length: int, uv_pool_size: int
+    texture_leaf: Any, ring_length: int, uv_pool: list[Any]
 ) -> tuple[int | None, list[int] | None]:
     """A surface's ``(texture index, UV indices)`` from its CityJSON texture leaf, or ``(None, None)``.
 
     A CityJSON texture value for a surface is ``[[texture_index, uv0, uv1, ...], ...]`` — one list per
     ring, whose head is the texture index and whose tail is a UV index per ring vertex. Only the
-    exterior ring is meshed, the UV count must match the ring, and every UV index must be within the
-    ``vertices-texture`` pool; otherwise the surface is treated as untextured, so a malformed, partial
-    or out-of-range texture never corrupts the mesh (nor raises an ``IndexError``).
+    exterior ring is meshed, the UV count must match the ring, and every UV index must point at a
+    2-component entry within the ``vertices-texture`` pool; otherwise the surface is treated as
+    untextured, so a malformed, partial, out-of-range or non-2D texture never corrupts the mesh (nor
+    raises an ``IndexError`` / ``struct.error``).
     """
     if not isinstance(texture_leaf, list) or not texture_leaf:
         return None, None
@@ -209,7 +219,9 @@ def _texture_for_ring(
         isinstance(i, int) for i in uv_indices
     ):
         return None, None
-    if not all(0 <= index < uv_pool_size for index in uv_indices):
+    if not all(
+        0 <= index < len(uv_pool) and _is_uv(uv_pool[index]) for index in uv_indices
+    ):
         return None, None
     return entry[0], uv_indices
 
@@ -224,7 +236,7 @@ def _collect_groups(model: CityModel) -> dict[_GroupKey, list[_Ring]]:
     groups: dict[_GroupKey, list[_Ring]] = {}
     default_mat = model.appearances.get("default-theme-material")
     default_tex = model.appearances.get("default-theme-texture")
-    uv_pool_size = len(model.appearances.get("vertices-texture") or [])
+    uv_pool = model.appearances.get("vertices-texture") or []
     for city_object in model.objects.values():
         for geometry in city_object.geometries:
             material_values = _appearance_values(geometry, "material", default_mat)
@@ -243,7 +255,7 @@ def _collect_groups(model: CityModel) -> dict[_GroupKey, list[_Ring]]:
                     material_leaf if isinstance(material_leaf, int) else None
                 )
                 texture_index, uv_indices = _texture_for_ring(
-                    texture_leaf, len(ring), uv_pool_size
+                    texture_leaf, len(ring), uv_pool
                 )
                 groups.setdefault((material_index, texture_index), []).append(
                     (ring, uv_indices)
