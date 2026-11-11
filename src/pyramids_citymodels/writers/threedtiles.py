@@ -175,9 +175,11 @@ def _mesh_buffers(
     to one shared index only when they belong to the *same* feature — the ``_BATCHID`` /
     ``_FEATURE_ID_0`` attribute is per-vertex, so a vertex shared between two batch ids would be
     ambiguous. Surfaces of one object that meet along an edge therefore share their boundary vertices
-    (the index buffer shrinks, the geometry is unchanged), while vertices of different objects never
-    merge. Rings arrive open (no duplicate closing vertex), so welding only folds genuinely shared
-    corners, never a ring's own endpoints.
+    (the index buffer shrinks), while vertices of different objects never merge. Rings arrive open (no
+    duplicate closing vertex), so welding only folds genuinely shared corners, never a ring's own
+    endpoints. The rendered footprint is unchanged; for a simple ring the triangle set is identical,
+    and for a self-touching ring that revisits a coordinate welding only changes *which* fan triangles
+    are degenerate (fan triangulation of such rings is already a documented limit).
 
     Returns:
         ``(position_blob, batchid_blob, index_blob, vertex_count, triangle_count)``.
