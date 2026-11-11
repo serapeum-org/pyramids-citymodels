@@ -797,15 +797,51 @@ def _maybe_json_object(text: str) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+#: EXT_structural_metadata SCALAR componentType -> little-endian struct format character.
+_SCALAR_FORMATS = {
+    "INT8": "b",
+    "UINT8": "B",
+    "INT16": "h",
+    "UINT16": "H",
+    "INT32": "i",
+    "UINT32": "I",
+    "INT64": "q",
+    "UINT64": "Q",
+    "FLOAT32": "f",
+    "FLOAT64": "d",
+}
+
+
+def _read_scalar_property(
+    gltf: dict[str, Any],
+    binary: bytes,
+    spec: dict[str, Any],
+    component: str,
+    count: int,
+) -> list[Any]:
+    """Read an ``EXT_structural_metadata`` SCALAR column (``count`` packed little-endian numbers)."""
+    blob = _buffer_view_bytes(gltf, binary, spec["values"])
+    return list(struct.unpack_from(f"<{count}{_SCALAR_FORMATS[component]}", blob, 0))
+
+
+def _read_boolean_property(
+    gltf: dict[str, Any], binary: bytes, spec: dict[str, Any], count: int
+) -> list[bool]:
+    """Read an ``EXT_structural_metadata`` BOOLEAN column (one LSB-first bit per feature)."""
+    blob = _buffer_view_bytes(gltf, binary, spec["values"])
+    return [bool(blob[index // 8] & (1 << (index % 8))) for index in range(count)]
+
+
 def _structural_metadata_columns(
     gltf: dict[str, Any], binary: bytes
 ) -> tuple[list[str], list[str], list[dict[str, Any]]] | None:
     """Read ``EXT_structural_metadata``'s first property table into ``(ids, types, attribute_rows)``.
 
-    Only STRING properties (``values`` + ``stringOffsets``) are read — a numeric or binary metadata
-    property is skipped, as the ``b3dm`` reader skips a binary batch-table column. The writer's own
-    ``attributes`` property is a JSON-encoded dict and is expanded into each row; any other string
-    property becomes a plain attribute of its own name. ``None`` when the glTF carries no property table.
+    STRING, BOOLEAN and SCALAR properties are read by their schema type (so both the JSON-blob and the
+    typed-column metadata shapes round-trip, and a foreign tool's typed columns read too); an unknown
+    type (``VEC``*, ``ENUM``, …) is skipped, as the ``b3dm`` reader skips a binary batch-table column.
+    The writer's own ``attributes`` STRING property is a JSON-encoded dict expanded into each row; any
+    other property becomes a plain attribute of its own name. ``None`` when the glTF has no property table.
     """
     extension = (gltf.get("extensions") or {}).get("EXT_structural_metadata") or {}
     tables = extension.get("propertyTables") or []
@@ -813,44 +849,65 @@ def _structural_metadata_columns(
         return None
     table = tables[0]
     count = int(table.get("count", 0))
-    columns = _string_columns(gltf, binary, table.get("properties") or {}, count)
-    ids = columns.get("id", [""] * count)
-    types = columns.get("type", [""] * count)
+    schema = extension.get("schema") or {}
+    schema_class = (schema.get("classes") or {}).get(table.get("class")) or {}
+    schema_properties = schema_class.get("properties") or {}
+    columns = _metadata_columns(
+        gltf, binary, table.get("properties") or {}, schema_properties, count
+    )
+    ids = [str(value) for value in columns.get("id", [""] * count)]
+    types = [str(value) for value in columns.get("type", [""] * count)]
     rows = [_attribute_row(index, columns) for index in range(count)]
     return ids, types, rows
 
 
-def _string_columns(
-    gltf: dict[str, Any], binary: bytes, properties: dict[str, Any], count: int
-) -> dict[str, list[str]]:
-    """Every STRING property (``values`` + ``stringOffsets``) read into a ``name -> list[str]`` map.
+def _metadata_columns(
+    gltf: dict[str, Any],
+    binary: bytes,
+    properties: dict[str, Any],
+    schema_properties: dict[str, Any],
+    count: int,
+) -> dict[str, list[Any]]:
+    """Every readable property read into a ``name -> list[value]`` map, typed by the schema.
 
-    A property without both keys (a numeric or binary column) is skipped, as the ``b3dm`` reader skips
-    a binary batch-table column, so an unknown-typed column never corrupts the attributes.
+    A STRING property yields strings, BOOLEAN booleans, SCALAR numbers; an unknown type — or a column
+    missing the bufferView(s) its type needs — is skipped so it never corrupts the attributes. A
+    property with ``values`` + ``stringOffsets`` is read as STRING even when the schema omits its type,
+    keeping the lenient read of foreign glTF content.
     """
-    columns: dict[str, list[str]] = {}
+    columns: dict[str, list[Any]] = {}
     for name, spec in properties.items():
-        if isinstance(spec, dict) and "values" in spec and "stringOffsets" in spec:
+        if not isinstance(spec, dict):
+            continue
+        schema_prop = schema_properties.get(name) or {}
+        ptype = schema_prop.get("type")
+        component = schema_prop.get("componentType")
+        if "values" in spec and "stringOffsets" in spec:
             columns[name] = _read_string_property(gltf, binary, spec, count)
+        elif ptype == "BOOLEAN" and "values" in spec:
+            columns[name] = _read_boolean_property(gltf, binary, spec, count)
+        elif ptype == "SCALAR" and component in _SCALAR_FORMATS and "values" in spec:
+            columns[name] = _read_scalar_property(gltf, binary, spec, component, count)
     return columns
 
 
-def _attribute_row(index: int, columns: dict[str, list[str]]) -> dict[str, Any]:
-    """Feature ``index``'s attribute dict from the string columns (``id`` / ``type`` are handled apart).
+def _attribute_row(index: int, columns: dict[str, list[Any]]) -> dict[str, Any]:
+    """Feature ``index``'s attribute dict from the columns (``id`` / ``type`` are handled apart).
 
-    The writer's own ``attributes`` property is a JSON-encoded object and is expanded into the row; any
-    other string property becomes a plain attribute of its own name.
+    The writer's own ``attributes`` property is a JSON-encoded object expanded into the row; any other
+    property (string or typed) becomes a plain attribute of its own name, keeping its decoded type.
     """
     row: dict[str, Any] = {}
     for name, values in columns.items():
         if name in ("id", "type"):
             continue
-        if name == "attributes":
-            parsed = _maybe_json_object(values[index])
+        value = values[index]
+        if name == "attributes" and isinstance(value, str):
+            parsed = _maybe_json_object(value)
             if parsed is not None:
                 row.update(parsed)
                 continue
-        row[name] = values[index]
+        row[name] = value
     return row
 
 

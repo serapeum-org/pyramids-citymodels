@@ -477,11 +477,20 @@ class CityModel:
 
         return write_obj(self, path)
 
-    def to_gltf(self, path: Any = None) -> "dict[str, Any] | None":
+    def to_gltf(
+        self, path: Any = None, materials: bool = False
+    ) -> "dict[str, Any] | None":
         """Serialize this model to glTF 2.0 (see :func:`.writers.gltf.write_gltf`).
 
-        A triangulated, positions-only mesh export (feature #14), embedded as a self-contained
-        ``.gltf``. Returns the document ``dict`` when ``path`` is ``None``, else writes it.
+        A triangulated mesh export (feature #14), embedded as a self-contained ``.gltf``. With
+        ``materials=False`` (default) it is positions-only; with ``materials=True`` the IR appearances
+        ride along as PBR materials (``baseColorFactor`` from ``diffuseColor``) and textures
+        (``TEXCOORD_0`` + a ``baseColorTexture`` referenced by image URI). Returns the document ``dict``
+        when ``path`` is ``None``, else writes it.
+
+        Args:
+            path: A path to write the ``.gltf`` to, or ``None`` to return the document dict.
+            materials: Carry IR appearances into the glTF instead of a positions-only mesh.
 
         Examples:
             - A one-triangle model exports one triangle (three indices):
@@ -493,10 +502,22 @@ class CityModel:
                 3
 
                 ```
+            - ``materials=True`` emits a PBR material from the surface's CityJSON ``diffuseColor``:
+                ```python
+                >>> surface = [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                >>> geometry = Geometry(type="MultiSurface", lod="2", boundaries=[surface],
+                ...     appearance={"material": {"": {"values": [0]}}})
+                >>> model = CityModel(
+                ...     objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+                ...     appearances={"materials": [{"name": "r", "diffuseColor": [1.0, 0.0, 0.0]}]})
+                >>> model.to_gltf(materials=True)["materials"][0]["pbrMetallicRoughness"]["baseColorFactor"]
+                [1.0, 0.0, 0.0, 1.0]
+
+                ```
         """
         from pyramids_citymodels.writers.gltf import write_gltf
 
-        return write_gltf(self, path)
+        return write_gltf(self, path, materials)
 
     def translate(self, offset: "tuple[float, ...]") -> "CityModel":
         """A new model with every coordinate shifted by ``offset`` per axis (geometry cleanup, #17).
@@ -600,6 +621,7 @@ class CityModel:
         implicit_tiling: bool = False,
         scheme: str = "quadtree",
         content: str = "b3dm",
+        metadata: str = "json",
     ) -> "dict[str, Any]":
         """Write this model as a 3D Tiles tileset into ``directory``.
 
@@ -621,6 +643,9 @@ class CityModel:
             implicit_tiling: Write a 3D Tiles 1.1 implicit tileset instead of an explicit tree.
             scheme: ``"quadtree"`` (XY, default) or ``"octree"`` (XYZ) — implicit tiling only.
             content: Tile-content format — ``"b3dm"`` (default) or ``"gltf"`` (3D Tiles 1.1 ``.glb``).
+            metadata: glTF metadata shape — ``"json"`` (default, one JSON blob) or ``"typed"``
+                (per-attribute typed ``EXT_structural_metadata`` columns). Applies only to
+                ``content="gltf"``.
 
         Returns:
             The written ``tileset.json`` document.
@@ -655,7 +680,13 @@ class CityModel:
         from pyramids_citymodels.writers.threedtiles import write_3dtiles
 
         return write_3dtiles(
-            self, directory, max_objects_per_tile, implicit_tiling, scheme, content
+            self,
+            directory,
+            max_objects_per_tile,
+            implicit_tiling,
+            scheme,
+            content,
+            metadata,
         )
 
     def to_file(self, path: Any) -> "dict[str, Any] | str | None":
