@@ -579,11 +579,18 @@ class CityModel:
 
         return triangulate(self)
 
-    def to_collada(self, path: Any = None) -> str | None:
+    def to_collada(self, path: Any = None, materials: bool = False) -> str | None:
         """Serialize this model to COLLADA 1.4.1 ``.dae`` (see :func:`.writers.collada.write_collada`).
 
-        A triangulated, positions-only mesh export (feature #14). Returns the document string when
-        ``path`` is ``None``, else writes it.
+        A triangulated mesh export (feature #14). With ``materials=False`` (default) it is positions-only;
+        with ``materials=True`` the IR appearances ride along as per-material ``<triangles>`` bound through
+        ``library_materials`` / ``library_effects`` (diffuse ``<color>`` from ``diffuseColor``) plus a
+        ``TEXCOORD`` input and a sampler over a ``library_images`` image for textured surfaces. Returns the
+        document string when ``path`` is ``None``, else writes it.
+
+        Args:
+            path: A path to write the ``.dae`` to, or ``None`` to return the document string.
+            materials: Carry IR appearances (materials + textures) instead of a positions-only mesh.
 
         Examples:
             - A one-triangle model yields one COLLADA triangle:
@@ -598,7 +605,7 @@ class CityModel:
         """
         from pyramids_citymodels.writers.collada import write_collada
 
-        return write_collada(self, path)
+        return write_collada(self, path, materials)
 
     def to_kml(self, path: Any = None) -> str | None:
         """Serialize this model to KML (see :func:`.writers.kml.write_kml`).
