@@ -470,6 +470,67 @@ class TestTextures:
         document = write_gltf(model, materials=True)
         assert "TEXCOORD_0" not in document["meshes"][0]["primitives"][0]["attributes"]
 
+    def test_same_material_is_deduped_across_groups(self):
+        """One CityJSON material reused across two groups yields a single glTF material (N1).
+
+        Test scenario:
+            Two surfaces share material 0 but reference two different image-less textures (so both are
+            untextured), forming two primitives; the identical material is emitted once and both
+            primitives point at it.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle(0.0), _triangle(5.0)],
+            appearance={
+                "material": {"": {"values": [0, 0]}},
+                "texture": {"": {"values": [[[1, 0, 1, 2]], [[2, 0, 1, 2]]]}},
+            },
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "materials": [{"name": "red", "diffuseColor": [1.0, 0.0, 0.0]}],
+                "textures": [{}, {"type": "PNG"}, {"type": "PNG"}],
+                "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            },
+        )
+        document = write_gltf(model, materials=True)
+        assert len(document["meshes"][0]["primitives"]) == 2, (
+            "two groups -> two primitives"
+        )
+        assert len(document["materials"]) == 1, (
+            "the shared material must be emitted once"
+        )
+        mats = {p["material"] for p in document["meshes"][0]["primitives"]}
+        assert mats == {0}, (
+            f"both primitives should point at the one material, got {mats}"
+        )
+
+    def test_image_uri_is_percent_encoded(self):
+        """A texture image path with a space is percent-encoded into a valid glTF URI (N2).
+
+        Test scenario:
+            ``my wall.png`` becomes ``my%20wall.png`` so the ``image.uri`` is a valid URI.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle()],
+            appearance={"texture": {"": {"values": [[[0, 0, 1, 2]]]}}},
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "textures": [{"type": "PNG", "image": "my wall.png"}],
+                "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            },
+        )
+        document = write_gltf(model, materials=True)
+        assert document["images"][0]["uri"] == "my%20wall.png", (
+            f"got {document['images'][0]['uri']}"
+        )
+
     def test_non_2d_uv_pool_entry_does_not_crash(self):
         """A non-2D ``vertices-texture`` entry is treated as untextured, never a ``struct.error`` (M1).
 

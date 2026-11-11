@@ -30,6 +30,7 @@ import base64
 import json
 import struct
 from typing import Any
+from urllib.parse import quote
 
 from pyramids_citymodels.ir import CityModel, Geometry, iter_surfaces
 from pyramids_citymodels.writers._geometry import open_ring as _open_ring
@@ -381,6 +382,9 @@ def _build_textured_gltf(model: CityModel) -> dict[str, Any]:
     texture_by_source: dict[
         int, int
     ] = {}  # CityJSON texture index -> glTF texture index
+    material_by_key: dict[
+        tuple[int | None, int | None], int
+    ] = {}  # (material index, glTF texture) -> glTF material index
 
     def add_view(blob: bytes, target: int) -> int:
         nonlocal buffer
@@ -402,7 +406,9 @@ def _build_textured_gltf(model: CityModel) -> dict[str, Any]:
         if not image:
             return None
         if source not in texture_by_source:
-            images.append({"uri": image})
+            # Percent-encode unsafe characters (e.g. spaces) while preserving URL/path structure and
+            # any existing escapes (``%`` is in the safe set), so a path never yields an invalid URI.
+            images.append({"uri": quote(image, safe="/:?#[]@!$&'()*+,;=~-._%")})
             textures.append({"source": len(images) - 1, "sampler": 0})
             texture_by_source[source] = len(textures) - 1
         return texture_by_source[source]
@@ -456,12 +462,17 @@ def _build_textured_gltf(model: CityModel) -> dict[str, Any]:
             "mode": _TRIANGLES,
         }
         if material_index is not None or textured:
-            materials.append(
-                _pbr_material(
-                    material_index, texture_index, materials_pool, gltf_texture
+            # Dedupe: the same (material, resolved glTF texture) yields an identical glTF material, so
+            # reuse it across groups rather than appending a copy per group.
+            material_key = (material_index, gltf_texture)
+            if material_key not in material_by_key:
+                materials.append(
+                    _pbr_material(
+                        material_index, texture_index, materials_pool, gltf_texture
+                    )
                 )
-            )
-            primitive["material"] = len(materials) - 1
+                material_by_key[material_key] = len(materials) - 1
+            primitive["material"] = material_by_key[material_key]
         primitives.append(primitive)
 
     uri = "data:application/octet-stream;base64," + base64.b64encode(buffer).decode(
