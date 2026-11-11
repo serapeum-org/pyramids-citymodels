@@ -600,6 +600,7 @@ class CityModel:
         implicit_tiling: bool = False,
         scheme: str = "quadtree",
         content: str = "b3dm",
+        metadata: str = "json",
     ) -> "dict[str, Any]":
         """Write this model as a 3D Tiles tileset into ``directory``.
 
@@ -621,6 +622,9 @@ class CityModel:
             implicit_tiling: Write a 3D Tiles 1.1 implicit tileset instead of an explicit tree.
             scheme: ``"quadtree"`` (XY, default) or ``"octree"`` (XYZ) — implicit tiling only.
             content: Tile-content format — ``"b3dm"`` (default) or ``"gltf"`` (3D Tiles 1.1 ``.glb``).
+            metadata: glTF metadata shape — ``"json"`` (default, one JSON blob) or ``"typed"``
+                (per-attribute typed ``EXT_structural_metadata`` columns). Applies only to
+                ``content="gltf"``.
 
         Returns:
             The written ``tileset.json`` document.
@@ -655,7 +659,13 @@ class CityModel:
         from pyramids_citymodels.writers.threedtiles import write_3dtiles
 
         return write_3dtiles(
-            self, directory, max_objects_per_tile, implicit_tiling, scheme, content
+            self,
+            directory,
+            max_objects_per_tile,
+            implicit_tiling,
+            scheme,
+            content,
+            metadata,
         )
 
     def to_file(self, path: Any) -> "dict[str, Any] | str | None":

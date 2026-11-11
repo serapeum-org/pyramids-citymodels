@@ -39,6 +39,7 @@ Only the standard library (``json`` + ``struct``) is used.
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
+import functools
 import json
 import math
 import struct
@@ -170,8 +171,13 @@ def _mesh_buffers(
     """Build the position / batch-id / index binary blobs for the batched mesh.
 
     Every ring is fan-triangulated; each vertex is shifted by ``translate`` (for float32 precision)
-    and tagged with its object's batch id. Vertices are not de-duplicated, so a batch id is
-    unambiguous per vertex.
+    and tagged with its object's batch id. Vertices are **welded per batch**: two coordinates collapse
+    to one shared index only when they belong to the *same* feature — the ``_BATCHID`` /
+    ``_FEATURE_ID_0`` attribute is per-vertex, so a vertex shared between two batch ids would be
+    ambiguous. Surfaces of one object that meet along an edge therefore share their boundary vertices
+    (the index buffer shrinks, the geometry is unchanged), while vertices of different objects never
+    merge. Rings arrive open (no duplicate closing vertex), so welding only folds genuinely shared
+    corners, never a ring's own endpoints.
 
     Returns:
         ``(position_blob, batchid_blob, index_blob, vertex_count, triangle_count)``.
@@ -179,20 +185,28 @@ def _mesh_buffers(
     positions: list[tuple[float, float, float]] = []
     batch_ids: list[int] = []
     triangles: list[tuple[int, int, int]] = []
+    pool: dict[tuple[int, tuple[float, float, float]], int] = {}
+
+    def intern(batch: int, coordinate: tuple[float, float, float]) -> int:
+        shifted = (
+            coordinate[0] - translate[0],
+            coordinate[1] - translate[1],
+            coordinate[2] - translate[2],
+        )
+        key = (batch, shifted)
+        index = pool.get(key)
+        if index is None:
+            index = len(positions)
+            pool[key] = index
+            positions.append(shifted)
+            batch_ids.append(batch)
+        return index
+
     for batch, (_city_object, rings) in enumerate(contributing):
         for ring in rings:
-            base = len(positions)
-            for coordinate in ring:
-                positions.append(
-                    (
-                        coordinate[0] - translate[0],
-                        coordinate[1] - translate[1],
-                        coordinate[2] - translate[2],
-                    )
-                )
-                batch_ids.append(batch)
-            for apex in range(1, len(ring) - 1):  # fan from the ring's first vertex
-                triangles.append((base, base + apex, base + apex + 1))
+            indices = [intern(batch, coordinate) for coordinate in ring]
+            for apex in range(1, len(indices) - 1):  # fan from the ring's first vertex
+                triangles.append((indices[0], indices[apex], indices[apex + 1]))
     position_blob = b"".join(struct.pack("<3f", *position) for position in positions)
     batchid_blob = b"".join(struct.pack("<I", batch) for batch in batch_ids)
     index_blob = b"".join(
@@ -451,63 +465,149 @@ def _string_column(values: list[str]) -> tuple[bytes, bytes]:
     return values_blob, offsets_blob
 
 
+#: INT64 bounds — an integer attribute outside this range stays in the JSON blob, since a FLOAT64
+#: column would silently lose its low digits.
+_INT64_MIN, _INT64_MAX = -(1 << 63), (1 << 63) - 1
+#: struct formats for the SCALAR component types the typed metadata path emits.
+_SCALAR_FORMATS = {"INT64": "q", "FLOAT64": "d"}
+
+
+def _scalar_kind(values: list[Any]) -> tuple[str, str] | None:
+    """The EXT_structural_metadata ``(type, componentType)`` for a cleanly, uniformly typed column.
+
+    ``("BOOLEAN", "")`` / ``("SCALAR", "INT64")`` / ``("SCALAR", "FLOAT64")`` / ``("STRING", "")`` when
+    every value shares that one clean type (and an all-integer column fits INT64). ``None`` for a mixed,
+    nested, or out-of-INT64-range column — that key then rides in the JSON ``attributes`` blob, so typed
+    mode loses nothing. ``bool`` is checked before ``int`` (a ``bool`` is an ``int`` in Python) so a
+    boolean column never degrades into a numeric one.
+    """
+    if all(isinstance(value, bool) for value in values):
+        return ("BOOLEAN", "")
+    if all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+        if all(_INT64_MIN <= value <= _INT64_MAX for value in values):
+            return ("SCALAR", "INT64")
+        return None
+    if all(
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+        for value in values
+    ):
+        return ("SCALAR", "FLOAT64")
+    if all(isinstance(value, str) for value in values):
+        return ("STRING", "")
+    return None
+
+
+def _boolean_blob(values: list[bool]) -> bytes:
+    """Bit-pack booleans (LSB-first within each byte) for an ``EXT_structural_metadata`` BOOLEAN column."""
+    packed = bytearray((len(values) + 7) // 8)
+    for index, value in enumerate(values):
+        if value:
+            packed[index // 8] |= 1 << (index % 8)
+    return bytes(packed)
+
+
 def _structural_metadata(
-    contributing: _Contributing, base_offset: int, first_buffer_view: int
+    contributing: _Contributing,
+    base_offset: int,
+    first_buffer_view: int,
+    metadata: str = "json",
 ) -> tuple[bytes, list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
     """Build the ``EXT_structural_metadata`` binary + bufferViews + schema + property table.
 
-    One feature per city object, with three STRING properties — ``id``, ``type`` and a JSON-encoded
-    ``attributes`` blob. The binary is appended after the geometry (``base_offset`` is where it starts
-    in the glb buffer); every bufferView is 4-aligned and carries **no** ``target`` (metadata, not
-    vertex data). ``first_buffer_view`` is the index of the first metadata bufferView (geometry owns
+    One feature per city object. ``id`` and ``type`` are always STRING properties. With
+    ``metadata="json"`` (the default) every remaining attribute rides in a single JSON-encoded STRING
+    ``attributes`` property — lossless for any JSON value, the shape issue #56 shipped. With
+    ``metadata="typed"`` each attribute that is **present on every feature** with a **uniform clean
+    scalar type** (bool / int / float / str) becomes its own typed column — ``BOOLEAN`` / ``SCALAR
+    INT64`` / ``SCALAR FLOAT64`` / ``STRING``, the shape Cesium and 3d-tiles-tools consume natively —
+    while a sparse or nested/mixed key falls back to the JSON ``attributes`` blob, so typed mode is still
+    lossless (a key that is int on one feature and float on another becomes a FLOAT64 column, so those
+    ints read back as floats — the one documented coercion).
+
+    The binary is appended after the geometry (``base_offset`` is where it starts in the glb buffer);
+    every bufferView is aligned to its component size and carries **no** ``target`` (metadata, not vertex
+    data). ``first_buffer_view`` is the index of the first metadata bufferView (geometry owns
     ``0..first_buffer_view-1``).
 
     Returns:
         ``(binary, buffer_views, schema, property_table)``.
     """
-    columns = {
-        "id": [city_object.id for city_object, _rings in contributing],
-        "type": [city_object.type for city_object, _rings in contributing],
-        _ATTRIBUTES_PROPERTY: [
-            _attributes_json(city_object) for city_object, _rings in contributing
-        ],
-    }
+    features = [city_object for city_object, _rings in contributing]
+    typed_keys: dict[str, tuple[str, str]] = {}
+    if metadata == "typed":
+        for key in sorted({name for co in features for name in co.attributes}):
+            if all(key in co.attributes for co in features):
+                kind = _scalar_kind([co.attributes[key] for co in features])
+                if kind is not None:
+                    typed_keys[key] = kind
+    leftover = [
+        {name: value for name, value in co.attributes.items() if name not in typed_keys}
+        for co in features
+    ]
+
     binary = b""
     buffer_views: list[dict[str, Any]] = []
-    properties: dict[str, Any] = {}
 
-    def add_view(blob: bytes) -> int:
+    def add_view(blob: bytes, align: int) -> int:
         nonlocal binary
         pad = (
             -(base_offset + len(binary))
-        ) % 4  # 4-align the view start within the buffer
+        ) % align  # align the view start within the buffer
         binary += b"\x00" * pad
-        view = {
-            "buffer": 0,
-            "byteOffset": base_offset + len(binary),
-            "byteLength": len(blob),
-        }
+        buffer_views.append(
+            {
+                "buffer": 0,
+                "byteOffset": base_offset + len(binary),
+                "byteLength": len(blob),
+            }
+        )
         binary += blob
-        buffer_views.append(view)
         return first_buffer_view + len(buffer_views) - 1
 
-    for name, values in columns.items():
+    def string_property(values: list[str]) -> dict[str, Any]:
         values_blob, offsets_blob = _string_column(values)
-        values_view = add_view(values_blob)
-        offsets_view = add_view(offsets_blob)
-        properties[name] = {
-            "values": values_view,
-            "stringOffsets": offsets_view,
+        return {
+            "values": add_view(values_blob, 1),
+            "stringOffsets": add_view(offsets_blob, 4),
             "stringOffsetType": "UINT32",
         }
+
+    properties: dict[str, Any] = {}
+    schema_properties: dict[str, Any] = {}
+    for name, values in (
+        ("id", [co.id for co in features]),
+        ("type", [co.type for co in features]),
+    ):
+        properties[name] = string_property(values)
+        schema_properties[name] = {"type": "STRING"}
+    for key, (ptype, component) in typed_keys.items():
+        column = [co.attributes[key] for co in features]
+        if ptype == "BOOLEAN":
+            properties[key] = {"values": add_view(_boolean_blob(column), 1)}
+            schema_properties[key] = {"type": "BOOLEAN"}
+        elif ptype == "STRING":
+            properties[key] = string_property(column)
+            schema_properties[key] = {"type": "STRING"}
+        else:  # SCALAR INT64 / FLOAT64
+            fmt = _SCALAR_FORMATS[component]
+            size = struct.calcsize("<" + fmt)
+            packed = [int(v) if component == "INT64" else float(v) for v in column]
+            blob = b"".join(struct.pack("<" + fmt, value) for value in packed)
+            properties[key] = {"values": add_view(blob, size)}
+            schema_properties[key] = {"type": "SCALAR", "componentType": component}
+    # The JSON attributes blob: always in json mode; in typed mode only when a leftover key remains.
+    if metadata == "json" or any(row for row in leftover):
+        blobs = [
+            json.dumps(row, ensure_ascii=False, sort_keys=True, allow_nan=False)
+            for row in leftover
+        ]
+        properties[_ATTRIBUTES_PROPERTY] = string_property(blobs)
+        schema_properties[_ATTRIBUTES_PROPERTY] = {"type": "STRING"}
+
     schema = {
         # ``id`` is required by the EXT_structural_metadata schema; it must match ^[a-zA-Z_]\w*$.
         "id": _SCHEMA_ID,
-        "classes": {
-            _FEATURE_CLASS: {
-                "properties": {name: {"type": "STRING"} for name in columns}
-            }
-        },
+        "classes": {_FEATURE_CLASS: {"properties": schema_properties}},
     }
     property_table = {
         "class": _FEATURE_CLASS,
@@ -622,12 +722,16 @@ def _glb_feature_document(
     }
 
 
-def _gltf_from_rings(contributing: _Contributing) -> bytes | None:
+def _gltf_from_rings(
+    contributing: _Contributing, metadata: str = "json"
+) -> bytes | None:
     """Encode an already-gathered ``contributing`` list into glTF-content ``glb`` bytes (``None`` if empty).
 
     The geometry (positions + ``_FEATURE_ID_0`` + indices) is built exactly as for ``b3dm``; the
     per-feature metadata is appended as an ``EXT_structural_metadata`` property table in the same glb
-    buffer, so one ``.glb`` carries both — the 3D Tiles 1.1-native content format.
+    buffer, so one ``.glb`` carries both — the 3D Tiles 1.1-native content format. ``metadata`` selects
+    the property-table shape (``"json"`` one JSON blob, or ``"typed"`` per-attribute columns — see
+    :func:`_structural_metadata`).
     """
     if not contributing:
         return None
@@ -650,7 +754,7 @@ def _gltf_from_rings(contributing: _Contributing) -> bytes | None:
     )
     geometry = position_blob + featureid_blob + index_blob
     metadata_blob, metadata_views, schema, property_table = _structural_metadata(
-        contributing, base_offset=len(geometry), first_buffer_view=3
+        contributing, base_offset=len(geometry), first_buffer_view=3, metadata=metadata
     )
     buffer = geometry + metadata_blob
     document = _glb_feature_document(
@@ -677,12 +781,21 @@ _CONTENT_FORMATS: dict[str, tuple[Any, str, str]] = {
 }
 
 
-def _content_format(content: str) -> tuple[Any, str, str]:
-    """Resolve a ``content=`` keyword to ``(encode, suffix, tileset_version)``; raise on an unknown one."""
+def _content_format(content: str, metadata: str = "json") -> tuple[Any, str, str]:
+    """Resolve ``content=`` / ``metadata=`` to ``(encode, suffix, tileset_version)``; raise on unknowns.
+
+    ``metadata`` only shapes glTF content (b3dm has its own columnar batch table); it is bound onto the
+    glTF encoder here so the per-tile call sites stay ``encode(contributing)``.
+    """
     try:
-        return _CONTENT_FORMATS[content]
+        encode, suffix, version = _CONTENT_FORMATS[content]
     except KeyError:
         raise ValueError(f"content must be 'b3dm' or 'gltf', got {content!r}") from None
+    if metadata not in ("json", "typed"):
+        raise ValueError(f"metadata must be 'json' or 'typed', got {metadata!r}")
+    if content == "gltf":
+        encode = functools.partial(_gltf_from_rings, metadata=metadata)
+    return encode, suffix, version
 
 
 def _tileset_from_rings(
@@ -1072,6 +1185,7 @@ def write_3dtiles(
     implicit_tiling: bool = False,
     scheme: str = "quadtree",
     content: str = "b3dm",
+    metadata: str = "json",
 ) -> dict[str, Any]:
     """Write ``model`` as a 3D Tiles tileset into ``directory``.
 
@@ -1101,6 +1215,15 @@ def write_3dtiles(
     ``content`` raises ``ValueError``. Both formats round-trip through this package's own reader in
     every mode.
 
+    **glTF metadata shape** (``metadata=``, glTF content only): ``"json"`` (default) keeps the whole
+    attribute dict in one JSON-encoded ``attributes`` property — lossless for any JSON value. ``"typed"``
+    promotes each attribute that is present on every feature with a uniform clean scalar type to its own
+    typed ``EXT_structural_metadata`` column (``BOOLEAN`` / ``SCALAR INT64`` / ``SCALAR FLOAT64`` /
+    ``STRING`` — what Cesium and 3d-tiles-tools read natively), while a sparse or nested/mixed key stays
+    in the JSON blob, so ``"typed"`` is still lossless (a key that is int on one feature and float on
+    another becomes a FLOAT64 column, so those ints read back as floats). ``metadata`` is ignored for
+    ``content="b3dm"`` (which uses its own columnar batch table); an unknown value raises ``ValueError``.
+
     Geometry is passed through per tile (no per-tile LOD/simplification), and the output round-trips
     through this package's own 3D-Tiles reader in every mode.
 
@@ -1123,6 +1246,8 @@ def write_3dtiles(
             than an explicit tree.
         scheme: ``"quadtree"`` (XY, default) or ``"octree"`` (XYZ) subdivision — implicit tiling only.
         content: Tile-content format — ``"b3dm"`` (default) or ``"gltf"`` (3D Tiles 1.1 ``.glb``).
+        metadata: glTF metadata shape — ``"json"`` (default, one JSON blob) or ``"typed"`` (per-attribute
+            typed ``EXT_structural_metadata`` columns). Applies only to ``content="gltf"``.
 
     Returns:
         The written ``tileset.json`` document.
@@ -1186,7 +1311,7 @@ def write_3dtiles(
 
             ```
     """
-    encode, suffix, version = _content_format(content)
+    encode, suffix, version = _content_format(content, metadata)
     if implicit_tiling:
         # Validated here (not in _write_implicit) so the contract is the same for an empty model, which
         # never reaches _write_implicit.
