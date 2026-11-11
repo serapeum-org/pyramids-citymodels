@@ -349,17 +349,17 @@ def _build_textured_gltf(model: CityModel) -> dict[str, Any]:
         int, int
     ] = {}  # CityJSON texture index -> glTF texture index
 
-    def add_view(blob: bytes, target: int | None) -> int:
+    def add_view(blob: bytes, target: int) -> int:
         nonlocal buffer
         buffer += b"\x00" * (-len(buffer) % 4)  # 4-align (float32 / uint32 components)
-        view: dict[str, Any] = {
-            "buffer": 0,
-            "byteOffset": len(buffer),
-            "byteLength": len(blob),
-        }
-        if target is not None:
-            view["target"] = target
-        buffer_views.append(view)
+        buffer_views.append(
+            {
+                "buffer": 0,
+                "byteOffset": len(buffer),
+                "byteLength": len(blob),
+                "target": target,
+            }
+        )
         buffer += blob
         return len(buffer_views) - 1
 

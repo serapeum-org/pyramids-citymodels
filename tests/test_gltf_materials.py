@@ -261,3 +261,140 @@ class TestTextures:
         assert (
             "TEXCOORD_0" not in document["meshes"][0]["primitives"][0]["attributes"]
         ), "an out-of-range UV index must fall back to untextured"
+
+    def test_texture_without_image_is_untextured(self):
+        """A texture whose entry has no ``image`` contributes no glTF image, so the surface is untextured.
+
+        Test scenario:
+            Texture 0 has no ``image`` key; the surface is meshed without TEXCOORD_0 and no images are
+            declared.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle()],
+            appearance={"texture": {"": {"values": [[[0, 0, 1, 2]]]}}},
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "textures": [{"type": "PNG"}],
+                "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            },
+        )
+        document = write_gltf(model, materials=True)
+        assert "images" not in document, (
+            "a texture with no image must not declare a glTF image"
+        )
+        assert "TEXCOORD_0" not in document["meshes"][0]["primitives"][0]["attributes"]
+
+    def test_one_texture_across_two_materials_shares_one_image(self):
+        """Two differently-materialled surfaces sharing a texture declare that image/texture once.
+
+        Test scenario:
+            Surface 0 (material 0) and surface 1 (material 1) both reference texture 0, forming two
+            primitives; the texture's image is reused (one image, one texture) via the dedup cache.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle(0.0), _triangle(5.0)],
+            appearance={
+                "material": {"": {"values": [0, 1]}},
+                "texture": {"": {"values": [[[0, 0, 1, 2]], [[0, 0, 1, 2]]]}},
+            },
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "materials": [
+                    {"name": "red", "diffuseColor": [1.0, 0.0, 0.0]},
+                    {"name": "blue", "diffuseColor": [0.0, 0.0, 1.0]},
+                ],
+                "textures": [{"type": "PNG", "image": "wall.png"}],
+                "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            },
+        )
+        document = write_gltf(model, materials=True)
+        assert len(document["meshes"][0]["primitives"]) == 2, (
+            "expected one primitive per material"
+        )
+        assert len(document["images"]) == 1, (
+            "the shared texture image must be declared once"
+        )
+        assert len(document["textures"]) == 1, (
+            "the shared texture must be declared once"
+        )
+
+    def test_shared_vertex_is_welded_within_a_group(self):
+        """Two surfaces of one group that meet at a corner share that vertex (the pool welds it).
+
+        Test scenario:
+            Two appearance-less triangles share the vertex (0,0,0); with materials=True they land in one
+            group, so the welded pool holds 5 positions (3 + 3 - 1), not 6.
+        """
+        model = CityModel(
+            objects={
+                "b": CityObject(
+                    id="b",
+                    type="Building",
+                    geometries=[
+                        Geometry(
+                            type="MultiSurface",
+                            lod="2",
+                            boundaries=[
+                                [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]],
+                                [[(0.0, 0.0, 0.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0)]],
+                            ],
+                        )
+                    ],
+                )
+            }
+        )
+        document = write_gltf(model, materials=True)
+        assert document["accessors"][0]["count"] == 5, (
+            f"shared corner should weld to 5 positions, got {document['accessors'][0]['count']}"
+        )
+
+    def test_degenerate_ring_is_skipped(self):
+        """A surface whose exterior ring has fewer than three vertices is skipped, not meshed.
+
+        Test scenario:
+            A geometry with one valid triangle and one two-vertex ring exports a single triangle's
+            worth of positions (the degenerate surface contributes none).
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle(), [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]]],
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])}
+        )
+        document = write_gltf(model, materials=True)
+        assert document["accessors"][0]["count"] == 3, (
+            "only the valid triangle's 3 vertices should mesh"
+        )
+
+    def test_malformed_texture_leaf_is_untextured(self):
+        """A texture leaf whose head is not an integer index is treated as untextured, not an error.
+
+        Test scenario:
+            The texture entry starts with a string instead of a texture index, so the surface meshes
+            without a texture.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle()],
+            appearance={"texture": {"": {"values": [[["x", 0, 1, 2]]]}}},
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "textures": [{"type": "PNG", "image": "wall.png"}],
+                "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            },
+        )
+        document = write_gltf(model, materials=True)
+        assert "TEXCOORD_0" not in document["meshes"][0]["primitives"][0]["attributes"]
