@@ -236,6 +236,25 @@ class TestColladaMaterials:
             "a Solid's two surfaces -> two groups"
         )
 
+    def test_non_finite_uv_degrades_to_untextured(self):
+        """A non-finite UV degrades the surface to untextured, never a malformed ``nan`` token (L2).
+
+        Test scenario:
+            A ``NaN`` ``vertices-texture`` entry fails the UV gate, so the group is untextured — no
+            ``mesh0-uvs`` source and no TEXCOORD input.
+        """
+        model = _material_model([1.0, 0.0, 0.0], image="wall.png")
+        model.appearances["vertices-texture"] = [
+            [float("nan"), 0.0],
+            [1.0, 0.0],
+            [1.0, 1.0],
+        ]
+        dae = write_collada(model, materials=True)
+        assert "mesh0-uvs" not in dae, "a NaN UV must not produce a UV source"
+        assert 'semantic="TEXCOORD"' not in dae, (
+            "a NaN UV must leave the group untextured"
+        )
+
     def test_material_without_diffuse_is_grey(self):
         """A material with no ``diffuseColor`` degrades to the default grey colour, not a crash.
 

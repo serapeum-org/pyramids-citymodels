@@ -155,6 +155,39 @@ class TestObjMaterials:
             "the unthemed surface's face must precede any usemtl (default material)"
         )
 
+    def test_material_plain_material_keeps_each_group_scoped(self):
+        """A material -> plain -> material arrangement keeps each group's ``usemtl`` correctly scoped (N5).
+
+        Test scenario:
+            Surfaces themed [0, null, 1]; the output order is the plain face first (default material),
+            then ``usemtl mat_0`` + its face, then ``usemtl mat_1`` + its face — no face left under the
+            wrong material.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle(0.0), _triangle(5.0), _triangle(10.0)],
+            appearance={"material": {"": {"values": [0, None, 1]}}},
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "materials": [
+                    {"name": "red", "diffuseColor": [1.0, 0.0, 0.0]},
+                    {"name": "blue", "diffuseColor": [0.0, 0.0, 1.0]},
+                ]
+            },
+        )
+        obj, _mtl = _write(model)
+        skeleton = [
+            line.split()[0] if line.startswith("f ") else line
+            for line in obj.splitlines()
+            if line.startswith(("f ", "usemtl "))
+        ]
+        assert skeleton == ["f", "usemtl mat_0", "f", "usemtl mat_1", "f"], (
+            f"plain face must precede both usemtl groups, each scoped; got {skeleton}"
+        )
+
     def test_string_return_with_materials_raises(self):
         """``materials=True`` with no path raises, since the ``.mtl`` sidecar needs a file path.
 
@@ -226,6 +259,27 @@ class TestObjMaterials:
         vt_lines = [line for line in obj.splitlines() if line.startswith("vt ")]
         assert len(vt_lines) == 3, (
             f"shared UVs should dedupe to 3 vt lines, got {len(vt_lines)}"
+        )
+
+    def test_non_finite_uv_degrades_to_untextured(self):
+        """A non-finite UV in the pool degrades the surface to untextured, never a ``vt nan`` token (L2).
+
+        Test scenario:
+            A ``NaN`` ``vertices-texture`` entry fails the UV gate, so the surface meshes untextured (no
+            ``vt`` lines, no ``map_Kd``) rather than writing a malformed coordinate.
+        """
+        model = _material_model([1.0, 0.0, 0.0], image="wall.png")
+        model.appearances["vertices-texture"] = [
+            [float("nan"), 0.0],
+            [1.0, 0.0],
+            [1.0, 1.0],
+        ]
+        obj, mtl = _write(model)
+        assert not any(line.startswith("vt ") for line in obj.splitlines()), (
+            "a NaN UV must not emit vt"
+        )
+        assert "map_Kd" not in mtl, (
+            "a NaN UV must leave the surface untextured (no map_Kd)"
         )
 
     def test_missing_image_writes_kd_without_map(self):

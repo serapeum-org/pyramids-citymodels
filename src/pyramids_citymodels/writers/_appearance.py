@@ -16,6 +16,7 @@ dependencies (only the standard library and this package).
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
+import math
 from typing import Any
 
 from pyramids_citymodels.ir import CityModel, Geometry, iter_surfaces
@@ -46,15 +47,19 @@ def appearance_values(geometry: Geometry, kind: str, default_theme: Any) -> Any:
 
 
 def is_uv(point: Any) -> bool:
-    """True when ``point`` is a 2-component real UV entry (packable, no ``bool``).
+    """True when ``point`` is a 2-component finite real UV entry (packable, no ``bool``).
 
-    ``bool`` is excluded though it is an ``int`` subclass — a boolean is not a texture coordinate.
+    ``bool`` is excluded though it is an ``int`` subclass (a boolean is not a texture coordinate), and a
+    non-finite component (``NaN`` / ``inf``) is rejected — those render as malformed ``nan`` / ``inf``
+    tokens in the text mesh writers, so a surface with such a UV degrades to untextured instead.
     """
     return (
         isinstance(point, (list, tuple))
         and len(point) == 2
         and all(
-            isinstance(component, (int, float)) and not isinstance(component, bool)
+            isinstance(component, (int, float))
+            and not isinstance(component, bool)
+            and math.isfinite(component)
             for component in point
         )
     )
