@@ -161,6 +161,19 @@ class TestColladaMaterials:
         assert "<texture " not in dae, "a texture with no image must not bind a sampler"
         assert "<color>" in dae, "the material must fall back to a plain colour"
 
+    def test_empty_model_is_valid_and_geometry_less(self):
+        """An empty model exports a well-formed, geometry-less ``.dae`` even with materials requested.
+
+        Test scenario:
+            No objects -> parseable XML with a visual scene but no ``<triangles>`` and no materials.
+        """
+        dae = write_collada(CityModel(), materials=True)
+        document = minidom.parseString(dae)
+        assert len(document.getElementsByTagName("triangles")) == 0, (
+            "an empty model has no triangles"
+        )
+        assert "library_materials" not in dae, "an empty model declares no materials"
+
     def test_no_appearance_model_is_valid(self):
         """``materials=True`` on a model with no appearances still yields a valid positions mesh.
 
