@@ -16,7 +16,11 @@ dependencies (only the standard library and this package).
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
+import base64
 import math
+import mimetypes
+import shutil
+from pathlib import Path
 from typing import Any
 
 from pyramids_citymodels.ir import CityModel, Geometry, iter_surfaces
@@ -176,3 +180,69 @@ def texture_image(texture_index: int | None, textures_pool: list[Any]) -> str | 
     entry = textures_pool[texture_index]
     image = entry.get("image") if isinstance(entry, dict) else None
     return image or None
+
+
+def resolve_image(image: str, base: Any) -> Path | None:
+    """A readable local image :class:`~pathlib.Path` for a CityJSON ``image``, or ``None``.
+
+    Used by the ``embed_textures`` option: an absolute URL (``scheme://``) is not read (no network I/O),
+    and a path that does not resolve to a readable file returns ``None`` so the caller falls back to a
+    plain URI reference. Relative paths resolve against ``base`` (the texture base dir, or the cwd).
+
+    Note: ``embed_textures`` reads whatever local file the CityJSON ``image`` field points at, including
+    an **absolute** path (which ignores ``base``) or one that escapes ``base`` with ``..`` — the document's
+    own texture references are trusted. It is opt-in, so embed only models whose ``image`` paths you
+    trust; leave it off (the default, reference-only) to avoid reading any image file.
+    """
+    if not image or "://" in str(image):
+        return None
+    try:
+        path = Path(base) / image if base is not None else Path(image)
+        return path if path.is_file() else None
+    except (OSError, ValueError):
+        return None
+
+
+def data_uri(path: Path) -> str:
+    """A base64 ``data:`` URI for an image file (its media type guessed from the extension)."""
+    mime = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
+
+
+class ImageCopier:
+    """Copies texture images beside an output file, disambiguating basename collisions.
+
+    Dedupes by resolved source path (one source is copied once), and never overwrites a file it did not
+    write (a pre-existing file, or a different source that shares a basename, is given a disambiguated
+    ``<stem>_<n><suffix>`` name instead). So two textures named ``wall.png`` from different directories —
+    or an output directory that already holds an unrelated ``wall.png`` — don't clobber each other.
+    """
+
+    def __init__(self, out_dir: Path) -> None:
+        self._out_dir = out_dir
+        self._by_source: dict[Path, str] = {}
+
+    def copy(self, source: Path) -> str:
+        """Copy ``source`` beside the output under a collision-free basename and return that basename."""
+        resolved = source.resolve()
+        if resolved in self._by_source:
+            return self._by_source[resolved]
+        # The source already sits beside the output under its own name — reference it in place (no copy).
+        if resolved == (self._out_dir / source.name).resolve():
+            self._by_source[resolved] = source.name
+            return source.name
+        name = self._unique_name(source)
+        shutil.copyfile(source, self._out_dir / name)
+        self._by_source[resolved] = name
+        return name
+
+    def _unique_name(self, source: Path) -> str:
+        assigned = set(self._by_source.values())
+        candidate = source.name
+        counter = 1
+        # Avoid a name already assigned this run, and any file already in the output dir we didn't write.
+        while candidate in assigned or (self._out_dir / candidate).exists():
+            candidate = f"{source.stem}_{counter}{source.suffix}"
+            counter += 1
+        return candidate

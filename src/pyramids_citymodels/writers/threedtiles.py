@@ -43,6 +43,7 @@ import functools
 import json
 import math
 import struct
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -901,6 +902,51 @@ def _split_xy(
     return list(buckets.values())
 
 
+def _simplify_rings(contributing: _Contributing, cell_size: float) -> _Contributing:
+    """Vertex-cluster every object's rings to a ``cell_size`` grid for a coarse LOD tile (snap + dedup).
+
+    Uses the shared :func:`pyramids_citymodels.transform.cluster_ring` (snap to grid, drop consecutive
+    duplicates and a trailing vertex equal to the first) and the shared ``is_degenerate_ring`` drop
+    criterion so it cannot drift from ``CityModel.simplify``; a ring that collapses below three *distinct*
+    vertices is removed, as is an object left with no ring — so a coarse tile carries fewer vertices (and
+    fewer features) than the full detail below it.
+    """
+    from pyramids_citymodels.transform import (
+        cluster_ring,
+        grid_snapper,
+        is_degenerate_ring,
+    )
+
+    snap = grid_snapper(cell_size)
+    simplified: _Contributing = []
+    for city_object, rings in contributing:
+        kept = [
+            clustered
+            for ring in rings
+            if not is_degenerate_ring(clustered := cluster_ring(ring, snap))
+        ]
+        if kept:
+            simplified.append((city_object, kept))
+    return simplified
+
+
+def _write_tile_content(
+    contributing: _Contributing,
+    target: Path,
+    counter: list[int],
+    encode: Any,
+    suffix: str,
+) -> dict[str, str] | None:
+    """Encode ``contributing`` and write it as the next numbered content file; the ``content`` dict or None."""
+    content = encode(contributing)
+    if content is None:
+        return None
+    name = f"content_{counter[0]}{suffix}"
+    counter[0] += 1
+    (target / name).write_bytes(content)
+    return {"uri": name}
+
+
 def _build_tile(
     contributing: _Contributing,
     target: Path,
@@ -908,40 +954,54 @@ def _build_tile(
     max_per_tile: int,
     encode: Any,
     suffix: str,
+    simplify: float | None = None,
 ) -> dict[str, Any]:
-    """Recursively build a tileset node for ``contributing``, writing one content file per leaf.
+    """Recursively build a tileset node for ``contributing``, writing one content file per tile.
 
-    A group larger than ``max_per_tile`` is split into XY quadrants (children); a group at or below
-    it — or one that cannot be split further (all objects in one quadrant) — is a leaf with its own
-    content file (``encode`` → bytes, named ``content_<n><suffix>``). ``counter`` numbers the leaf
-    content files across the whole tree.
+    A group larger than ``max_per_tile`` is split into XY quadrants (children); a group at or below it —
+    or one that cannot be split further (all objects in one quadrant) — is a leaf with its own content
+    file (``encode`` → bytes, named ``content_<n><suffix>``). ``counter`` numbers the content files.
+
+    With ``simplify`` (a ratio) set, an interior tile also gets **simplified** content — its objects'
+    geometry vertex-clustered to a cell of ``diagonal * simplify`` — and the tree refines ``REPLACE`` so
+    a client shows the coarse interior tile until a child replaces it with finer geometry (true LOD).
+    Without it the interior tiles are empty and refinement is ``ADD`` (the original behaviour).
     """
     all_rings = [ring for _city_object, rings in contributing for ring in rings]
     minima, maxima = _bounds(all_rings)
     diagonal = math.sqrt(sum((maxima[axis] - minima[axis]) ** 2 for axis in range(3)))
     node: dict[str, Any] = {
         "boundingVolume": {"box": _bounding_box(minima, maxima)},
-        "refine": "ADD",
+        "refine": "REPLACE" if simplify is not None else "ADD",
     }
     quadrants = (
         _split_xy(contributing, minima, maxima)
         if len(contributing) > max_per_tile
         else [contributing]
     )
-    if len(quadrants) > 1:  # genuinely subdivided
+    if len(quadrants) > 1:  # genuinely subdivided — an interior node
         node["geometricError"] = diagonal
+        if simplify is not None and diagonal > 0:
+            coarse = _write_tile_content(
+                _simplify_rings(contributing, diagonal * simplify),
+                target,
+                counter,
+                encode,
+                suffix,
+            )
+            if coarse is not None:
+                node["content"] = coarse
         node["children"] = [
-            _build_tile(quadrant, target, counter, max_per_tile, encode, suffix)
+            _build_tile(
+                quadrant, target, counter, max_per_tile, encode, suffix, simplify
+            )
             for quadrant in quadrants
         ]
     else:  # leaf (the finest LOD → geometricError 0)
         node["geometricError"] = 0.0
-        content = encode(contributing)
+        content = _write_tile_content(contributing, target, counter, encode, suffix)
         if content is not None:
-            name = f"content_{counter[0]}{suffix}"
-            counter[0] += 1
-            (target / name).write_bytes(content)
-            node["content"] = {"uri": name}
+            node["content"] = content
     return node
 
 
@@ -1214,6 +1274,77 @@ def _validate_implicit_args(scheme: str, max_objects_per_tile: int | None) -> No
         )
 
 
+def _validate_simplify(simplify: float | None, implicit_tiling: bool) -> None:
+    """Validate the ``simplify`` LOD ratio: positive, and only in the explicit multi-tile mode."""
+    if simplify is None:
+        return
+    if simplify <= 0:
+        raise ValueError(f"simplify must be a positive ratio, got {simplify!r}")
+    if implicit_tiling:
+        raise ValueError(
+            "simplify (per-level LOD) is only supported for the explicit multi-tile mode "
+            "(max_objects_per_tile set, implicit_tiling=False)"
+        )
+
+
+def _write_single_tile(
+    contributing: _Contributing,
+    target: Path,
+    encode: Any,
+    suffix: str,
+    version: str,
+    simplify: float | None,
+) -> dict[str, Any]:
+    """Write one ``content`` tile (none for an empty model) and return its single-tile tileset."""
+    if simplify is not None and contributing:
+        warnings.warn(
+            "simplify had no effect: it builds per-level LOD only in the explicit multi-tile mode, "
+            "but this model wrote a single tile (set max_objects_per_tile below the object count to "
+            "subdivide). Pre-simplify with CityModel.simplify(cell) for a single coarse tile.",
+            UserWarning,
+            stacklevel=3,
+        )
+    tile = encode(contributing)
+    content_name = f"content{suffix}"
+    content_uri = content_name if tile is not None else None
+    # An empty model has no content and no glTF features, so it stays a trivial 1.0 tileset.
+    tileset = _tileset_from_rings(
+        contributing, content_uri, _asset(version) if tile is not None else None
+    )
+    if tile is not None:
+        (target / content_name).write_bytes(tile)
+    return tileset
+
+
+def _build_tileset_document(
+    contributing: _Contributing,
+    target: Path,
+    max_objects_per_tile: int | None,
+    implicit_tiling: bool,
+    scheme: str,
+    encode: Any,
+    suffix: str,
+    version: str,
+    simplify: float | None,
+) -> dict[str, Any]:
+    """Dispatch to the implicit / explicit-multi-tile / single-tile writer and return its tileset."""
+    if implicit_tiling and contributing:
+        target_per_tile = 64 if max_objects_per_tile is None else max_objects_per_tile
+        return _write_implicit(
+            contributing, target, scheme, target_per_tile, encode, suffix
+        )
+    if max_objects_per_tile is not None and len(contributing) > max_objects_per_tile:
+        root = _build_tile(
+            contributing, target, [0], max_objects_per_tile, encode, suffix, simplify
+        )
+        return {
+            "asset": _asset(version),
+            "geometricError": root["geometricError"],
+            "root": root,
+        }
+    return _write_single_tile(contributing, target, encode, suffix, version, simplify)
+
+
 def write_3dtiles(
     model: CityModel,
     directory: Any,
@@ -1222,6 +1353,7 @@ def write_3dtiles(
     scheme: str = "quadtree",
     content: str = "b3dm",
     metadata: str = "json",
+    simplify: float | None = None,
 ) -> dict[str, Any]:
     """Write ``model`` as a 3D Tiles tileset into ``directory``.
 
@@ -1260,8 +1392,13 @@ def write_3dtiles(
     another becomes a FLOAT64 column, so those ints read back as floats). ``metadata`` is ignored for
     ``content="b3dm"`` (which uses its own columnar batch table); an unknown value raises ``ValueError``.
 
-    Geometry is passed through per tile (no per-tile LOD/simplification), and the output round-trips
-    through this package's own 3D-Tiles reader in every mode.
+    By default geometry is passed through per tile at full detail. Passing ``simplify`` (a ratio) turns
+    the **explicit multi-tile** tree into a real **level-of-detail** tree: each interior tile carries a
+    *simplified* copy of its subtree (vertices clustered to a cell of ``diagonal * simplify``) and the
+    tree refines ``REPLACE``, so a client shows the coarse interior tile until a child replaces it with
+    finer geometry — the finest leaves stay full-detail. ``simplify`` applies only to the explicit
+    multi-tile mode (it raises with ``implicit_tiling``, and a single tile has no levels to coarsen). The
+    output round-trips through this package's own 3D-Tiles reader in every mode.
 
     Implicit-tiling limits (in addition to the plain-geometry limits above): objects are binned to a
     cell by their **centroid** and the per-cell bounding box is **not** written — a 1.1 viewer derives
@@ -1284,6 +1421,9 @@ def write_3dtiles(
         content: Tile-content format — ``"b3dm"`` (default) or ``"gltf"`` (3D Tiles 1.1 ``.glb``).
         metadata: glTF metadata shape — ``"json"`` (default, one JSON blob) or ``"typed"`` (per-attribute
             typed ``EXT_structural_metadata`` columns). Applies only to ``content="gltf"``.
+        simplify: A positive ratio enabling per-level LOD in the explicit multi-tile mode — each interior
+            tile's geometry is vertex-clustered to a cell of ``diagonal * simplify`` (e.g. ``0.02``);
+            ``None`` (default) keeps full-detail, ``ADD``-refined tiles. Raises with ``implicit_tiling``.
 
     Returns:
         The written ``tileset.json`` document.
@@ -1348,6 +1488,7 @@ def write_3dtiles(
             ```
     """
     encode, suffix, version = _content_format(content, metadata)
+    _validate_simplify(simplify, implicit_tiling)
     if implicit_tiling:
         # Validated here (not in _write_implicit) so the contract is the same for an empty model, which
         # never reaches _write_implicit.
@@ -1360,30 +1501,17 @@ def write_3dtiles(
         # Fail before writing any file: the explicit/implicit writers emit content per leaf, so a
         # per-tile encode error partway through would otherwise orphan .glb files with no tileset.json.
         _validate_gltf_encodable(contributing)
-    if implicit_tiling and contributing:
-        target_per_tile = 64 if max_objects_per_tile is None else max_objects_per_tile
-        tileset = _write_implicit(
-            contributing, target, scheme, target_per_tile, encode, suffix
-        )
-    elif max_objects_per_tile is not None and len(contributing) > max_objects_per_tile:
-        root = _build_tile(
-            contributing, target, [0], max_objects_per_tile, encode, suffix
-        )
-        tileset = {
-            "asset": _asset(version),
-            "geometricError": root["geometricError"],
-            "root": root,
-        }
-    else:
-        tile = encode(contributing)
-        content_name = f"content{suffix}"
-        content_uri = content_name if tile is not None else None
-        # An empty model has no content and no glTF features, so it stays a trivial 1.0 tileset.
-        tileset = _tileset_from_rings(
-            contributing, content_uri, _asset(version) if tile is not None else None
-        )
-        if tile is not None:
-            (target / content_name).write_bytes(tile)
+    tileset = _build_tileset_document(
+        contributing,
+        target,
+        max_objects_per_tile,
+        implicit_tiling,
+        scheme,
+        encode,
+        suffix,
+        version,
+        simplify,
+    )
     (target / "tileset.json").write_text(
         json.dumps(tileset, ensure_ascii=False, indent=2), encoding="utf-8"
     )

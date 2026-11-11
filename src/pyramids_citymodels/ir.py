@@ -456,7 +456,13 @@ class CityModel:
 
         return write_jsonfg(self, path)
 
-    def to_obj(self, path: Any = None, materials: bool = False) -> str | None:
+    def to_obj(
+        self,
+        path: Any = None,
+        materials: bool = False,
+        embed_textures: bool = False,
+        texture_base: Any = None,
+    ) -> str | None:
         """Serialize this model to Wavefront OBJ (see :func:`.writers.obj.write_obj`).
 
         A mesh export (feature #14): each surface's exterior ring becomes one face. With
@@ -483,10 +489,14 @@ class CityModel:
         """
         from pyramids_citymodels.writers.obj import write_obj
 
-        return write_obj(self, path, materials)
+        return write_obj(self, path, materials, embed_textures, texture_base)
 
     def to_gltf(
-        self, path: Any = None, materials: bool = False
+        self,
+        path: Any = None,
+        materials: bool = False,
+        embed_textures: bool = False,
+        texture_base: Any = None,
     ) -> "dict[str, Any] | None":
         """Serialize this model to glTF 2.0 (see :func:`.writers.gltf.write_gltf`).
 
@@ -525,7 +535,7 @@ class CityModel:
         """
         from pyramids_citymodels.writers.gltf import write_gltf
 
-        return write_gltf(self, path, materials)
+        return write_gltf(self, path, materials, embed_textures, texture_base)
 
     def translate(self, offset: "tuple[float, ...]") -> "CityModel":
         """A new model with every coordinate shifted by ``offset`` per axis (geometry cleanup, #17).
@@ -559,6 +569,33 @@ class CityModel:
 
         return clean_rings(self)
 
+    def simplify(self, cell_size: float) -> "CityModel":
+        """A coarser new model with vertices clustered to a ``cell_size`` grid (see :func:`.transform.simplify`).
+
+        A lossy, stdlib-only LOD decimation (vertex clustering): coordinates snap to the grid so nearby
+        vertices merge, a surface that collapses below three distinct vertices is **dropped** (its
+        semantic value dropped too, keeping ``semantic_values`` aligned), and per-geometry appearance is
+        dropped (clustering invalidates texture UVs). Each coordinate moves at most ``cell_size / 2`` per
+        axis, and re-simplifying at the same ``cell_size`` is a no-op.
+
+        Args:
+            cell_size: The clustering grid cell size in the model's own units (must be positive).
+
+        Examples:
+            - Vertices within one cell merge, shrinking a surface's vertex count:
+                ```python
+                >>> surface = [[(0.0, 0.0, 0.0), (0.4, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+                >>> model.simplify(1.0).objects["b"].geometries[0].boundaries[0][0]
+                [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]
+
+                ```
+        """
+        from pyramids_citymodels.transform import simplify
+
+        return simplify(self, cell_size)
+
     def triangulate(self) -> "CityModel":
         """A new model with every surface fan-triangulated into triangles (see :func:`.transform.triangulate`).
 
@@ -579,7 +616,13 @@ class CityModel:
 
         return triangulate(self)
 
-    def to_collada(self, path: Any = None, materials: bool = False) -> str | None:
+    def to_collada(
+        self,
+        path: Any = None,
+        materials: bool = False,
+        embed_textures: bool = False,
+        texture_base: Any = None,
+    ) -> str | None:
         """Serialize this model to COLLADA 1.4.1 ``.dae`` (see :func:`.writers.collada.write_collada`).
 
         A triangulated mesh export (feature #14). With ``materials=False`` (default) it is positions-only;
@@ -605,7 +648,7 @@ class CityModel:
         """
         from pyramids_citymodels.writers.collada import write_collada
 
-        return write_collada(self, path, materials)
+        return write_collada(self, path, materials, embed_textures, texture_base)
 
     def to_kml(self, path: Any = None) -> str | None:
         """Serialize this model to KML (see :func:`.writers.kml.write_kml`).
@@ -637,6 +680,7 @@ class CityModel:
         scheme: str = "quadtree",
         content: str = "b3dm",
         metadata: str = "json",
+        simplify: float | None = None,
     ) -> "dict[str, Any]":
         """Write this model as a 3D Tiles tileset into ``directory``.
 
@@ -661,6 +705,9 @@ class CityModel:
             metadata: glTF metadata shape — ``"json"`` (default, one JSON blob) or ``"typed"``
                 (per-attribute typed ``EXT_structural_metadata`` columns). Applies only to
                 ``content="gltf"``.
+            simplify: A positive ratio enabling per-level LOD in the explicit multi-tile mode (interior
+                tiles carry geometry vertex-clustered to ``diagonal * simplify``); ``None`` (default)
+                keeps full-detail tiles. Raises with ``implicit_tiling``.
 
         Returns:
             The written ``tileset.json`` document.
@@ -702,6 +749,7 @@ class CityModel:
             scheme,
             content,
             metadata,
+            simplify,
         )
 
     def to_file(self, path: Any) -> "dict[str, Any] | str | None":

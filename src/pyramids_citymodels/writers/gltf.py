@@ -255,11 +255,15 @@ class _GltfBuilder:
         materials_pool: list[Any],
         textures_pool: list[Any],
         uv_pool: list[Any],
+        embed_textures: bool = False,
+        texture_base: Any = None,
     ) -> None:
         self.translate = translate
         self._materials_pool = materials_pool
         self._textures_pool = textures_pool
         self._uv_pool = uv_pool
+        self._embed = embed_textures
+        self._texture_base = texture_base
         self.buffer = b""
         self.buffer_views: list[dict[str, Any]] = []
         self.accessors: list[dict[str, Any]] = []
@@ -298,12 +302,23 @@ class _GltfBuilder:
         if not image:
             return None
         if source not in self._texture_by_source:
-            # Percent-encode unsafe characters (e.g. spaces) while preserving URL/path structure and
-            # any existing escapes (``%`` is in the safe set), so a path never yields an invalid URI.
-            self.images.append({"uri": quote(image, safe="/:?#[]@!$&'()*+,;=~-._%")})
+            self.images.append({"uri": self._image_uri(image)})
             self.textures.append({"source": len(self.images) - 1, "sampler": 0})
             self._texture_by_source[source] = len(self.textures) - 1
         return self._texture_by_source[source]
+
+    def _image_uri(self, image: str) -> str:
+        """The ``image.uri`` for a texture — an embedded base64 ``data:`` URI, or a percent-encoded path.
+
+        With ``embed_textures`` and a readable local image, the bytes are embedded so the ``.gltf`` is
+        self-contained; otherwise (default, or an unreadable / remote image) the CityJSON ``image`` is
+        percent-encoded (spaces etc.) while preserving URL/path structure and existing escapes.
+        """
+        if self._embed:
+            resolved = _appearance.resolve_image(image, self._texture_base)
+            if resolved is not None:
+                return _appearance.data_uri(resolved)
+        return quote(image, safe="/:?#[]@!$&'()*+,;=~-._%")
 
     def _material_index(
         self,
@@ -396,13 +411,16 @@ class _GltfBuilder:
         return document
 
 
-def _build_textured_gltf(model: CityModel) -> dict[str, Any]:
+def _build_textured_gltf(
+    model: CityModel, embed_textures: bool = False, texture_base: Any = None
+) -> dict[str, Any]:
     """Build a glTF document carrying IR appearances (feature #14) — PBR materials + textures.
 
     Surfaces are grouped by ``(material, texture)`` into one primitive each; a material's
     ``baseColorFactor`` comes from the CityJSON ``diffuseColor`` and a texture contributes
-    ``TEXCOORD_0`` (from the ``vertices-texture`` UV pool) + a ``baseColorTexture`` whose image is
-    referenced by its CityJSON ``image`` URI. A group with neither is a plain-geometry primitive.
+    ``TEXCOORD_0`` (from the ``vertices-texture`` UV pool) + a ``baseColorTexture``. With
+    ``embed_textures`` a readable local image is embedded as a base64 ``data:`` URI (self-contained
+    glTF); otherwise the image is referenced by its CityJSON ``image`` URI.
     """
     groups = _appearance.collect_groups(model)
     all_positions = [
@@ -416,6 +434,8 @@ def _build_textured_gltf(model: CityModel) -> dict[str, Any]:
         model.appearances.get("materials") or [],
         model.appearances.get("textures") or [],
         model.appearances.get("vertices-texture") or [],
+        embed_textures,
+        texture_base,
     )
     for group_key, rings in groups.items():
         builder.add_group(group_key, rings)
@@ -423,7 +443,11 @@ def _build_textured_gltf(model: CityModel) -> dict[str, Any]:
 
 
 def write_gltf(
-    model: CityModel, path: Any = None, materials: bool = False
+    model: CityModel,
+    path: Any = None,
+    materials: bool = False,
+    embed_textures: bool = False,
+    texture_base: Any = None,
 ) -> dict[str, Any] | None:
     """Serialize a :class:`~pyramids_citymodels.ir.CityModel` to a self-contained glTF 2.0 document.
 
@@ -434,8 +458,10 @@ def write_gltf(
     With ``materials=True`` the model's **appearances are carried into the glTF**: surfaces are grouped
     by their ``(material, texture)`` into one primitive each, a material's ``baseColorFactor`` comes from
     the CityJSON ``diffuseColor``, and a texture adds a ``TEXCOORD_0`` attribute (from the
-    ``vertices-texture`` UV pool) plus a ``baseColorTexture`` whose image is referenced by its CityJSON
-    ``image`` URI (not embedded). A model with no appearances yields the same single positions-only
+    ``vertices-texture`` UV pool) plus a ``baseColorTexture``. By default the texture image is referenced
+    by its CityJSON ``image`` URI; with ``embed_textures`` a readable local image is **embedded** as a
+    base64 ``data:`` URI so the ``.gltf`` is self-contained (an unreadable / remote image falls back to a
+    URI reference, never a crash). A model with no appearances yields the same single positions-only
     primitive as the default. See the module docstring for the documented limits.
 
     Args:
@@ -443,6 +469,10 @@ def write_gltf(
         path: A path to write the ``.gltf`` JSON to, or ``None`` to return the document dict.
         materials: Carry IR appearances (PBR materials + textures) into the glTF rather than writing a
             positions-only mesh.
+        embed_textures: Embed each readable local texture image as a base64 ``data:`` URI (self-contained
+            output) instead of referencing it by URI. Only meaningful with ``materials=True``.
+        texture_base: Directory that relative ``image`` paths resolve against when embedding (defaults to
+            the current directory; pass the directory the texture images actually live in).
 
     Returns:
         The glTF document as a ``dict`` when ``path`` is ``None``; otherwise ``None``.
@@ -483,7 +513,10 @@ def write_gltf(
 
             ```
     """
-    document = _build_textured_gltf(model) if materials else _build_gltf(model)
+    if materials:
+        document = _build_textured_gltf(model, embed_textures, texture_base)
+    else:
+        document = _build_gltf(model)
     if path is None:
         return document
     with open(path, "w", encoding="utf-8") as handle:
