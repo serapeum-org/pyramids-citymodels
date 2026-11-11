@@ -106,16 +106,101 @@ def clean_rings(model: CityModel) -> CityModel:
     )
 
 
+def grid_snapper(cell_size: float) -> "Callable[[Any], tuple[float, ...]]":
+    """A function snapping a coordinate to the nearest ``cell_size`` grid point (for vertex clustering)."""
+
+    def snap(point: Any) -> tuple[float, ...]:
+        return tuple(
+            round(float(component) / cell_size) * cell_size for component in point
+        )
+
+    return snap
+
+
+def cluster_ring(
+    ring: list[Any], snap: "Callable[[Any], tuple[float, ...]]"
+) -> list[Any]:
+    """Snap a ring to the grid, dropping consecutive duplicates and a trailing vertex equal to the first.
+
+    Shared by :func:`simplify` and the 3D-Tiles per-level LOD builder so the two cannot drift. The result
+    is an **open** ring (no closing duplicate); a ring with fewer than three distinct vertices has
+    collapsed and the caller drops its surface.
+    """
+    cleaned: list[Any] = []
+    for point in ring:
+        snapped = snap(point)
+        if not cleaned or snapped != cleaned[-1]:
+            cleaned.append(snapped)
+    while len(cleaned) > 1 and cleaned[-1] == cleaned[0]:
+        cleaned.pop()
+    return cleaned
+
+
+def _distinct_count(ring: list[Any]) -> int:
+    """The number of distinct vertices in a ring."""
+    return len({tuple(point) for point in ring})
+
+
+def _is_ring(node: Any) -> bool:
+    """True when ``node`` is a ring — a non-empty list whose children are all coordinates."""
+    return isinstance(node, list) and bool(node) and all(is_coordinate(c) for c in node)
+
+
+def _is_surface_node(node: Any) -> bool:
+    """True when ``node`` is a surface — a non-empty list whose children are all rings."""
+    return isinstance(node, list) and bool(node) and all(_is_ring(r) for r in node)
+
+
+def _prune_surfaces(
+    boundary: Any, semantic: Any, snap: "Callable[[Any], tuple[float, ...]]"
+) -> tuple[Any, Any] | None:
+    """Cluster every ring and drop collapsed surfaces, keeping ``semantic_values`` aligned.
+
+    Returns ``(new_boundary, new_semantic)`` with each surface's rings clustered, a surface whose
+    exterior ring falls below three distinct vertices dropped (together with its parallel semantic
+    value), and any degenerate interior ring (hole) dropped; or ``None`` when the whole node collapses to
+    nothing (every descendant surface dropped).
+    """
+    if _is_surface_node(boundary):
+        rings = [cluster_ring(ring, snap) for ring in boundary]
+        if _distinct_count(rings[0]) < 3:
+            return None
+        kept = [rings[0]] + [r for r in rings[1:] if _distinct_count(r) >= 3]
+        return kept, semantic
+    if not isinstance(boundary, list):
+        return boundary, semantic
+    aligned = isinstance(semantic, list) and len(semantic) == len(boundary)
+    paired = (
+        zip(boundary, semantic) if aligned else zip(boundary, [None] * len(boundary))
+    )
+    new_boundary: list[Any] = []
+    new_semantic: list[Any] = []
+    for child_boundary, child_semantic in paired:
+        pruned = _prune_surfaces(child_boundary, child_semantic, snap)
+        if pruned is not None:
+            kept_boundary, kept_semantic = pruned
+            new_boundary.append(kept_boundary)
+            new_semantic.append(kept_semantic)
+    if not new_boundary:
+        return None
+    return new_boundary, (new_semantic if aligned else semantic)
+
+
 def simplify(model: CityModel, cell_size: float) -> CityModel:
     """A coarser new model: vertices clustered to a ``cell_size`` grid (lossy LOD decimation).
 
     Vertex clustering is the stdlib-only mesh-simplification route (quadric/edge-collapse decimation
     would need a third-party dependency). Every coordinate is snapped to the nearest ``cell_size`` grid
-    point, so vertices within one cell merge; consecutive duplicate ring vertices are then dropped. A
-    surface whose exterior ring collapses below three distinct vertices becomes a degenerate ring that
-    the mesh writers (glTF / OBJ / COLLADA / 3D Tiles) already skip, so the exported mesh carries fewer
-    vertices and triangles. Each coordinate moves at most ``cell_size / 2`` per axis (a bounded error),
-    and a second ``simplify`` at the same ``cell_size`` is a no-op (idempotent).
+    point, so vertices within one cell merge and consecutive duplicate ring vertices are dropped. A
+    surface whose exterior ring then has fewer than three distinct vertices has **collapsed** and is
+    **dropped** (its parallel semantic value dropped too, so ``semantic_values`` stays aligned), so the
+    result is clean geometry for *every* writer — not a degenerate ring that only the mesh writers skip.
+    Each coordinate moves at most ``cell_size / 2`` per axis (a bounded error), and a second ``simplify``
+    at the same ``cell_size`` is a no-op (idempotent).
+
+    Per-geometry **appearance is dropped** (like :func:`triangulate`): clustering changes a ring's vertex
+    count, which invalidates the per-vertex texture-coordinate correspondence, so it cannot be carried
+    faithfully. Semantic surface types are kept (re-aligned to the surviving surfaces).
 
     Args:
         model: The city model to decimate.
@@ -130,25 +215,19 @@ def simplify(model: CityModel, cell_size: float) -> CityModel:
     """
     if cell_size <= 0:
         raise ValueError(f"cell_size must be positive, got {cell_size!r}")
+    snap = grid_snapper(cell_size)
 
-    def snap(point: Any) -> tuple[float, ...]:
-        return tuple(
-            round(float(component) / cell_size) * cell_size for component in point
+    def decimate(geometry: Geometry) -> Geometry:
+        pruned = _prune_surfaces(geometry.boundaries, geometry.semantic_values, snap)
+        boundaries, semantic_values = pruned if pruned is not None else ([], None)
+        return replace(
+            geometry,
+            boundaries=boundaries,
+            semantic_values=semantic_values,
+            appearance=None,
         )
 
-    def dedupe(ring: list[Any]) -> list[Any]:
-        cleaned: list[Any] = []
-        for point in ring:
-            if not cleaned or tuple(point) != tuple(cleaned[-1]):
-                cleaned.append(point)
-        return cleaned
-
-    return _rebuild(
-        model,
-        lambda g: replace(
-            g, boundaries=_map_rings(_map_coordinates(g.boundaries, snap), dedupe)
-        ),
-    )
+    return _rebuild(model, decimate)
 
 
 def _open_ring(ring: list[Any]) -> list[Any]:

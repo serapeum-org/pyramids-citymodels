@@ -904,29 +904,21 @@ def _split_xy(
 def _simplify_rings(contributing: _Contributing, cell_size: float) -> _Contributing:
     """Vertex-cluster every object's rings to a ``cell_size`` grid for a coarse LOD tile (snap + dedup).
 
-    Each coordinate snaps to the grid so nearby vertices merge; consecutive duplicates are dropped and a
+    Uses the shared :func:`pyramids_citymodels.transform.cluster_ring` (snap to grid, drop consecutive
+    duplicates and a trailing vertex equal to the first) so it cannot drift from ``CityModel.simplify``; a
     ring that collapses below three vertices is removed, as is an object left with no ring — so a coarse
     tile carries fewer vertices (and fewer features) than the full detail below it.
     """
+    from pyramids_citymodels.transform import cluster_ring, grid_snapper
 
-    def snap(point: tuple[float, float, float]) -> tuple[float, float, float]:
-        return (
-            round(point[0] / cell_size) * cell_size,
-            round(point[1] / cell_size) * cell_size,
-            round(point[2] / cell_size) * cell_size,
-        )
-
+    snap = grid_snapper(cell_size)
     simplified: _Contributing = []
     for city_object, rings in contributing:
-        kept: list[list[tuple[float, float, float]]] = []
-        for ring in rings:
-            snapped: list[tuple[float, float, float]] = []
-            for point in ring:
-                clustered = snap(point)
-                if not snapped or clustered != snapped[-1]:
-                    snapped.append(clustered)
-            if len(snapped) >= 3:
-                kept.append(snapped)
+        kept = [
+            clustered
+            for ring in rings
+            if len(clustered := cluster_ring(ring, snap)) >= 3
+        ]
         if kept:
             simplified.append((city_object, kept))
     return simplified

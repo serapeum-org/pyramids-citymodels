@@ -98,9 +98,11 @@ class TestSimplify:
         )
         simplified = model.simplify(2.0).objects["b"].geometries[0].boundaries[0][0]
         for point in simplified:
-            assert all(abs(component) % 2.0 == 0.0 for component in point), (
-                f"{point} not on the grid"
-            )
+            for axis in range(3):
+                closest = min(abs(point[axis] - original[axis]) for original in ring)
+                assert closest <= 1.0, (
+                    f"axis {axis} of {point} moved more than cell/2 (1.0): {closest}"
+                )
 
     def test_is_idempotent_at_the_same_cell_size(self):
         """Re-simplifying at the same cell size changes nothing.
@@ -114,6 +116,60 @@ class TestSimplify:
         assert (
             once.objects["o0"].geometries[0].boundaries
             == twice.objects["o0"].geometries[0].boundaries
+        )
+
+    def test_collapsed_surface_is_dropped_not_left_degenerate(self):
+        """A surface that clusters below 3 distinct vertices is dropped, not kept as a degenerate ring (M1).
+
+        Test scenario:
+            A thin triangle collapses to a line at cell 1.0; the simplified model has no surface, so a
+            non-mesh writer (CityJSON) emits no degenerate polygon.
+        """
+        ring = [(0.0, 0.0, 0.0), (0.3, 0.0, 0.0), (0.6, 0.0, 0.0)]
+        model = CityModel(
+            objects={
+                "b": CityObject(
+                    id="b",
+                    type="Building",
+                    geometries=[
+                        Geometry(type="MultiSurface", lod="2", boundaries=[[ring]])
+                    ],
+                )
+            }
+        )
+        simplified = model.simplify(1.0)
+        assert simplified.objects["b"].geometries[0].boundaries == [], (
+            "the collapsed surface must be dropped"
+        )
+        document = simplified.to_cityjson()
+        geometries = document["CityObjects"]["b"]["geometry"]
+        assert all(not g.get("boundaries") for g in geometries), (
+            "no degenerate polygon may be emitted"
+        )
+
+    def test_surface_dropped_keeps_semantic_values_aligned(self):
+        """Dropping a collapsed surface drops its semantic value too, keeping the arrays aligned.
+
+        Test scenario:
+            Two surfaces, the first collapses; the survivor keeps its own semantic value (not the dropped
+            one's), so semantics stay aligned with boundaries.
+        """
+        thin = [(0.0, 0.0, 0.0), (0.3, 0.0, 0.0), (0.6, 0.0, 0.0)]  # collapses
+        wide = [(0.0, 0.0, 0.0), (5.0, 0.0, 0.0), (5.0, 5.0, 0.0)]  # survives
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[[thin], [wide]],
+            semantics=[],
+            semantic_values=[0, 1],
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])}
+        )
+        result = model.simplify(1.0).objects["b"].geometries[0]
+        assert len(result.boundaries) == 1, "only the surviving surface remains"
+        assert result.semantic_values == [1], (
+            "the survivor's semantic value is kept, aligned"
         )
 
     def test_non_positive_cell_size_raises(self):
@@ -153,18 +209,17 @@ class TestSimplify:
 class TestTilesetLOD:
     """Tests for ``to_3dtiles(simplify=...)`` per-level LOD."""
 
-    def _write_lod(self, ratio: float = 0.1) -> tuple[dict, Path]:
-        out = Path(tempfile.mkdtemp())
+    def _write_lod(self, out: Path, ratio: float = 0.1) -> tuple[dict, Path]:
         tileset = _grid_model(8).to_3dtiles(out, max_objects_per_tile=2, simplify=ratio)
         return tileset, out
 
-    def test_interior_tiles_carry_simplified_content_and_replace_refine(self):
+    def test_interior_tiles_carry_simplified_content_and_replace_refine(self, tmp_path):
         """With ``simplify`` the root is a REPLACE interior tile that carries content.
 
         Test scenario:
             The subdivided root refines REPLACE and has its own (coarse) content, unlike the default.
         """
-        tileset, _out = self._write_lod()
+        tileset, _out = self._write_lod(tmp_path)
         root = tileset["root"]
         assert root["refine"] == "REPLACE", "an LOD tree refines REPLACE"
         assert "content" in root, (
@@ -172,25 +227,23 @@ class TestTilesetLOD:
         )
         assert "children" in root, "the root is subdivided"
 
-    def test_default_is_add_with_empty_interior(self):
+    def test_default_is_add_with_empty_interior(self, tmp_path):
         """Without ``simplify`` the tree keeps the original ADD refinement and empty interior tiles.
 
         Test scenario:
             The default multi-tile write refines ADD and the subdivided root has no content.
         """
-        tileset = _grid_model(8).to_3dtiles(
-            Path(tempfile.mkdtemp()), max_objects_per_tile=2
-        )
+        tileset = _grid_model(8).to_3dtiles(tmp_path, max_objects_per_tile=2)
         assert tileset["root"]["refine"] == "ADD", "default refinement is ADD"
         assert "content" not in tileset["root"], "default interior tiles are empty"
 
-    def test_lod_tileset_round_trips_without_duplicates(self):
+    def test_lod_tileset_round_trips_without_duplicates(self, tmp_path):
         """Reading an LOD tileset yields each feature once (the reader skips superseded coarse tiles).
 
         Test scenario:
             The 8-object LOD tileset reads back as exactly 8 objects, with no duplicate-feature warning.
         """
-        _tileset, out = self._write_lod()
+        _tileset, out = self._write_lod(tmp_path)
         with warnings.catch_warnings():
             warnings.simplefilter(
                 "error"
@@ -198,24 +251,24 @@ class TestTilesetLOD:
             back = parse_3dtiles(str(out / "tileset.json"))
         assert len(back.objects) == 8, f"expected 8 features, got {len(back.objects)}"
 
-    def test_simplify_with_implicit_tiling_raises(self):
+    def test_simplify_with_implicit_tiling_raises(self, tmp_path):
         """``simplify`` is unsupported with implicit tiling and raises.
 
         Test scenario:
             Combining ``simplify`` with ``implicit_tiling=True`` is rejected with a clear message.
         """
-        out = Path(tempfile.mkdtemp())
+        model = _grid_model(8)
         with pytest.raises(
             ValueError, match="only supported for the explicit multi-tile mode"
         ):
-            _grid_model(8).to_3dtiles(out, implicit_tiling=True, simplify=0.1)
+            model.to_3dtiles(tmp_path, implicit_tiling=True, simplify=0.1)
 
-    def test_non_positive_simplify_raises(self):
+    def test_non_positive_simplify_raises(self, tmp_path):
         """A non-positive ``simplify`` ratio is rejected.
 
         Test scenario:
             ``simplify=0`` raises ``ValueError``.
         """
-        out = Path(tempfile.mkdtemp())
+        model = _grid_model(8)
         with pytest.raises(ValueError, match="simplify must be a positive ratio"):
-            _grid_model(8).to_3dtiles(out, max_objects_per_tile=2, simplify=0)
+            model.to_3dtiles(tmp_path, max_objects_per_tile=2, simplify=0)
