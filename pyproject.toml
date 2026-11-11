@@ -34,12 +34,17 @@ requires-python = ">= 3.11, <4"
 # drivers build on.
 dependencies = [
     # `pyramids-core` is the PyPI distribution name; the import stays `pyramids`.
-    # Floor is 0.72.0 — the first release whose `FeatureCollection.read_file`
-    # actually consults the `pyramids.vector_drivers` entry-point group (the
-    # `feature/_drivers.py` registry). Earlier releases register these drivers but
-    # never dispatch to them, so `read_file("x.city.json")` would silently fall
-    # through to OGR; 0.72.0 is what makes the dispatch real (#19).
-    "pyramids-core >=0.72.0",
+    # The dispatch floor is 0.72.0 — the first release whose
+    # `FeatureCollection.read_file` actually consults the `pyramids.vector_drivers`
+    # entry-point group (the `feature/_drivers.py` registry). Earlier releases
+    # register these drivers but never dispatch to them, so `read_file("x.city.json")`
+    # would silently fall through to OGR; 0.72.0 is what makes the dispatch real (#19).
+    # Floor is held at 0.77.0 — the release this package is built and tested against.
+    # The consumed surface (vendored-osgeo activation on `import pyramids`, the
+    # `FeatureCollection` constructor / `read_file` / `clip_by_rect`, and the
+    # `pyramids.vector_drivers` api_version=1 driver contract) is unchanged from
+    # 0.72.0 through 0.77.0; none of 0.73–0.77's renames/deprecations touches it.
+    "pyramids-core >=0.77.0",
     "numpy >=2.0.0",
     # Declared because `flatten.py` imports them directly to build the feature
     # table (shapely geometries, a GeoDataFrame the `FeatureCollection` wraps).
