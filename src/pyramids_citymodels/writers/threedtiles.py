@@ -515,6 +515,36 @@ def _boolean_blob(values: list[bool]) -> bytes:
     return bytes(packed)
 
 
+def _scalar_blob(column: list[Any], component: str) -> bytes:
+    """Pack a numeric column as little-endian ``INT64`` / ``FLOAT64`` ``EXT_structural_metadata`` values."""
+    fmt = _SCALAR_FORMATS[component]
+    packed = [int(v) if component == "INT64" else float(v) for v in column]
+    return b"".join(struct.pack("<" + fmt, value) for value in packed)
+
+
+def _select_typed_keys(
+    features: list[CityObject], metadata: str
+) -> dict[str, tuple[str, str]]:
+    """Attribute keys to promote to typed columns (typed mode only): dense, uniform clean scalar, not reserved.
+
+    A key qualifies only when it is present on **every** feature with a uniform clean scalar type
+    (:func:`_scalar_kind`) and is not a reserved property name (``id`` / ``type`` / ``attributes``) — a
+    reserved-name column would overwrite the identity column or JSON blob. Everything else stays in the
+    JSON blob, so promotion is lossless.
+    """
+    if metadata != "typed":
+        return {}
+    typed_keys: dict[str, tuple[str, str]] = {}
+    for key in sorted({name for co in features for name in co.attributes}):
+        if key in _RESERVED_PROPERTIES:
+            continue
+        if all(key in co.attributes for co in features):
+            kind = _scalar_kind([co.attributes[key] for co in features])
+            if kind is not None:
+                typed_keys[key] = kind
+    return typed_keys
+
+
 def _structural_metadata(
     contributing: _Contributing,
     base_offset: int,
@@ -542,19 +572,7 @@ def _structural_metadata(
         ``(binary, buffer_views, schema, property_table)``.
     """
     features = [city_object for city_object, _rings in contributing]
-    typed_keys: dict[str, tuple[str, str]] = {}
-    if metadata == "typed":
-        for key in sorted({name for co in features for name in co.attributes}):
-            # Never promote a user key named like a reserved property (id / type / attributes): a typed
-            # column of that name would overwrite the reserved identity column or the JSON blob and be
-            # silently lost (and corrupt the feature's id/type). Leaving it in the blob round-trips it
-            # losslessly (the blob is a JSON object that can hold the key).
-            if key in _RESERVED_PROPERTIES:
-                continue
-            if all(key in co.attributes for co in features):
-                kind = _scalar_kind([co.attributes[key] for co in features])
-                if kind is not None:
-                    typed_keys[key] = kind
+    typed_keys = _select_typed_keys(features, metadata)
     leftover = [
         {name: value for name, value in co.attributes.items() if name not in typed_keys}
         for co in features
@@ -562,6 +580,8 @@ def _structural_metadata(
 
     binary = b""
     buffer_views: list[dict[str, Any]] = []
+    properties: dict[str, Any] = {}
+    schema_properties: dict[str, Any] = {}
 
     def add_view(blob: bytes, align: int) -> int:
         nonlocal binary
@@ -587,16 +607,9 @@ def _structural_metadata(
             "stringOffsetType": "UINT32",
         }
 
-    properties: dict[str, Any] = {}
-    schema_properties: dict[str, Any] = {}
-    for name, values in (
-        ("id", [co.id for co in features]),
-        ("type", [co.type for co in features]),
-    ):
-        properties[name] = string_property(values)
-        schema_properties[name] = {"type": "STRING"}
-    for key, (ptype, component) in typed_keys.items():
-        column = [co.attributes[key] for co in features]
+    def add_typed_column(
+        key: str, column: list[Any], ptype: str, component: str
+    ) -> None:
         if ptype == "BOOLEAN":
             properties[key] = {"values": add_view(_boolean_blob(column), 1)}
             schema_properties[key] = {"type": "BOOLEAN"}
@@ -604,14 +617,22 @@ def _structural_metadata(
             properties[key] = string_property(column)
             schema_properties[key] = {"type": "STRING"}
         else:  # SCALAR INT64 / FLOAT64
-            fmt = _SCALAR_FORMATS[component]
-            size = struct.calcsize("<" + fmt)
-            packed = [int(v) if component == "INT64" else float(v) for v in column]
-            blob = b"".join(struct.pack("<" + fmt, value) for value in packed)
-            properties[key] = {"values": add_view(blob, size)}
+            size = struct.calcsize("<" + _SCALAR_FORMATS[component])
+            properties[key] = {
+                "values": add_view(_scalar_blob(column, component), size)
+            }
             schema_properties[key] = {"type": "SCALAR", "componentType": component}
+
+    for name, values in (
+        ("id", [co.id for co in features]),
+        ("type", [co.type for co in features]),
+    ):
+        properties[name] = string_property(values)
+        schema_properties[name] = {"type": "STRING"}
+    for key, (ptype, component) in typed_keys.items():
+        add_typed_column(key, [co.attributes[key] for co in features], ptype, component)
     # The JSON attributes blob: always in json mode; in typed mode only when a leftover key remains.
-    if metadata == "json" or any(row for row in leftover):
+    if metadata == "json" or any(leftover):
         blobs = [
             json.dumps(row, ensure_ascii=False, sort_keys=True, allow_nan=False)
             for row in leftover
