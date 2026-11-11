@@ -148,6 +148,94 @@ class TestObjEmbedding:
         )
 
 
+class TestEmbedCollisions:
+    """Tests that basename collisions / pre-existing files are not clobbered (M2, L1)."""
+
+    def _two_texture_model(self) -> CityModel:
+        """Two surfaces, each textured by a different texture whose images share the basename wall.png."""
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[
+                [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]],
+                [[(2.0, 0.0, 0.0), (3.0, 0.0, 0.0), (3.0, 1.0, 0.0)]],
+            ],
+            appearance={"texture": {"": {"values": [[[0, 0, 1, 2]], [[1, 0, 1, 2]]]}}},
+        )
+        return CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "textures": [{"image": "a/wall.png"}, {"image": "b/wall.png"}],
+                "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            },
+        )
+
+    def test_same_basename_textures_do_not_clobber(self, tmp_path):
+        """Two images named ``wall.png`` from different dirs are copied to distinct files (M2).
+
+        Test scenario:
+            ``a/wall.png`` (b"AAAA") and ``b/wall.png`` (b"BBBB") both embed; the output keeps both
+            distinct, and the two ``map_Kd`` references point at different files.
+        """
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        (tmp_path / "a" / "wall.png").write_bytes(b"AAAA")
+        (tmp_path / "b" / "wall.png").write_bytes(b"BBBB")
+        out = tmp_path / "out"
+        out.mkdir()
+        write_obj(
+            self._two_texture_model(),
+            out / "m.obj",
+            materials=True,
+            embed_textures=True,
+            texture_base=tmp_path,
+        )
+        refs = [
+            line.split()[1]
+            for line in (out / "m.mtl").read_text().splitlines()
+            if line.startswith("map_Kd")
+        ]
+        assert len(set(refs)) == 2, (
+            f"two distinct textures must map to two distinct files, got {refs}"
+        )
+        copied = {(out / ref).read_bytes() for ref in refs}
+        assert copied == {b"AAAA", b"BBBB"}, (
+            "both source images must survive distinctly"
+        )
+
+    def test_pre_existing_file_is_not_overwritten(self, tmp_path):
+        """A texture does not clobber an unrelated pre-existing file of the same name (L1).
+
+        Test scenario:
+            ``out/wall.png`` already holds user data; embedding a different ``wall.png`` writes a
+            disambiguated name and leaves the user file intact.
+        """
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "wall.png").write_bytes(b"NEW")
+        out = tmp_path / "out"
+        out.mkdir()
+        (out / "wall.png").write_bytes(b"EXISTING_USER_FILE")
+        write_obj(
+            _textured_model(),
+            out / "m.obj",
+            materials=True,
+            embed_textures=True,
+            texture_base=src,
+        )
+        assert (out / "wall.png").read_bytes() == b"EXISTING_USER_FILE", (
+            "the pre-existing file must be kept"
+        )
+        ref = next(
+            line.split()[1]
+            for line in (out / "m.mtl").read_text().splitlines()
+            if line.startswith("map_Kd")
+        )
+        assert (out / ref).read_bytes() == b"NEW", (
+            "the texture must be written under a disambiguated name"
+        )
+
+
 class TestColladaEmbedding:
     """Tests for COLLADA texture copying."""
 

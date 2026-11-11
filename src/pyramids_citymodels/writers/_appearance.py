@@ -205,9 +205,35 @@ def data_uri(path: Path) -> str:
     return f"data:{mime};base64,{encoded}"
 
 
-def copy_image(path: Path, out_dir: Path) -> str:
-    """Copy an image file beside the output (``out_dir``) and return the basename to reference it by."""
-    destination = out_dir / path.name
-    if path.resolve() != destination.resolve():
-        shutil.copyfile(path, destination)
-    return path.name
+class ImageCopier:
+    """Copies texture images beside an output file, disambiguating basename collisions.
+
+    Dedupes by resolved source path (one source is copied once), and never overwrites a file it did not
+    write (a pre-existing file, or a different source that shares a basename, is given a disambiguated
+    ``<stem>_<n><suffix>`` name instead). So two textures named ``wall.png`` from different directories —
+    or an output directory that already holds an unrelated ``wall.png`` — don't clobber each other.
+    """
+
+    def __init__(self, out_dir: Path) -> None:
+        self._out_dir = out_dir
+        self._by_source: dict[Path, str] = {}
+
+    def copy(self, source: Path) -> str:
+        """Copy ``source`` beside the output under a collision-free basename and return that basename."""
+        resolved = source.resolve()
+        if resolved in self._by_source:
+            return self._by_source[resolved]
+        name = self._unique_name(source)
+        shutil.copyfile(source, self._out_dir / name)
+        self._by_source[resolved] = name
+        return name
+
+    def _unique_name(self, source: Path) -> str:
+        assigned = set(self._by_source.values())
+        candidate = source.name
+        counter = 1
+        # Avoid a name already assigned this run, and any file already in the output dir we didn't write.
+        while candidate in assigned or (self._out_dir / candidate).exists():
+            candidate = f"{source.stem}_{counter}{source.suffix}"
+            counter += 1
+        return candidate

@@ -281,12 +281,14 @@ def _effect(effects: ElementTree.Element, group: _Group, model: CityModel) -> No
         ElementTree.SubElement(diffuse, "color").text = " ".join(repr(c) for c in color)
 
 
-def _init_from(image: str, embed: bool, out_dir: Path | None, texture_base: Any) -> str:
-    """The ``<init_from>`` image reference — a basename copied beside the ``.dae`` (embed), else verbatim."""
-    if embed and out_dir is not None:
+def _init_from(
+    image: str, copier: "_appearance.ImageCopier | None", texture_base: Any
+) -> str:
+    """The ``<init_from>`` image reference — a collision-free name copied beside the ``.dae``, else verbatim."""
+    if copier is not None:
         resolved = _appearance.resolve_image(image, texture_base)
         if resolved is not None:
-            return _appearance.copy_image(resolved, out_dir)
+            return copier.copy(resolved)
     return image
 
 
@@ -294,8 +296,7 @@ def _material_libraries(
     collada: ElementTree.Element,
     groups: list[_Group],
     model: CityModel,
-    embed: bool = False,
-    out_dir: Path | None = None,
+    copier: "_appearance.ImageCopier | None" = None,
     texture_base: Any = None,
 ) -> None:
     """Append ``<library_images>`` / ``<library_effects>`` / ``<library_materials>`` for the groups."""
@@ -315,7 +316,7 @@ def _material_libraries(
             image.set("id", f"img_{texture_index}")
             reference = _appearance.texture_image(texture_index, textures_pool) or ""
             ElementTree.SubElement(image, "init_from").text = _init_from(
-                reference, embed, out_dir, texture_base
+                reference, copier, texture_base
             )
     effects = ElementTree.SubElement(collada, "library_effects")
     materials = ElementTree.SubElement(collada, "library_materials")
@@ -459,10 +460,9 @@ def write_collada(
     up_axis.text = "Z_UP"
     if materials:
         out_dir = Path(path).parent if (embed_textures and path is not None) else None
+        copier = _appearance.ImageCopier(out_dir) if out_dir is not None else None
         positions, uvs, groups = _appearance_mesh(model)
-        _material_libraries(
-            collada, groups, model, embed_textures, out_dir, texture_base
-        )
+        _material_libraries(collada, groups, model, copier, texture_base)
         _textured_geometry_library(collada, positions, uvs, groups)
     else:
         positions, triangles = _mesh(model)
