@@ -153,38 +153,64 @@ class _Group:
         return self.image is not None
 
 
+class _MeshPool:
+    """Deduplicating position + texcoord pools, shared across a materialled COLLADA mesh."""
+
+    def __init__(self) -> None:
+        self.positions: list[tuple[float, float, float]] = []
+        self.uvs: list[Any] = []
+        self._pos: dict[tuple[float, float, float], int] = {}
+        self._uv: dict[Any, int] = {}
+
+    def position(self, coordinate: Any) -> int:
+        key = xyz(coordinate)
+        index = self._pos.get(key)
+        if index is None:
+            index = len(self.positions)
+            self._pos[key] = index
+            self.positions.append(key)
+        return index
+
+    def texcoord(self, uv: Any) -> int:
+        index = self._uv.get(uv)
+        if index is None:
+            index = len(self.uvs)
+            self._uv[uv] = index
+            self.uvs.append(uv)
+        return index
+
+    def fan(
+        self,
+        ring: list[Any],
+        uv_indices: list[int] | None,
+        textured: bool,
+        uv_pool: list[Any],
+    ) -> list[tuple[int, ...]]:
+        """Fan-triangulate one ring into ``(position[, uv])`` corner triples, interning as it goes."""
+        corners: list[tuple[int, ...]] = []
+        for vertex, coordinate in enumerate(ring):
+            if textured and uv_indices is not None:
+                uv = _appearance.ring_uv(uv_pool, uv_indices, vertex)
+                corners.append((self.position(coordinate), self.texcoord(uv)))
+            else:
+                corners.append((self.position(coordinate),))
+        triples: list[tuple[int, ...]] = []
+        for apex in range(1, len(corners) - 1):  # fan from the first vertex
+            triples.extend((corners[0], corners[apex], corners[apex + 1]))
+        return triples
+
+
 def _appearance_mesh(
     model: CityModel,
 ) -> tuple[list[tuple[float, float, float]], list[Any], list[_Group]]:
     """Fan-triangulate the model into shared ``positions`` + ``uvs`` and one :class:`_Group` per appearance.
 
-    Positions and UVs are deduplicated across the whole model; each group records its triangle corners
-    as ``(position_index[, uv_index])`` tuples and the material/texture it binds.
+    Positions and UVs are deduplicated across the whole model (via :class:`_MeshPool`); each group records
+    its triangle corners as ``(position_index[, uv_index])`` tuples and the material/texture it binds.
     """
     textures_pool = model.appearances.get("textures") or []
     uv_pool = model.appearances.get("vertices-texture") or []
-    positions: list[tuple[float, float, float]] = []
-    uvs: list[Any] = []
-    pos_index: dict[tuple[float, float, float], int] = {}
-    uv_index: dict[Any, int] = {}
-
-    def position(coordinate: Any) -> int:
-        key = xyz(coordinate)
-        index = pos_index.get(key)
-        if index is None:
-            index = len(positions)
-            pos_index[key] = index
-            positions.append(key)
-        return index
-
-    def texcoord(uv: Any) -> int:
-        index = uv_index.get(uv)
-        if index is None:
-            index = len(uvs)
-            uv_index[uv] = index
-            uvs.append(uv)
-        return index
-
+    pool = _MeshPool()
     groups: list[_Group] = []
     for (material_index, texture_index), rings in _appearance.collect_groups(
         model
@@ -194,17 +220,9 @@ def _appearance_mesh(
         if material_index is not None or texture_index is not None:
             group.symbol = f"sym_{len(groups)}"
         for ring, uv_indices in rings:
-            corners: list[tuple[int, ...]] = []
-            for vertex, coordinate in enumerate(ring):
-                if group.textured and uv_indices is not None:
-                    uv = _appearance.ring_uv(uv_pool, uv_indices, vertex)
-                    corners.append((position(coordinate), texcoord(uv)))
-                else:
-                    corners.append((position(coordinate),))
-            for apex in range(1, len(corners) - 1):  # fan from the first vertex
-                group.corners.extend((corners[0], corners[apex], corners[apex + 1]))
+            group.corners.extend(pool.fan(ring, uv_indices, group.textured, uv_pool))
         groups.append(group)
-    return positions, uvs, groups
+    return pool.positions, pool.uvs, groups
 
 
 def _float_source(
