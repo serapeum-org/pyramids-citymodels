@@ -559,6 +559,31 @@ class CityModel:
 
         return clean_rings(self)
 
+    def simplify(self, cell_size: float) -> "CityModel":
+        """A coarser new model with vertices clustered to a ``cell_size`` grid (see :func:`.transform.simplify`).
+
+        A lossy, stdlib-only LOD decimation (vertex clustering): coordinates snap to the grid so nearby
+        vertices merge, and surfaces that collapse are dropped by the mesh writers. Each coordinate moves
+        at most ``cell_size / 2`` per axis, and re-simplifying at the same ``cell_size`` is a no-op.
+
+        Args:
+            cell_size: The clustering grid cell size in the model's own units (must be positive).
+
+        Examples:
+            - Vertices within one cell merge, so a thin feature collapses (fewer distinct vertices):
+                ```python
+                >>> surface = [[(0.0, 0.0, 0.0), (0.4, 0.0, 0.0), (1.0, 1.0, 0.0)]]
+                >>> model = CityModel(objects={"b": CityObject(id="b", type="Building",
+                ...     geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[surface])])})
+                >>> model.simplify(1.0).objects["b"].geometries[0].boundaries[0][0]
+                [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0)]
+
+                ```
+        """
+        from pyramids_citymodels.transform import simplify
+
+        return simplify(self, cell_size)
+
     def triangulate(self) -> "CityModel":
         """A new model with every surface fan-triangulated into triangles (see :func:`.transform.triangulate`).
 
@@ -637,6 +662,7 @@ class CityModel:
         scheme: str = "quadtree",
         content: str = "b3dm",
         metadata: str = "json",
+        simplify: float | None = None,
     ) -> "dict[str, Any]":
         """Write this model as a 3D Tiles tileset into ``directory``.
 
@@ -661,6 +687,9 @@ class CityModel:
             metadata: glTF metadata shape — ``"json"`` (default, one JSON blob) or ``"typed"``
                 (per-attribute typed ``EXT_structural_metadata`` columns). Applies only to
                 ``content="gltf"``.
+            simplify: A positive ratio enabling per-level LOD in the explicit multi-tile mode (interior
+                tiles carry geometry vertex-clustered to ``diagonal * simplify``); ``None`` (default)
+                keeps full-detail tiles. Raises with ``implicit_tiling``.
 
         Returns:
             The written ``tileset.json`` document.
@@ -702,6 +731,7 @@ class CityModel:
             scheme,
             content,
             metadata,
+            simplify,
         )
 
     def to_file(self, path: Any) -> "dict[str, Any] | str | None":

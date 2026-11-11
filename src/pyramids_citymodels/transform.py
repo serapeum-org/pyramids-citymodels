@@ -106,6 +106,51 @@ def clean_rings(model: CityModel) -> CityModel:
     )
 
 
+def simplify(model: CityModel, cell_size: float) -> CityModel:
+    """A coarser new model: vertices clustered to a ``cell_size`` grid (lossy LOD decimation).
+
+    Vertex clustering is the stdlib-only mesh-simplification route (quadric/edge-collapse decimation
+    would need a third-party dependency). Every coordinate is snapped to the nearest ``cell_size`` grid
+    point, so vertices within one cell merge; consecutive duplicate ring vertices are then dropped. A
+    surface whose exterior ring collapses below three distinct vertices becomes a degenerate ring that
+    the mesh writers (glTF / OBJ / COLLADA / 3D Tiles) already skip, so the exported mesh carries fewer
+    vertices and triangles. Each coordinate moves at most ``cell_size / 2`` per axis (a bounded error),
+    and a second ``simplify`` at the same ``cell_size`` is a no-op (idempotent).
+
+    Args:
+        model: The city model to decimate.
+        cell_size: The clustering grid cell size in the model's own units (must be positive); larger is
+            coarser.
+
+    Returns:
+        A new :class:`~pyramids_citymodels.ir.CityModel` with clustered geometry (inputs untouched).
+
+    Raises:
+        ValueError: If ``cell_size`` is not positive.
+    """
+    if cell_size <= 0:
+        raise ValueError(f"cell_size must be positive, got {cell_size!r}")
+
+    def snap(point: Any) -> tuple[float, ...]:
+        return tuple(
+            round(float(component) / cell_size) * cell_size for component in point
+        )
+
+    def dedupe(ring: list[Any]) -> list[Any]:
+        cleaned: list[Any] = []
+        for point in ring:
+            if not cleaned or tuple(point) != tuple(cleaned[-1]):
+                cleaned.append(point)
+        return cleaned
+
+    return _rebuild(
+        model,
+        lambda g: replace(
+            g, boundaries=_map_rings(_map_coordinates(g.boundaries, snap), dedupe)
+        ),
+    )
+
+
 def _open_ring(ring: list[Any]) -> list[Any]:
     """Drop a ring's closing duplicate vertex (``last == first``)."""
     if len(ring) > 1 and tuple(ring[0]) == tuple(ring[-1]):

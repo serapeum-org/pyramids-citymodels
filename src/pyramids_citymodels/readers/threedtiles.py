@@ -1126,6 +1126,7 @@ def _walk_tileset(
     objects: dict[str, CityObject],
     counter: list[int],
     selector: "ObjectFilter | None" = None,
+    refine: str = "ADD",
 ) -> None:
     """Depth-first walk of a tileset tree, decoding each tile's content into ``objects``.
 
@@ -1135,8 +1136,15 @@ def _walk_tileset(
     decode skipped (the read-time bbox prefilter, see :func:`_tile_content_outside_bbox`); the walk
     still recurses into that tile's children, since a child's bounding volume need not nest inside
     its parent's, so skipping a whole subtree could drop an in-bbox descendant.
+
+    ``refine`` is the inherited refinement (``"ADD"`` / ``"REPLACE"``; a tile's own ``refine`` overrides
+    it for its subtree). A ``"REPLACE"`` tile that has children is a **coarser LOD** its children
+    supersede, so its own content is **not** decoded — only the finest tiles (leaves, and ``"ADD"``
+    tiles) contribute geometry. This keeps an LOD tileset (interior tiles carrying simplified copies)
+    from reading the same feature at several levels of detail.
     """
     here = _tile_transform(tile, transform)
+    effective_refine = str(tile.get("refine") or refine).upper()
     implicit_tiling = tile.get("implicitTiling")
     if implicit_tiling and base is not None:
         # An implicit tile's content.uri is a *template*, not a file; expand the subtree(s) instead of
@@ -1155,9 +1163,12 @@ def _walk_tileset(
         return
     content = tile.get("content") or {}
     uri = content.get("uri") or content.get("url")
+    # A REPLACE tile with children is a coarser LOD superseded by those children — skip its own content.
+    superseded = effective_refine == "REPLACE" and bool(tile.get("children"))
     if (
         uri
         and base is not None
+        and not superseded
         and not _tile_content_outside_bbox(tile, here, selector)
     ):
         if "://" in str(uri):
@@ -1172,7 +1183,9 @@ def _walk_tileset(
         else:
             _decode_content(base / uri, here, up_axis, objects, counter, selector)
     for child in tile.get("children", []):
-        _walk_tileset(child, base, here, up_axis, objects, counter, selector)
+        _walk_tileset(
+            child, base, here, up_axis, objects, counter, selector, effective_refine
+        )
 
 
 def _decode_content(
