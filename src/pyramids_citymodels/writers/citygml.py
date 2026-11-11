@@ -21,14 +21,17 @@ contract is:
   ``gen:measureAttribute`` (whose value legally carries the ``uom``). A surface's **material**
   (``app:X3DMaterial``) and **texture** (``app:ParameterizedTexture`` — image plus per-ring
   ``textureCoordinates``, each ``app:theme`` an ``app:Appearance`` targeting the polygon's ``gml:id``)
-  survive, as does the material ``name`` (a free-form ``gml:name``). The appearance *pool* itself does
-  not survive a CityGML round-trip: CityGML has no flat **indexed** appearance pool (a surface
-  references its material by ``gml:id``, not by a pool index), so the pool **index values** cannot be
-  preserved and are recompacted on re-read. This writer also does not preserve an **unpainted** pool
-  entry — it is dropped rather than emitted as an orphan ``app:surfaceDataMember`` (that could carry
-  one, so composition is a possible follow-up, but index values would still not survive). (The CityJSON
-  writer, whose format *does* have an indexed pool, re-emits it verbatim — composition and index values
-  survive a CityJSON round-trip; see #60.) The **version** round-trips for a ``1.0``/``2.0``/``3.0``
+  survive, as does the material ``name`` (a free-form ``gml:name``). Each distinct painted pool entry is
+  emitted **once** per theme (an ``app:X3DMaterial`` / ``app:ParameterizedTexture`` with one
+  ``app:target`` per painted polygon — shared, never inlined per surface) and, since #75, **in pool-index
+  order**, so a CityJSON→CityGML→CityJSON round-trip preserves the painted pool's *relative* composition
+  (the re-read pool lists the painted entries in their original order) and its sharing. What CityGML
+  still cannot carry — a **documented residual** — is the pool's **absolute index values** (CityGML
+  references a material by ``gml:id`` per theme, not by a global pool index, so a gap left by an unused
+  index is recompacted away) and an **unpainted** pool entry (referenced by no surface, it has no
+  ``gml:id`` anchor in any theme's ``app:Appearance`` and is dropped). (The CityJSON writer, whose format
+  *does* have an indexed pool, re-emits it verbatim — composition and absolute index values survive a
+  CityJSON round-trip; see #60.) The **version** round-trips for a ``1.0``/``2.0``/``3.0``
   source. 1.0/2.0 use the ``<module>:boundedBy`` structure on GML 3.1.1; **3.0** emits valid CityGML
   3.0 — ``core:boundary`` → ``con:<Surface>`` (the Construction module) → ``core:lod{n}MultiSurface``
   on GML 3.2 — for the building + common-object model this writer covers (3.0's wider space/versioning
@@ -626,9 +629,18 @@ class _Appearances:
     def _emit_materials(
         self, ns: dict[str, str], appearance: ElementTree.Element, theme: str
     ) -> bool:
-        """Append this theme's ``app:X3DMaterial`` surface-data members; return whether any was added."""
+        """Append this theme's ``app:X3DMaterial`` surface-data members; return whether any was added.
+
+        Materials are emitted in **pool-index order** (not first-painted order) so that a
+        CityJSON→CityGML→CityJSON round-trip preserves the pool's *relative* composition — the re-read
+        pool lists the painted materials in their original order. (CityGML references a material by
+        ``gml:id`` per theme, not by a global pool index, so the absolute index values and any pool entry
+        no surface references cannot be carried — a documented residual; see the module docstring.)
+        """
+        targets = self._material_targets.get(theme, {})
         painted = False
-        for index, polygon_ids in self._material_targets.get(theme, {}).items():
+        for index in sorted(targets):
+            polygon_ids = targets[index]
             if not 0 <= index < len(self._materials):
                 warnings.warn(
                     f"CityGML writer: material index {index} is out of range for the "
@@ -646,9 +658,15 @@ class _Appearances:
     def _emit_textures(
         self, ns: dict[str, str], appearance: ElementTree.Element, theme: str
     ) -> bool:
-        """Append this theme's ``app:ParameterizedTexture`` surface-data members; return whether any."""
+        """Append this theme's ``app:ParameterizedTexture`` surface-data members; return whether any.
+
+        Emitted in pool-index order (like the materials) so the re-read texture pool keeps the painted
+        textures in their original relative order.
+        """
+        targets = self._texture_targets.get(theme, {})
         painted = False
-        for texture_index, target_list in self._texture_targets.get(theme, {}).items():
+        for texture_index in sorted(targets):
+            target_list = targets[texture_index]
             texture = self._textures[texture_index]
             if not texture.get("image"):
                 warnings.warn(
