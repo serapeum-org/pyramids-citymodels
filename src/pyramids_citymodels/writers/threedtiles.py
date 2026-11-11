@@ -43,6 +43,7 @@ import functools
 import json
 import math
 import struct
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -1446,6 +1447,14 @@ def write_3dtiles(
             "root": root,
         }
     else:
+        if simplify is not None and contributing:
+            warnings.warn(
+                "simplify had no effect: it builds per-level LOD only in the explicit multi-tile mode, "
+                "but this model wrote a single tile (set max_objects_per_tile below the object count to "
+                "subdivide). Pre-simplify with CityModel.simplify(cell) for a single coarse tile.",
+                UserWarning,
+                stacklevel=2,
+            )
         tile = encode(contributing)
         content_name = f"content{suffix}"
         content_uri = content_name if tile is not None else None

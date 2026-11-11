@@ -188,6 +188,11 @@ def resolve_image(image: str, base: Any) -> Path | None:
     Used by the ``embed_textures`` option: an absolute URL (``scheme://``) is not read (no network I/O),
     and a path that does not resolve to a readable file returns ``None`` so the caller falls back to a
     plain URI reference. Relative paths resolve against ``base`` (the texture base dir, or the cwd).
+
+    Note: ``embed_textures`` reads whatever local file the CityJSON ``image`` field points at, including
+    an **absolute** path (which ignores ``base``) or one that escapes ``base`` with ``..`` — the document's
+    own texture references are trusted. It is opt-in, so embed only models whose ``image`` paths you
+    trust; leave it off (the default, reference-only) to avoid reading any image file.
     """
     if not image or "://" in str(image):
         return None

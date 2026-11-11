@@ -263,6 +263,17 @@ class TestTilesetLOD:
         ):
             model.to_3dtiles(tmp_path, implicit_tiling=True, simplify=0.1)
 
+    def test_simplify_without_subdivision_warns(self, tmp_path):
+        """``simplify`` on a model that writes a single tile warns that it had no effect (L3).
+
+        Test scenario:
+            With no ``max_objects_per_tile`` the model is one tile, so there is no interior level to
+            coarsen — ``simplify`` is a silent no-op unless the writer warns.
+        """
+        model = _grid_model(4)
+        with pytest.warns(UserWarning, match="simplify had no effect"):
+            model.to_3dtiles(tmp_path, simplify=0.1)
+
     def test_non_positive_simplify_raises(self, tmp_path):
         """A non-positive ``simplify`` ratio is rejected.
 
