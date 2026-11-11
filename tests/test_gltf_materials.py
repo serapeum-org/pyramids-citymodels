@@ -507,6 +507,30 @@ class TestTextures:
             f"both primitives should point at the one material, got {mats}"
         )
 
+    def test_boolean_uv_pool_entry_is_untextured(self):
+        """A boolean ``vertices-texture`` entry is not a UV, so the surface meshes untextured (R2-N1).
+
+        Test scenario:
+            A ``[True, False]`` pool entry is rejected by ``_is_uv`` (bool excluded), so no TEXCOORD_0.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle()],
+            appearance={"texture": {"": {"values": [[[0, 0, 1, 2]]]}}},
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "textures": [{"type": "PNG", "image": "wall.png"}],
+                "vertices-texture": [[True, False], [1.0, 0.0], [1.0, 1.0]],
+            },
+        )
+        document = write_gltf(model, materials=True)
+        assert (
+            "TEXCOORD_0" not in document["meshes"][0]["primitives"][0]["attributes"]
+        ), "a boolean UV pool entry must fall back to untextured"
+
     def test_image_uri_is_percent_encoded(self):
         """A texture image path with a space is percent-encoded into a valid glTF URI (N2).
 

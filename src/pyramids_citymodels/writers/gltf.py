@@ -190,11 +190,18 @@ def _appearance_values(geometry: Geometry, kind: str, default_theme: Any) -> Any
 
 
 def _is_uv(point: Any) -> bool:
-    """True when ``point`` is a 2-component numeric ``vertices-texture`` entry (packable as ``<2f``)."""
+    """True when ``point`` is a 2-component real ``vertices-texture`` entry (packable as ``<2f``).
+
+    ``bool`` is excluded though it is an ``int`` subclass, for parity with the writer's ``_scalar_kind``
+    — a boolean is not a texture coordinate.
+    """
     return (
         isinstance(point, (list, tuple))
         and len(point) == 2
-        and all(isinstance(component, (int, float)) for component in point)
+        and all(
+            isinstance(component, (int, float)) and not isinstance(component, bool)
+            for component in point
+        )
     )
 
 
@@ -326,7 +333,9 @@ def _base_color(diffuse: Any) -> list[float]:
     glTF 2.0 requires ``baseColorFactor`` to hold exactly four numbers in ``[0, 1]``. A ``diffuseColor``
     that is not a non-empty numeric sequence falls back to the default opaque grey; otherwise its first
     three components (padded with 0.0 if short) are clamped to ``[0, 1]`` and an opaque alpha appended,
-    so a malformed-length or out-of-range colour can never produce a spec-invalid factor.
+    so a malformed-length or out-of-range colour can never produce a spec-invalid factor. CityJSON
+    ``diffuseColor`` is RGB, so alpha is always ``1.0`` and a 4th-or-later component of a non-spec value
+    is ignored (a NaN clamps to 0.0, since ``max(0.0, nan)`` returns 0.0 — no non-finite ever leaks).
     """
     if (
         not isinstance(diffuse, (list, tuple))
