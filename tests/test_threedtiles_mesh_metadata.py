@@ -318,6 +318,35 @@ class TestTypedMetadata:
             "floors must stay int through implicit tiling"
         )
 
+    def test_user_attribute_named_attributes_round_trips_in_typed_mode(self):
+        """A user key literally named ``attributes`` is not clobbered by the JSON-blob property (H1).
+
+        Test scenario:
+            Both features carry a string attribute ``attributes``; typed mode must keep it in the JSON
+            blob (never promote it to a column that the reserved blob then overwrites), so it round-trips.
+        """
+        model = CityModel(
+            objects={
+                "o0": CityObject(
+                    id="o0",
+                    type="Building",
+                    attributes={"attributes": "USERVAL0", "sparse": "s0"},
+                    geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[_square(0, 0)])],
+                ),
+                "o1": CityObject(
+                    id="o1",
+                    type="Building",
+                    attributes={"attributes": "USERVAL1"},
+                    geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[_square(50, 50)])],
+                ),
+            }
+        )
+        out = Path(tempfile.mkdtemp())
+        model.to_3dtiles(out, content="gltf", metadata="typed")
+        back = {o.id: o for o in parse_3dtiles(str(out / "tileset.json")).objects.values()}
+        assert back["o0"].attributes["attributes"] == "USERVAL0", "user 'attributes' key must survive"
+        assert back["o1"].attributes["attributes"] == "USERVAL1", "user 'attributes' key must survive"
+
     def test_invalid_metadata_value_raises(self):
         """An unknown ``metadata`` value raises ``ValueError`` before anything is written.
 

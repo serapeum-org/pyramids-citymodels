@@ -536,6 +536,11 @@ def _structural_metadata(
     typed_keys: dict[str, tuple[str, str]] = {}
     if metadata == "typed":
         for key in sorted({name for co in features for name in co.attributes}):
+            # Never promote a user key named like the reserved JSON-blob property: it would collide
+            # with the leftover blob (same property name) and be silently overwritten. Leaving it in
+            # the blob round-trips it losslessly (the blob is a JSON object that can hold the key).
+            if key == _ATTRIBUTES_PROPERTY:
+                continue
             if all(key in co.attributes for co in features):
                 kind = _scalar_kind([co.attributes[key] for co in features])
                 if kind is not None:
