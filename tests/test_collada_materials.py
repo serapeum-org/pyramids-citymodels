@@ -13,32 +13,9 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 
 from pyramids_citymodels.ir import CityModel, CityObject, Geometry
 from pyramids_citymodels.writers.collada import write_collada
-
-
-def _triangle(x: float = 0.0) -> list[list[tuple[float, float, float]]]:
-    """A single triangular surface offset along x."""
-    return [[(x, 0.0, 0.0), (x + 1.0, 0.0, 0.0), (x + 1.0, 1.0, 0.0)]]
-
-
-def _material_model(
-    diffuse: list[float] | None = None, image: str | None = None
-) -> CityModel:
-    """A one-surface model referencing material 0 (optionally textured by texture 0)."""
-    appearance: dict = {"material": {"": {"values": [0]}}}
-    appearances: dict = {
-        "materials": [{"name": "m", **({"diffuseColor": diffuse} if diffuse else {})}]
-    }
-    if image is not None:
-        appearance["texture"] = {"": {"values": [[[0, 0, 1, 2]]]}}
-        appearances["textures"] = [{"type": "PNG", "image": image}]
-        appearances["vertices-texture"] = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
-    geometry = Geometry(
-        type="MultiSurface", lod="2", boundaries=[_triangle()], appearance=appearance
-    )
-    return CityModel(
-        objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
-        appearances=appearances,
-    )
+from tests._mesh_appearance import material_model as _material_model
+from tests._mesh_appearance import triangle as _triangle
+from tests._mesh_appearance import two_material_model
 
 
 class TestColladaDefault:
@@ -94,9 +71,8 @@ class TestColladaMaterials:
             _material_model([0.0, 0.0, 1.0], image="wall.png"), materials=True
         )
         minidom.parseString(dae)
-        assert "library_images" in dae and "wall.png" in dae, (
-            "the texture image must be declared"
-        )
+        assert "library_images" in dae, "the texture must declare a library image"
+        assert "wall.png" in dae, "the image URI must be present"
         assert 'semantic="TEXCOORD"' in dae, (
             "a textured triangles needs a TEXCOORD input"
         )
@@ -114,22 +90,7 @@ class TestColladaMaterials:
             Surface 0 -> red, surface 1 -> blue; the mesh has two ``<triangles material=...>`` and two
             ``<material>`` definitions.
         """
-        geometry = Geometry(
-            type="MultiSurface",
-            lod="2",
-            boundaries=[_triangle(0.0), _triangle(5.0)],
-            appearance={"material": {"": {"values": [0, 1]}}},
-        )
-        model = CityModel(
-            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
-            appearances={
-                "materials": [
-                    {"name": "red", "diffuseColor": [1.0, 0.0, 0.0]},
-                    {"name": "blue", "diffuseColor": [0.0, 0.0, 1.0]},
-                ]
-            },
-        )
-        dae = write_collada(model, materials=True)
+        dae = write_collada(two_material_model(), materials=True)
         document = minidom.parseString(dae)
         assert len(document.getElementsByTagName("triangles")) == 2, (
             "expected one triangles per material"

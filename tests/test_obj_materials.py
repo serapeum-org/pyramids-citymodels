@@ -17,11 +17,9 @@ import pytest
 
 from pyramids_citymodels.ir import CityModel, CityObject, Geometry
 from pyramids_citymodels.writers.obj import write_obj
-
-
-def _triangle(x: float = 0.0) -> list[list[tuple[float, float, float]]]:
-    """A single triangular surface offset along x."""
-    return [[(x, 0.0, 0.0), (x + 1.0, 0.0, 0.0), (x + 1.0, 1.0, 0.0)]]
+from tests._mesh_appearance import material_model as _material_model
+from tests._mesh_appearance import triangle as _triangle
+from tests._mesh_appearance import two_material_model
 
 
 def _write(model: CityModel) -> tuple[str, str | None]:
@@ -30,27 +28,6 @@ def _write(model: CityModel) -> tuple[str, str | None]:
     write_obj(model, out, materials=True)
     mtl = out.with_suffix(".mtl")
     return out.read_text(), (mtl.read_text() if mtl.exists() else None)
-
-
-def _material_model(
-    diffuse: list[float] | None = None, image: str | None = None
-) -> CityModel:
-    """A one-surface model referencing material 0 (optionally textured by texture 0)."""
-    appearance: dict = {"material": {"": {"values": [0]}}}
-    appearances: dict = {
-        "materials": [{"name": "m", **({"diffuseColor": diffuse} if diffuse else {})}]
-    }
-    if image is not None:
-        appearance["texture"] = {"": {"values": [[[0, 0, 1, 2]]]}}
-        appearances["textures"] = [{"type": "PNG", "image": image}]
-        appearances["vertices-texture"] = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
-    geometry = Geometry(
-        type="MultiSurface", lod="2", boundaries=[_triangle()], appearance=appearance
-    )
-    return CityModel(
-        objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
-        appearances=appearances,
-    )
 
 
 class TestPlainDefault:
@@ -104,26 +81,10 @@ class TestObjMaterials:
         Test scenario:
             Surface 0 -> red, surface 1 -> blue; the .mtl declares mat_0 and mat_1, both used.
         """
-        geometry = Geometry(
-            type="MultiSurface",
-            lod="2",
-            boundaries=[_triangle(0.0), _triangle(5.0)],
-            appearance={"material": {"": {"values": [0, 1]}}},
-        )
-        model = CityModel(
-            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
-            appearances={
-                "materials": [
-                    {"name": "red", "diffuseColor": [1.0, 0.0, 0.0]},
-                    {"name": "blue", "diffuseColor": [0.0, 0.0, 1.0]},
-                ]
-            },
-        )
-        obj, mtl = _write(model)
+        obj, mtl = _write(two_material_model())
         assert mtl.count("newmtl ") == 2, f"expected two materials, got:\n{mtl}"
-        assert "usemtl mat_0" in obj and "usemtl mat_1" in obj, (
-            "both material groups must be selected"
-        )
+        assert "usemtl mat_0" in obj, "material group 0 must be selected"
+        assert "usemtl mat_1" in obj, "material group 1 must be selected"
 
     def test_mixed_model_emits_plain_faces_before_any_usemtl(self):
         """An unthemed surface in a mixed model is not left under a prior ``usemtl`` (M1).
@@ -194,8 +155,9 @@ class TestObjMaterials:
         Test scenario:
             ``write_obj(model, materials=True)`` (path=None) is rejected with a clear message.
         """
+        model = _material_model([1.0, 0.0, 0.0])
         with pytest.raises(ValueError, match="needs a path to write the .mtl sidecar"):
-            write_obj(_material_model([1.0, 0.0, 0.0]), materials=True)
+            write_obj(model, materials=True)
 
     def test_no_appearance_model_writes_no_sidecar(self):
         """``materials=True`` on a model with no appearances writes plain faces and no ``.mtl``.
