@@ -1274,6 +1274,77 @@ def _validate_implicit_args(scheme: str, max_objects_per_tile: int | None) -> No
         )
 
 
+def _validate_simplify(simplify: float | None, implicit_tiling: bool) -> None:
+    """Validate the ``simplify`` LOD ratio: positive, and only in the explicit multi-tile mode."""
+    if simplify is None:
+        return
+    if simplify <= 0:
+        raise ValueError(f"simplify must be a positive ratio, got {simplify!r}")
+    if implicit_tiling:
+        raise ValueError(
+            "simplify (per-level LOD) is only supported for the explicit multi-tile mode "
+            "(max_objects_per_tile set, implicit_tiling=False)"
+        )
+
+
+def _write_single_tile(
+    contributing: _Contributing,
+    target: Path,
+    encode: Any,
+    suffix: str,
+    version: str,
+    simplify: float | None,
+) -> dict[str, Any]:
+    """Write one ``content`` tile (none for an empty model) and return its single-tile tileset."""
+    if simplify is not None and contributing:
+        warnings.warn(
+            "simplify had no effect: it builds per-level LOD only in the explicit multi-tile mode, "
+            "but this model wrote a single tile (set max_objects_per_tile below the object count to "
+            "subdivide). Pre-simplify with CityModel.simplify(cell) for a single coarse tile.",
+            UserWarning,
+            stacklevel=3,
+        )
+    tile = encode(contributing)
+    content_name = f"content{suffix}"
+    content_uri = content_name if tile is not None else None
+    # An empty model has no content and no glTF features, so it stays a trivial 1.0 tileset.
+    tileset = _tileset_from_rings(
+        contributing, content_uri, _asset(version) if tile is not None else None
+    )
+    if tile is not None:
+        (target / content_name).write_bytes(tile)
+    return tileset
+
+
+def _build_tileset_document(
+    contributing: _Contributing,
+    target: Path,
+    max_objects_per_tile: int | None,
+    implicit_tiling: bool,
+    scheme: str,
+    encode: Any,
+    suffix: str,
+    version: str,
+    simplify: float | None,
+) -> dict[str, Any]:
+    """Dispatch to the implicit / explicit-multi-tile / single-tile writer and return its tileset."""
+    if implicit_tiling and contributing:
+        target_per_tile = 64 if max_objects_per_tile is None else max_objects_per_tile
+        return _write_implicit(
+            contributing, target, scheme, target_per_tile, encode, suffix
+        )
+    if max_objects_per_tile is not None and len(contributing) > max_objects_per_tile:
+        root = _build_tile(
+            contributing, target, [0], max_objects_per_tile, encode, suffix, simplify
+        )
+        return {
+            "asset": _asset(version),
+            "geometricError": root["geometricError"],
+            "root": root,
+        }
+    return _write_single_tile(contributing, target, encode, suffix, version, simplify)
+
+
 def write_3dtiles(
     model: CityModel,
     directory: Any,
@@ -1417,14 +1488,7 @@ def write_3dtiles(
             ```
     """
     encode, suffix, version = _content_format(content, metadata)
-    if simplify is not None:
-        if simplify <= 0:
-            raise ValueError(f"simplify must be a positive ratio, got {simplify!r}")
-        if implicit_tiling:
-            raise ValueError(
-                "simplify (per-level LOD) is only supported for the explicit multi-tile mode "
-                "(max_objects_per_tile set, implicit_tiling=False)"
-            )
+    _validate_simplify(simplify, implicit_tiling)
     if implicit_tiling:
         # Validated here (not in _write_implicit) so the contract is the same for an empty model, which
         # never reaches _write_implicit.
@@ -1437,38 +1501,17 @@ def write_3dtiles(
         # Fail before writing any file: the explicit/implicit writers emit content per leaf, so a
         # per-tile encode error partway through would otherwise orphan .glb files with no tileset.json.
         _validate_gltf_encodable(contributing)
-    if implicit_tiling and contributing:
-        target_per_tile = 64 if max_objects_per_tile is None else max_objects_per_tile
-        tileset = _write_implicit(
-            contributing, target, scheme, target_per_tile, encode, suffix
-        )
-    elif max_objects_per_tile is not None and len(contributing) > max_objects_per_tile:
-        root = _build_tile(
-            contributing, target, [0], max_objects_per_tile, encode, suffix, simplify
-        )
-        tileset = {
-            "asset": _asset(version),
-            "geometricError": root["geometricError"],
-            "root": root,
-        }
-    else:
-        if simplify is not None and contributing:
-            warnings.warn(
-                "simplify had no effect: it builds per-level LOD only in the explicit multi-tile mode, "
-                "but this model wrote a single tile (set max_objects_per_tile below the object count to "
-                "subdivide). Pre-simplify with CityModel.simplify(cell) for a single coarse tile.",
-                UserWarning,
-                stacklevel=2,
-            )
-        tile = encode(contributing)
-        content_name = f"content{suffix}"
-        content_uri = content_name if tile is not None else None
-        # An empty model has no content and no glTF features, so it stays a trivial 1.0 tileset.
-        tileset = _tileset_from_rings(
-            contributing, content_uri, _asset(version) if tile is not None else None
-        )
-        if tile is not None:
-            (target / content_name).write_bytes(tile)
+    tileset = _build_tileset_document(
+        contributing,
+        target,
+        max_objects_per_tile,
+        implicit_tiling,
+        scheme,
+        encode,
+        suffix,
+        version,
+        simplify,
+    )
     (target / "tileset.json").write_text(
         json.dumps(tileset, ensure_ascii=False, indent=2), encoding="utf-8"
     )

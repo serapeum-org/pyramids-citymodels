@@ -225,12 +225,13 @@ def simplify(model: CityModel, cell_size: float) -> CityModel:
     def decimate(geometry: Geometry) -> Geometry:
         pruned = _prune_surfaces(geometry.boundaries, geometry.semantic_values, snap)
         boundaries, semantic_values = pruned if pruned is not None else ([], None)
-        return replace(
+        coarsened: Geometry = replace(
             geometry,
             boundaries=boundaries,
             semantic_values=semantic_values,
             appearance=None,
         )
+        return coarsened
 
     return _rebuild(model, decimate)
 
