@@ -203,6 +203,50 @@ class TestEmbedCollisions:
             "both source images must survive distinctly"
         )
 
+    def test_same_source_texture_is_copied_once(self, tmp_path):
+        """One image behind two distinct texture entries is copied a single time (dedupe by source).
+
+        Test scenario:
+            Two texture-pool entries both point at ``wall.png``, so two appearance groups resolve to the
+            same source; the ImageCopier copies it once (the dedupe path) and both groups name that file.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[
+                [[(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0)]],
+                [[(2.0, 0.0, 0.0), (3.0, 0.0, 0.0), (3.0, 1.0, 0.0)]],
+            ],
+            appearance={"texture": {"": {"values": [[[0, 0, 1, 2]], [[1, 0, 1, 2]]]}}},
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "textures": [{"image": "wall.png"}, {"image": "wall.png"}],
+                "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            },
+        )
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "wall.png").write_bytes(_PNG)
+        out = tmp_path / "out"
+        out.mkdir()
+        write_obj(
+            model, out / "m.obj", materials=True, embed_textures=True, texture_base=src
+        )
+        copies = list(out.glob("wall*.png"))
+        assert copies == [out / "wall.png"], (
+            f"the shared source must be copied exactly once, got {copies}"
+        )
+        refs = [
+            line.split()[1]
+            for line in (out / "m.mtl").read_text().splitlines()
+            if line.startswith("map_Kd")
+        ]
+        assert refs == ["wall.png", "wall.png"], (
+            f"both groups must reference the single copy, got {refs}"
+        )
+
     def test_pre_existing_file_is_not_overwritten(self, tmp_path):
         """A texture does not clobber an unrelated pre-existing file of the same name (L1).
 

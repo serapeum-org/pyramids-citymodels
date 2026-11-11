@@ -172,6 +172,30 @@ class TestSimplify:
             "the survivor's semantic value is kept, aligned"
         )
 
+    def test_geometry_with_every_surface_collapsed_becomes_empty(self):
+        """When every surface of a geometry collapses, its boundaries become empty and semantics drop.
+
+        Test scenario:
+            A single thin surface collapses at cell 1.0; the geometry is left with no boundaries and
+            ``semantic_values`` set to ``None`` (not a stale, now-misaligned list).
+        """
+        thin = [(0.0, 0.0, 0.0), (0.3, 0.0, 0.0), (0.6, 0.0, 0.0)]
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[[thin]],
+            semantics=[],
+            semantic_values=[0],
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])}
+        )
+        result = model.simplify(1.0).objects["b"].geometries[0]
+        assert result.boundaries == [], "a fully collapsed geometry has no boundaries"
+        assert result.semantic_values is None, (
+            "its semantic_values must drop, not dangle"
+        )
+
     def test_non_positive_cell_size_raises(self):
         """A non-positive cell size is rejected.
 
