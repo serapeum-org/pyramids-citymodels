@@ -415,8 +415,10 @@ def _attributes_json(city_object: CityObject) -> str:
 
     ``allow_nan=False`` so a non-finite float (and, via the stdlib, a non-JSON value such as a set or
     bytes) raises ``ValueError`` naming the object instead of emitting the non-standard ``NaN`` /
-    ``Infinity`` tokens or a bare ``TypeError`` — a strict JSON consumer of the property must be able to
-    parse it back.
+    ``Infinity`` tokens or a bare ``TypeError``. This is the metadata contract for **both** glTF
+    metadata shapes: an attribute value must be finite and JSON-representable, so the pre-flight rejects
+    it the same way whether it would ride in the JSON blob or a typed column (the error is therefore
+    worded for tile metadata in general, not JSON specifically).
     """
     try:
         return json.dumps(
@@ -425,7 +427,8 @@ def _attributes_json(city_object: CityObject) -> str:
     except (ValueError, TypeError) as error:
         raise ValueError(
             f"to_3dtiles(content='gltf') cannot encode the attributes of object "
-            f"{city_object.id!r} as JSON metadata: {error}"
+            f"{city_object.id!r} as tile metadata (every value must be finite and "
+            f"JSON-representable): {error}"
         ) from error
 
 

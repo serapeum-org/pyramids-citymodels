@@ -331,21 +331,35 @@ class TestTypedMetadata:
                     id="o0",
                     type="Building",
                     attributes={"attributes": "USERVAL0", "sparse": "s0"},
-                    geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[_square(0, 0)])],
+                    geometries=[
+                        Geometry(
+                            type="MultiSurface", lod="2", boundaries=[_square(0, 0)]
+                        )
+                    ],
                 ),
                 "o1": CityObject(
                     id="o1",
                     type="Building",
                     attributes={"attributes": "USERVAL1"},
-                    geometries=[Geometry(type="MultiSurface", lod="2", boundaries=[_square(50, 50)])],
+                    geometries=[
+                        Geometry(
+                            type="MultiSurface", lod="2", boundaries=[_square(50, 50)]
+                        )
+                    ],
                 ),
             }
         )
         out = Path(tempfile.mkdtemp())
         model.to_3dtiles(out, content="gltf", metadata="typed")
-        back = {o.id: o for o in parse_3dtiles(str(out / "tileset.json")).objects.values()}
-        assert back["o0"].attributes["attributes"] == "USERVAL0", "user 'attributes' key must survive"
-        assert back["o1"].attributes["attributes"] == "USERVAL1", "user 'attributes' key must survive"
+        back = {
+            o.id: o for o in parse_3dtiles(str(out / "tileset.json")).objects.values()
+        }
+        assert back["o0"].attributes["attributes"] == "USERVAL0", (
+            "user 'attributes' key must survive"
+        )
+        assert back["o1"].attributes["attributes"] == "USERVAL1", (
+            "user 'attributes' key must survive"
+        )
 
     def test_invalid_metadata_value_raises(self):
         """An unknown ``metadata`` value raises ``ValueError`` before anything is written.
@@ -356,3 +370,28 @@ class TestTypedMetadata:
         out = Path(tempfile.mkdtemp())
         with pytest.raises(ValueError, match="metadata must be 'json' or 'typed'"):
             self._model().to_3dtiles(out, content="gltf", metadata="columns")
+
+    def test_non_finite_float_rejected_in_typed_mode_with_accurate_message(self):
+        """A non-finite float is rejected in typed mode too, with a metadata-general message (L2).
+
+        Test scenario:
+            ``metadata='typed'`` applies the same finite/JSON-representable contract as the JSON blob,
+            and the error names the object and talks about tile metadata, not JSON specifically.
+        """
+        model = CityModel(
+            objects={
+                "o0": CityObject(
+                    id="o0",
+                    type="Building",
+                    attributes={"height": float("nan")},
+                    geometries=[
+                        Geometry(
+                            type="MultiSurface", lod="2", boundaries=[_square(0, 0)]
+                        )
+                    ],
+                )
+            }
+        )
+        out = Path(tempfile.mkdtemp())
+        with pytest.raises(ValueError, match="object 'o0' as tile metadata"):
+            model.to_3dtiles(out, content="gltf", metadata="typed")
