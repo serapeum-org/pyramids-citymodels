@@ -10,7 +10,8 @@ then renders a group in its own syntax (glTF primitives, OBJ ``usemtl`` groups +
 
 Everything here is defensive: a malformed appearance (wrong-length ``diffuseColor``, a non-2D /
 out-of-range UV, a non-dict pool entry, a UV/ring count mismatch) degrades to the default colour or to
-untextured rather than raising, so a bad source file never aborts a mesh export. Stdlib-only.
+untextured rather than raising, so a bad source file never aborts a mesh export. No third-party
+dependencies (only the standard library and this package).
 """
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)

@@ -19,7 +19,9 @@ Deliberate, documented limits of this plain-geometry export:
   carries each material's ``Kd`` diffuse colour (from the CityJSON ``diffuseColor``) and ``map_Kd``
   texture image, surfaces are grouped by material via ``usemtl`` (not by object), and a textured surface
   emits ``vt`` texture coordinates — but this needs a file path for the sidecar (it raises on the
-  string-return form).
+  string-return form). The OBJ/MTL grammar is whitespace-delimited and has no escaping, so a ``map_Kd``
+  image reference (or the derived ``.mtl`` name) containing a space is technically malformed — keep
+  texture image paths and the output stem space-free.
 
 Only the standard library is used, matching the other writers.
 """
