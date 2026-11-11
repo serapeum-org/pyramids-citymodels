@@ -9,8 +9,12 @@ Deliberate, documented limits (plain geometry, like the OBJ/glTF writers):
 
 - **Exterior rings only**, fan-triangulated — interior rings (holes) are dropped, and a strongly
   non-convex polygon's fan can self-overlap (fan triangulation is not ear-clipping).
-- **One mesh, positions only** — no normals, materials or textures; appearance round-trips through
-  the CityJSON/CityGML writers, not here. Coordinates are the model's own (no reprojection).
+- **Positions only by default; opt-in materials/textures** (``materials=True``) — one ``<triangles>``
+  per ``(material, texture)`` bound through ``library_materials`` / ``library_effects``, with the
+  diffuse ``<color>`` from the CityJSON ``diffuseColor`` and, when a surface is textured, a ``TEXCOORD``
+  input + a sampler over a ``library_images`` image referenced by URI. No normals. Off by default the
+  mesh is positions-only; appearance also round-trips through the CityJSON/CityGML writers. Coordinates
+  are the model's own (no reprojection).
 - An empty model yields a valid `.dae` with a geometry-less scene and no `library_geometries` (that
   element is omitted rather than emitted empty, which the COLLADA 1.4.1 XSD would reject).
 """
@@ -22,6 +26,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 from pyramids_citymodels.ir import CityModel, iter_surfaces
+from pyramids_citymodels.writers import _appearance
 from pyramids_citymodels.writers._geometry import open_ring, xyz
 
 __all__ = ["write_collada"]
@@ -127,15 +132,284 @@ def _geometry_library(
     ElementTree.SubElement(scene, "instance_visual_scene").set("url", "#scene0")
 
 
-def write_collada(model: CityModel, path: Any = None) -> str | None:
+class _Group:
+    """One ``(material, texture)`` appearance group's triangles + its material/texture binding."""
+
+    def __init__(
+        self, material_index: int | None, texture_index: int | None, image: str | None
+    ) -> None:
+        self.material_index = material_index
+        self.texture_index = texture_index
+        self.image = image  # the texture image URI, or None (untextured)
+        self.symbol: str | None = (
+            None  # the <triangles material=...> symbol, or None for plain geometry
+        )
+        self.corners: list[
+            tuple[int, ...]
+        ] = []  # per triangle-corner (pos,) or (pos, uv)
+
+    @property
+    def textured(self) -> bool:
+        return self.image is not None
+
+
+class _MeshPool:
+    """Deduplicating position + texcoord pools, shared across a materialled COLLADA mesh."""
+
+    def __init__(self) -> None:
+        self.positions: list[tuple[float, float, float]] = []
+        self.uvs: list[Any] = []
+        self._pos: dict[tuple[float, float, float], int] = {}
+        self._uv: dict[Any, int] = {}
+
+    def position(self, coordinate: Any) -> int:
+        key = xyz(coordinate)
+        index = self._pos.get(key)
+        if index is None:
+            index = len(self.positions)
+            self._pos[key] = index
+            self.positions.append(key)
+        return index
+
+    def texcoord(self, uv: Any) -> int:
+        index = self._uv.get(uv)
+        if index is None:
+            index = len(self.uvs)
+            self._uv[uv] = index
+            self.uvs.append(uv)
+        return index
+
+    def fan(
+        self,
+        ring: list[Any],
+        uv_indices: list[int] | None,
+        textured: bool,
+        uv_pool: list[Any],
+    ) -> list[tuple[int, ...]]:
+        """Fan-triangulate one ring into ``(position[, uv])`` corner triples, interning as it goes."""
+        corners: list[tuple[int, ...]] = []
+        for vertex, coordinate in enumerate(ring):
+            if textured and uv_indices is not None:
+                uv = _appearance.ring_uv(uv_pool, uv_indices, vertex)
+                corners.append((self.position(coordinate), self.texcoord(uv)))
+            else:
+                corners.append((self.position(coordinate),))
+        triples: list[tuple[int, ...]] = []
+        for apex in range(1, len(corners) - 1):  # fan from the first vertex
+            triples.extend((corners[0], corners[apex], corners[apex + 1]))
+        return triples
+
+
+def _appearance_mesh(
+    model: CityModel,
+) -> tuple[list[tuple[float, float, float]], list[Any], list[_Group]]:
+    """Fan-triangulate the model into shared ``positions`` + ``uvs`` and one :class:`_Group` per appearance.
+
+    Positions and UVs are deduplicated across the whole model (via :class:`_MeshPool`); each group records
+    its triangle corners as ``(position_index[, uv_index])`` tuples and the material/texture it binds.
+    """
+    textures_pool = model.appearances.get("textures") or []
+    uv_pool = model.appearances.get("vertices-texture") or []
+    pool = _MeshPool()
+    groups: list[_Group] = []
+    for (material_index, texture_index), rings in _appearance.collect_groups(
+        model
+    ).items():
+        image = _appearance.texture_image(texture_index, textures_pool)
+        group = _Group(material_index, texture_index, image)
+        if material_index is not None or texture_index is not None:
+            group.symbol = f"sym_{len(groups)}"
+        for ring, uv_indices in rings:
+            group.corners.extend(pool.fan(ring, uv_indices, group.textured, uv_pool))
+        groups.append(group)
+    return pool.positions, pool.uvs, groups
+
+
+def _float_source(
+    mesh: ElementTree.Element, sid: str, values: list[Any], params: tuple[str, ...]
+) -> None:
+    """A COLLADA ``<source>`` of a flat float array with a ``technique_common`` accessor over ``params``."""
+    stride = len(params)
+    source = ElementTree.SubElement(mesh, "source")
+    source.set("id", sid)
+    array = ElementTree.SubElement(source, "float_array")
+    array.set("id", f"{sid}-array")
+    array.set("count", str(len(values) * stride))
+    array.text = " ".join(repr(component) for value in values for component in value)
+    accessor = ElementTree.SubElement(
+        ElementTree.SubElement(source, "technique_common"), "accessor"
+    )
+    accessor.set("source", f"#{sid}-array")
+    accessor.set("count", str(len(values)))
+    accessor.set("stride", str(stride))
+    for name in params:
+        param = ElementTree.SubElement(accessor, "param")
+        param.set("name", name)
+        param.set("type", "float")
+
+
+def _effect(effects: ElementTree.Element, group: _Group, model: CityModel) -> None:
+    """One ``<effect>`` for a group: a lambert whose diffuse is the base colour, or the bound texture."""
+    materials_pool = model.appearances.get("materials") or []
+    color = _appearance.base_color(
+        _appearance.diffuse_of(group.material_index, materials_pool)
+    )
+    effect = ElementTree.SubElement(effects, "effect")
+    effect.set("id", f"eff_{group.symbol}")
+    profile = ElementTree.SubElement(effect, "profile_COMMON")
+    if group.textured:
+        surface_param = ElementTree.SubElement(profile, "newparam")
+        surface_param.set("sid", f"{group.symbol}-surface")
+        surface = ElementTree.SubElement(surface_param, "surface")
+        surface.set("type", "2D")
+        ElementTree.SubElement(surface, "init_from").text = f"img_{group.texture_index}"
+        sampler_param = ElementTree.SubElement(profile, "newparam")
+        sampler_param.set("sid", f"{group.symbol}-sampler")
+        sampler = ElementTree.SubElement(sampler_param, "sampler2D")
+        ElementTree.SubElement(sampler, "source").text = f"{group.symbol}-surface"
+    technique = ElementTree.SubElement(profile, "technique")
+    technique.set("sid", "common")
+    diffuse = ElementTree.SubElement(
+        ElementTree.SubElement(technique, "lambert"), "diffuse"
+    )
+    if group.textured:
+        texture = ElementTree.SubElement(diffuse, "texture")
+        texture.set("texture", f"{group.symbol}-sampler")
+        texture.set("texcoord", "UVSET0")
+    else:
+        ElementTree.SubElement(diffuse, "color").text = " ".join(repr(c) for c in color)
+
+
+def _material_libraries(
+    collada: ElementTree.Element, groups: list[_Group], model: CityModel
+) -> None:
+    """Append ``<library_images>`` / ``<library_effects>`` / ``<library_materials>`` for the groups."""
+    appearance_groups = [group for group in groups if group.symbol is not None]
+    if not appearance_groups:
+        return
+    images = {
+        group.texture_index
+        for group in appearance_groups
+        if group.textured and group.texture_index is not None
+    }
+    if images:
+        library_images = ElementTree.SubElement(collada, "library_images")
+        textures_pool = model.appearances.get("textures") or []
+        for texture_index in sorted(images):
+            image = ElementTree.SubElement(library_images, "image")
+            image.set("id", f"img_{texture_index}")
+            ElementTree.SubElement(image, "init_from").text = _appearance.texture_image(
+                texture_index, textures_pool
+            )
+    effects = ElementTree.SubElement(collada, "library_effects")
+    materials = ElementTree.SubElement(collada, "library_materials")
+    for group in appearance_groups:
+        _effect(effects, group, model)
+        material = ElementTree.SubElement(materials, "material")
+        material.set("id", f"mat_{group.symbol}")
+        ElementTree.SubElement(material, "instance_effect").set(
+            "url", f"#eff_{group.symbol}"
+        )
+
+
+def _triangles_element(mesh: ElementTree.Element, group: _Group) -> None:
+    """One ``<triangles>`` for a group — VERTEX (+ TEXCOORD when textured), bound to its material symbol."""
+    triangles = ElementTree.SubElement(mesh, "triangles")
+    triangles.set("count", str(len(group.corners) // 3))
+    if group.symbol is not None:
+        triangles.set("material", group.symbol)
+    vertex_input = ElementTree.SubElement(triangles, "input")
+    vertex_input.set("semantic", "VERTEX")
+    vertex_input.set("source", "#mesh0-vertices")
+    vertex_input.set("offset", "0")
+    if group.textured:
+        uv_input = ElementTree.SubElement(triangles, "input")
+        uv_input.set("semantic", "TEXCOORD")
+        uv_input.set("source", "#mesh0-uvs")
+        uv_input.set("offset", "1")
+        uv_input.set("set", "0")
+    ElementTree.SubElement(triangles, "p").text = " ".join(
+        str(index) for corner in group.corners for index in corner
+    )
+
+
+def _textured_geometry_library(
+    collada: ElementTree.Element,
+    positions: list[tuple[float, float, float]],
+    uvs: list[Any],
+    groups: list[_Group],
+) -> None:
+    """Append ``<library_geometries>`` (one mesh, per-group ``<triangles>``) and the instancing scene."""
+    drawable = [group for group in groups if group.corners]
+    if drawable:
+        geometry = ElementTree.SubElement(
+            ElementTree.SubElement(collada, "library_geometries"), "geometry"
+        )
+        geometry.set("id", "mesh0")
+        mesh = ElementTree.SubElement(geometry, "mesh")
+        _float_source(mesh, "mesh0-positions", positions, ("X", "Y", "Z"))
+        if uvs:
+            _float_source(mesh, "mesh0-uvs", uvs, ("S", "T"))
+        vertices = ElementTree.SubElement(mesh, "vertices")
+        vertices.set("id", "mesh0-vertices")
+        position_input = ElementTree.SubElement(vertices, "input")
+        position_input.set("semantic", "POSITION")
+        position_input.set("source", "#mesh0-positions")
+        for group in drawable:
+            _triangles_element(mesh, group)
+
+    scenes = ElementTree.SubElement(collada, "library_visual_scenes")
+    visual_scene = ElementTree.SubElement(scenes, "visual_scene")
+    visual_scene.set("id", "scene0")
+    node = ElementTree.SubElement(visual_scene, "node")
+    node.set("id", "node0")
+    if drawable:
+        instance = ElementTree.SubElement(node, "instance_geometry")
+        instance.set("url", "#mesh0")
+        _bind_material(instance, drawable)
+    scene = ElementTree.SubElement(collada, "scene")
+    ElementTree.SubElement(scene, "instance_visual_scene").set("url", "#scene0")
+
+
+def _bind_material(instance: ElementTree.Element, groups: list[_Group]) -> None:
+    """Bind each group's ``material`` symbol to its ``<material>`` under ``<instance_geometry>``."""
+    bound = [group for group in groups if group.symbol is not None]
+    if not bound:
+        return
+    technique = ElementTree.SubElement(
+        ElementTree.SubElement(instance, "bind_material"), "technique_common"
+    )
+    for group in bound:
+        symbol = (
+            group.symbol or ""
+        )  # bound groups have a symbol; `or ""` only narrows the type
+        instance_material = ElementTree.SubElement(technique, "instance_material")
+        instance_material.set("symbol", symbol)
+        instance_material.set("target", f"#mat_{symbol}")
+        if group.textured:
+            bind = ElementTree.SubElement(instance_material, "bind_vertex_input")
+            bind.set("semantic", "UVSET0")
+            bind.set("input_semantic", "TEXCOORD")
+            bind.set("input_set", "0")
+
+
+def write_collada(
+    model: CityModel, path: Any = None, materials: bool = False
+) -> str | None:
     """Serialize a :class:`~pyramids_citymodels.ir.CityModel` to a COLLADA 1.4.1 ``.dae`` document.
 
-    Every surface's exterior ring is fan-triangulated into one positions-only mesh. See the module
-    docstring for the documented limits.
+    With ``materials=False`` (default) every surface's exterior ring is fan-triangulated into one
+    positions-only mesh. With ``materials=True`` the IR appearances ride along: surfaces are grouped by
+    ``(material, texture)`` into per-material ``<triangles>`` bound through ``<library_materials>`` /
+    ``<library_effects>``, a material's diffuse ``<color>`` comes from the CityJSON ``diffuseColor``, and
+    a textured group adds a ``TEXCOORD`` input (from the ``vertices-texture`` pool) plus a sampler over a
+    ``<library_images>`` image referenced by its CityJSON ``image`` URI. A model with no appearances is
+    unchanged. See the module docstring for the geometry limits.
 
     Args:
         model: The city model to serialize.
         path: A path to write the ``.dae`` to, or ``None`` to return the document string.
+        materials: Carry IR appearances (materials + textures) instead of a positions-only mesh.
 
     Returns:
         The COLLADA document as a ``str`` when ``path`` is ``None``; otherwise ``None``.
@@ -158,8 +432,13 @@ def write_collada(model: CityModel, path: Any = None) -> str | None:
     asset = ElementTree.SubElement(collada, "asset")
     up_axis = ElementTree.SubElement(asset, "up_axis")
     up_axis.text = "Z_UP"
-    positions, triangles = _mesh(model)
-    _geometry_library(collada, positions, triangles)
+    if materials:
+        positions, uvs, groups = _appearance_mesh(model)
+        _material_libraries(collada, groups, model)
+        _textured_geometry_library(collada, positions, uvs, groups)
+    else:
+        positions, triangles = _mesh(model)
+        _geometry_library(collada, positions, triangles)
 
     ElementTree.indent(collada)
     text = ElementTree.tostring(collada, encoding="unicode", xml_declaration=True)

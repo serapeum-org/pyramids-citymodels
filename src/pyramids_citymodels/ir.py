@@ -456,11 +456,19 @@ class CityModel:
 
         return write_jsonfg(self, path)
 
-    def to_obj(self, path: Any = None) -> str | None:
+    def to_obj(self, path: Any = None, materials: bool = False) -> str | None:
         """Serialize this model to Wavefront OBJ (see :func:`.writers.obj.write_obj`).
 
-        A plain-geometry mesh export (feature #14): each surface's exterior ring becomes one face.
-        Returns the OBJ text as a ``str`` when ``path`` is ``None``, else writes it.
+        A mesh export (feature #14): each surface's exterior ring becomes one face. With
+        ``materials=False`` (default) it is plain geometry grouped by object; with ``materials=True`` the
+        IR appearances ride along as a ``.mtl`` sidecar (``Kd`` from ``diffuseColor``, ``map_Kd`` texture)
+        plus ``vt`` texture coordinates, grouped by material — which needs a file path (``materials=True``
+        with ``path=None`` raises). Returns the OBJ text as a ``str`` when ``path`` is ``None``, else
+        writes it.
+
+        Args:
+            path: A path to write the ``.obj`` (and ``.mtl`` sidecar) to, or ``None`` to return the text.
+            materials: Carry IR appearances as a ``.mtl`` sidecar + UVs instead of plain geometry.
 
         Examples:
             - Each object's faces are grouped under an ``o`` marker:
@@ -475,7 +483,7 @@ class CityModel:
         """
         from pyramids_citymodels.writers.obj import write_obj
 
-        return write_obj(self, path)
+        return write_obj(self, path, materials)
 
     def to_gltf(
         self, path: Any = None, materials: bool = False
@@ -571,11 +579,18 @@ class CityModel:
 
         return triangulate(self)
 
-    def to_collada(self, path: Any = None) -> str | None:
+    def to_collada(self, path: Any = None, materials: bool = False) -> str | None:
         """Serialize this model to COLLADA 1.4.1 ``.dae`` (see :func:`.writers.collada.write_collada`).
 
-        A triangulated, positions-only mesh export (feature #14). Returns the document string when
-        ``path`` is ``None``, else writes it.
+        A triangulated mesh export (feature #14). With ``materials=False`` (default) it is positions-only;
+        with ``materials=True`` the IR appearances ride along as per-material ``<triangles>`` bound through
+        ``library_materials`` / ``library_effects`` (diffuse ``<color>`` from ``diffuseColor``) plus a
+        ``TEXCOORD`` input and a sampler over a ``library_images`` image for textured surfaces. Returns the
+        document string when ``path`` is ``None``, else writes it.
+
+        Args:
+            path: A path to write the ``.dae`` to, or ``None`` to return the document string.
+            materials: Carry IR appearances (materials + textures) instead of a positions-only mesh.
 
         Examples:
             - A one-triangle model yields one COLLADA triangle:
@@ -590,7 +605,7 @@ class CityModel:
         """
         from pyramids_citymodels.writers.collada import write_collada
 
-        return write_collada(self, path)
+        return write_collada(self, path, materials)
 
     def to_kml(self, path: Any = None) -> str | None:
         """Serialize this model to KML (see :func:`.writers.kml.write_kml`).
