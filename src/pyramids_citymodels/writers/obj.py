@@ -104,12 +104,20 @@ class _ObjPool:
 
 
 def _mtl_entry(
-    symbol: str, material_index: int | None, texture_index: int | None, model: CityModel
+    symbol: str,
+    material_index: int | None,
+    texture_index: int | None,
+    model: CityModel,
+    embed: bool,
+    out_dir: Path | None,
+    texture_base: Any,
 ) -> tuple[list[str], bool]:
     """The ``.mtl`` lines for one material symbol, and whether it is textured (has a usable image).
 
     ``Kd`` is the material's diffuse colour (default grey when absent); ``map_Kd`` is the texture image
-    reference when the texture resolves to one.
+    reference when the texture resolves to one. With ``embed`` and a readable local image, the image is
+    copied beside the ``.obj`` (``out_dir``) and referenced by its basename; otherwise the CityJSON
+    ``image`` is used verbatim.
     """
     materials_pool = model.appearances.get("materials") or []
     textures_pool = model.appearances.get("textures") or []
@@ -119,11 +127,22 @@ def _mtl_entry(
     lines = [f"newmtl {symbol}", f"Kd {color[0]} {color[1]} {color[2]}"]
     image = _appearance.texture_image(texture_index, textures_pool)
     if image:
-        lines.append(f"map_Kd {image}")
+        reference = image
+        if embed and out_dir is not None:
+            resolved = _appearance.resolve_image(image, texture_base)
+            if resolved is not None:
+                reference = _appearance.copy_image(resolved, out_dir)
+        lines.append(f"map_Kd {reference}")
     return lines, image is not None
 
 
-def _obj_documents(model: CityModel, mtl_name: str) -> tuple[str, str | None]:
+def _obj_documents(
+    model: CityModel,
+    mtl_name: str,
+    embed: bool = False,
+    out_dir: Path | None = None,
+    texture_base: Any = None,
+) -> tuple[str, str | None]:
     """Build the materialled ``(obj_text, mtl_text)`` — ``mtl_text`` is ``None`` when no material is used.
 
     Surfaces are grouped by their ``(material, texture)`` appearance; each appearance group gets a
@@ -164,7 +183,9 @@ def _obj_documents(model: CityModel, mtl_name: str) -> tuple[str, str | None]:
             continue
         symbol = f"mat_{material_count}"
         material_count += 1
-        entry, textured = _mtl_entry(symbol, material_index, texture_index, model)
+        entry, textured = _mtl_entry(
+            symbol, material_index, texture_index, model, embed, out_dir, texture_base
+        )
         mtl_lines.extend(entry)
         material_body.append(f"usemtl {symbol}")
         material_body.extend(
@@ -183,7 +204,11 @@ def _obj_documents(model: CityModel, mtl_name: str) -> tuple[str, str | None]:
 
 
 def write_obj(
-    model: CityModel, path: Any = None, materials: bool = False
+    model: CityModel,
+    path: Any = None,
+    materials: bool = False,
+    embed_textures: bool = False,
+    texture_base: Any = None,
 ) -> str | None:
     """Serialize a :class:`~pyramids_citymodels.ir.CityModel` to Wavefront OBJ.
 
@@ -205,6 +230,10 @@ def write_obj(
         model: The city model to serialize.
         path: A filesystem path to write the ``.obj`` to, or ``None`` to return it as a string.
         materials: Carry IR appearances (a ``.mtl`` sidecar + UVs) instead of plain geometry; needs a path.
+        embed_textures: Copy each readable local texture image beside the ``.obj`` (and reference it by
+            basename) instead of leaving the original ``map_Kd`` reference. Only with ``materials=True``.
+        texture_base: Directory that relative ``image`` paths resolve against when embedding (defaults to
+            the current directory; pass the directory the texture images actually live in).
 
     Returns:
         The OBJ text as a ``str`` when ``path`` is ``None``; otherwise ``None`` (written to ``path``).
@@ -249,7 +278,9 @@ def write_obj(
             )
         target = Path(path)
         mtl_path = target.with_suffix(".mtl")
-        obj_text, mtl_text = _obj_documents(model, mtl_path.name)
+        obj_text, mtl_text = _obj_documents(
+            model, mtl_path.name, embed_textures, target.parent, texture_base
+        )
         target.write_text(obj_text, encoding="utf-8")
         if mtl_text is not None:
             mtl_path.write_text(mtl_text, encoding="utf-8")

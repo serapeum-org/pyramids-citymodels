@@ -22,6 +22,7 @@ Deliberate, documented limits (plain geometry, like the OBJ/glTF writers):
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
@@ -280,8 +281,22 @@ def _effect(effects: ElementTree.Element, group: _Group, model: CityModel) -> No
         ElementTree.SubElement(diffuse, "color").text = " ".join(repr(c) for c in color)
 
 
+def _init_from(image: str, embed: bool, out_dir: Path | None, texture_base: Any) -> str:
+    """The ``<init_from>`` image reference — a basename copied beside the ``.dae`` (embed), else verbatim."""
+    if embed and out_dir is not None:
+        resolved = _appearance.resolve_image(image, texture_base)
+        if resolved is not None:
+            return _appearance.copy_image(resolved, out_dir)
+    return image
+
+
 def _material_libraries(
-    collada: ElementTree.Element, groups: list[_Group], model: CityModel
+    collada: ElementTree.Element,
+    groups: list[_Group],
+    model: CityModel,
+    embed: bool = False,
+    out_dir: Path | None = None,
+    texture_base: Any = None,
 ) -> None:
     """Append ``<library_images>`` / ``<library_effects>`` / ``<library_materials>`` for the groups."""
     appearance_groups = [group for group in groups if group.symbol is not None]
@@ -298,8 +313,9 @@ def _material_libraries(
         for texture_index in sorted(images):
             image = ElementTree.SubElement(library_images, "image")
             image.set("id", f"img_{texture_index}")
-            ElementTree.SubElement(image, "init_from").text = _appearance.texture_image(
-                texture_index, textures_pool
+            reference = _appearance.texture_image(texture_index, textures_pool) or ""
+            ElementTree.SubElement(image, "init_from").text = _init_from(
+                reference, embed, out_dir, texture_base
             )
     effects = ElementTree.SubElement(collada, "library_effects")
     materials = ElementTree.SubElement(collada, "library_materials")
@@ -394,7 +410,11 @@ def _bind_material(instance: ElementTree.Element, groups: list[_Group]) -> None:
 
 
 def write_collada(
-    model: CityModel, path: Any = None, materials: bool = False
+    model: CityModel,
+    path: Any = None,
+    materials: bool = False,
+    embed_textures: bool = False,
+    texture_base: Any = None,
 ) -> str | None:
     """Serialize a :class:`~pyramids_citymodels.ir.CityModel` to a COLLADA 1.4.1 ``.dae`` document.
 
@@ -410,6 +430,11 @@ def write_collada(
         model: The city model to serialize.
         path: A path to write the ``.dae`` to, or ``None`` to return the document string.
         materials: Carry IR appearances (materials + textures) instead of a positions-only mesh.
+        embed_textures: Copy each readable local texture image beside the ``.dae`` (``init_from`` then
+            references the basename) instead of the original ``image`` reference; needs a ``path``. Only
+            with ``materials=True``.
+        texture_base: Directory that relative ``image`` paths resolve against when embedding (defaults to
+            the current directory; pass the directory the texture images actually live in).
 
     Returns:
         The COLLADA document as a ``str`` when ``path`` is ``None``; otherwise ``None``.
@@ -433,8 +458,11 @@ def write_collada(
     up_axis = ElementTree.SubElement(asset, "up_axis")
     up_axis.text = "Z_UP"
     if materials:
+        out_dir = Path(path).parent if (embed_textures and path is not None) else None
         positions, uvs, groups = _appearance_mesh(model)
-        _material_libraries(collada, groups, model)
+        _material_libraries(
+            collada, groups, model, embed_textures, out_dir, texture_base
+        )
         _textured_geometry_library(collada, positions, uvs, groups)
     else:
         positions, triangles = _mesh(model)

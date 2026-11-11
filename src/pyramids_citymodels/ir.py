@@ -456,7 +456,13 @@ class CityModel:
 
         return write_jsonfg(self, path)
 
-    def to_obj(self, path: Any = None, materials: bool = False) -> str | None:
+    def to_obj(
+        self,
+        path: Any = None,
+        materials: bool = False,
+        embed_textures: bool = False,
+        texture_base: Any = None,
+    ) -> str | None:
         """Serialize this model to Wavefront OBJ (see :func:`.writers.obj.write_obj`).
 
         A mesh export (feature #14): each surface's exterior ring becomes one face. With
@@ -483,10 +489,14 @@ class CityModel:
         """
         from pyramids_citymodels.writers.obj import write_obj
 
-        return write_obj(self, path, materials)
+        return write_obj(self, path, materials, embed_textures, texture_base)
 
     def to_gltf(
-        self, path: Any = None, materials: bool = False
+        self,
+        path: Any = None,
+        materials: bool = False,
+        embed_textures: bool = False,
+        texture_base: Any = None,
     ) -> "dict[str, Any] | None":
         """Serialize this model to glTF 2.0 (see :func:`.writers.gltf.write_gltf`).
 
@@ -525,7 +535,7 @@ class CityModel:
         """
         from pyramids_citymodels.writers.gltf import write_gltf
 
-        return write_gltf(self, path, materials)
+        return write_gltf(self, path, materials, embed_textures, texture_base)
 
     def translate(self, offset: "tuple[float, ...]") -> "CityModel":
         """A new model with every coordinate shifted by ``offset`` per axis (geometry cleanup, #17).
@@ -604,7 +614,13 @@ class CityModel:
 
         return triangulate(self)
 
-    def to_collada(self, path: Any = None, materials: bool = False) -> str | None:
+    def to_collada(
+        self,
+        path: Any = None,
+        materials: bool = False,
+        embed_textures: bool = False,
+        texture_base: Any = None,
+    ) -> str | None:
         """Serialize this model to COLLADA 1.4.1 ``.dae`` (see :func:`.writers.collada.write_collada`).
 
         A triangulated mesh export (feature #14). With ``materials=False`` (default) it is positions-only;
@@ -630,7 +646,7 @@ class CityModel:
         """
         from pyramids_citymodels.writers.collada import write_collada
 
-        return write_collada(self, path, materials)
+        return write_collada(self, path, materials, embed_textures, texture_base)
 
     def to_kml(self, path: Any = None) -> str | None:
         """Serialize this model to KML (see :func:`.writers.kml.write_kml`).

@@ -16,7 +16,11 @@ dependencies (only the standard library and this package).
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
 
+import base64
 import math
+import mimetypes
+import shutil
+from pathlib import Path
 from typing import Any
 
 from pyramids_citymodels.ir import CityModel, Geometry, iter_surfaces
@@ -176,3 +180,34 @@ def texture_image(texture_index: int | None, textures_pool: list[Any]) -> str | 
     entry = textures_pool[texture_index]
     image = entry.get("image") if isinstance(entry, dict) else None
     return image or None
+
+
+def resolve_image(image: str, base: Any) -> Path | None:
+    """A readable local image :class:`~pathlib.Path` for a CityJSON ``image``, or ``None``.
+
+    Used by the ``embed_textures`` option: an absolute URL (``scheme://``) is not read (no network I/O),
+    and a path that does not resolve to a readable file returns ``None`` so the caller falls back to a
+    plain URI reference. Relative paths resolve against ``base`` (the texture base dir, or the cwd).
+    """
+    if not image or "://" in str(image):
+        return None
+    try:
+        path = Path(base) / image if base is not None else Path(image)
+        return path if path.is_file() else None
+    except (OSError, ValueError):
+        return None
+
+
+def data_uri(path: Path) -> str:
+    """A base64 ``data:`` URI for an image file (its media type guessed from the extension)."""
+    mime = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
+
+
+def copy_image(path: Path, out_dir: Path) -> str:
+    """Copy an image file beside the output (``out_dir``) and return the basename to reference it by."""
+    destination = out_dir / path.name
+    if path.resolve() != destination.resolve():
+        shutil.copyfile(path, destination)
+    return path.name
