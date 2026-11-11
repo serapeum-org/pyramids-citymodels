@@ -125,6 +125,36 @@ class TestObjMaterials:
             "both material groups must be selected"
         )
 
+    def test_mixed_model_emits_plain_faces_before_any_usemtl(self):
+        """An unthemed surface in a mixed model is not left under a prior ``usemtl`` (M1).
+
+        Test scenario:
+            Surface 0 is red, surface 1 has a ``null`` material; because OBJ ``usemtl`` is stateful, the
+            plain face must be written before any ``usemtl`` (default material), not after mat_0 where it
+            would silently render red.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle(0.0), _triangle(5.0)],
+            appearance={"material": {"": {"values": [0, None]}}},
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "materials": [{"name": "red", "diffuseColor": [1.0, 0.0, 0.0]}]
+            },
+        )
+        obj, _mtl = _write(model)
+        lines = obj.splitlines()
+        first_usemtl = next(
+            (i for i, line in enumerate(lines) if line.startswith("usemtl")), len(lines)
+        )
+        plain_faces = [line for line in lines[:first_usemtl] if line.startswith("f ")]
+        assert plain_faces, (
+            "the unthemed surface's face must precede any usemtl (default material)"
+        )
+
     def test_string_return_with_materials_raises(self):
         """``materials=True`` with no path raises, since the ``.mtl`` sidecar needs a file path.
 
