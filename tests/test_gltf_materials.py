@@ -113,6 +113,77 @@ class TestMaterials:
         }
         assert colors == {(1.0, 0.0, 0.0, 1.0), (0.0, 0.0, 1.0, 1.0)}, f"got {colors}"
 
+    def test_wrong_length_diffuse_color_yields_valid_rgba(self):
+        """A ``diffuseColor`` of length != 3 still yields a 4-component ``baseColorFactor`` (M2).
+
+        Test scenario:
+            A length-4 and a length-2 diffuseColor both produce a valid 4-element factor (glTF requires
+            exactly 4), rather than a 5- or 3-element one the validator rejects.
+        """
+        for diffuse in ([1.0, 0.0, 0.0, 0.5], [0.5, 0.5]):
+            document = write_gltf(_material_model(diffuse), materials=True)
+            factor = document["materials"][0]["pbrMetallicRoughness"]["baseColorFactor"]
+            assert len(factor) == 4, f"baseColorFactor must have 4 items, got {factor}"
+            assert factor[3] == 1.0, f"alpha must be 1.0, got {factor}"
+
+    def test_out_of_range_color_is_clamped(self):
+        """Colour components outside [0, 1] are clamped so the factor stays validator-clean (L3).
+
+        Test scenario:
+            A diffuseColor with 1.5 and -0.2 clamps to 1.0 and 0.0.
+        """
+        document = write_gltf(_material_model([1.5, -0.2, 0.5]), materials=True)
+        factor = document["materials"][0]["pbrMetallicRoughness"]["baseColorFactor"]
+        assert factor == [1.0, 0.0, 0.5, 1.0], (
+            f"components should clamp to [0,1], got {factor}"
+        )
+
+    def test_non_dict_material_entry_degrades(self):
+        """A ``null``/non-dict ``materials`` pool entry degrades to the default colour, not a crash (L1).
+
+        Test scenario:
+            The referenced material is ``None``; the surface still exports with the default grey factor.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle()],
+            appearance={"material": {"": {"values": [0]}}},
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={"materials": [None]},
+        )
+        document = write_gltf(model, materials=True)
+        factor = document["materials"][0]["pbrMetallicRoughness"]["baseColorFactor"]
+        assert factor == [0.8, 0.8, 0.8, 1.0], (
+            f"a non-dict material must fall back to grey, got {factor}"
+        )
+
+    def test_non_dict_texture_entry_degrades(self):
+        """A ``null``/non-dict ``textures`` pool entry degrades to untextured, not a crash (L1).
+
+        Test scenario:
+            The referenced texture is ``None``; the surface meshes without a texture.
+        """
+        geometry = Geometry(
+            type="MultiSurface",
+            lod="2",
+            boundaries=[_triangle()],
+            appearance={"texture": {"": {"values": [[[0, 0, 1, 2]]]}}},
+        )
+        model = CityModel(
+            objects={"b": CityObject(id="b", type="Building", geometries=[geometry])},
+            appearances={
+                "textures": [None],
+                "vertices-texture": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+            },
+        )
+        document = write_gltf(model, materials=True)
+        assert (
+            "TEXCOORD_0" not in document["meshes"][0]["primitives"][0]["attributes"]
+        ), "a non-dict texture entry must fall back to untextured"
+
     def test_no_appearance_model_is_positions_only(self):
         """``materials=True`` on a model without appearances still yields a valid positions-only mesh.
 

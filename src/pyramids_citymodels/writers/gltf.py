@@ -311,6 +311,32 @@ def _primitive_blobs(
     return position_blob, texcoord_blob, index_blob, len(positions), len(triangles)
 
 
+def _diffuse_of(material_index: int | None, materials_pool: list[Any]) -> Any:
+    """The CityJSON ``diffuseColor`` of a material pool entry, or ``None`` (missing / out-of-range / non-dict)."""
+    if material_index is None or not (0 <= material_index < len(materials_pool)):
+        return None
+    entry = materials_pool[material_index]
+    return entry.get("diffuseColor") if isinstance(entry, dict) else None
+
+
+def _base_color(diffuse: Any) -> list[float]:
+    """A valid glTF ``baseColorFactor`` (exactly 4 components in [0, 1]) from a CityJSON ``diffuseColor``.
+
+    glTF 2.0 requires ``baseColorFactor`` to hold exactly four numbers in ``[0, 1]``. A ``diffuseColor``
+    that is not a non-empty numeric sequence falls back to the default opaque grey; otherwise its first
+    three components (padded with 0.0 if short) are clamped to ``[0, 1]`` and an opaque alpha appended,
+    so a malformed-length or out-of-range colour can never produce a spec-invalid factor.
+    """
+    if (
+        not isinstance(diffuse, (list, tuple))
+        or not diffuse
+        or not all(isinstance(component, (int, float)) for component in diffuse)
+    ):
+        return list(_DEFAULT_BASE_COLOR)
+    rgb = ([float(component) for component in diffuse] + [0.0, 0.0, 0.0])[:3]
+    return [min(1.0, max(0.0, component)) for component in rgb] + [1.0]
+
+
 def _pbr_material(
     material_index: int | None,
     texture_index: int | None,
@@ -318,14 +344,9 @@ def _pbr_material(
     gltf_texture: int | None,
 ) -> dict[str, Any]:
     """A glTF PBR material: ``baseColorFactor`` from the CityJSON ``diffuseColor`` (+ optional texture)."""
-    pbr: dict[str, Any] = {}
-    if material_index is not None and material_index < len(materials_pool):
-        diffuse = materials_pool[material_index].get("diffuseColor")
-        pbr["baseColorFactor"] = (
-            [*diffuse, 1.0] if diffuse else list(_DEFAULT_BASE_COLOR)
-        )
-    else:
-        pbr["baseColorFactor"] = list(_DEFAULT_BASE_COLOR)
+    pbr: dict[str, Any] = {
+        "baseColorFactor": _base_color(_diffuse_of(material_index, materials_pool))
+    }
     if texture_index is not None and gltf_texture is not None:
         pbr["baseColorTexture"] = {"index": gltf_texture, "texCoord": 0}
     return {"pbrMetallicRoughness": pbr}
@@ -376,9 +397,8 @@ def _build_textured_gltf(model: CityModel) -> dict[str, Any]:
         return len(buffer_views) - 1
 
     def gltf_texture_for(source: int) -> int | None:
-        image = (
-            textures_pool[source].get("image") if source < len(textures_pool) else None
-        )
+        entry = textures_pool[source] if source < len(textures_pool) else None
+        image = entry.get("image") if isinstance(entry, dict) else None
         if not image:
             return None
         if source not in texture_by_source:
