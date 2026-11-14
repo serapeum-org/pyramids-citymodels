@@ -80,11 +80,6 @@ def _footprint(obj: CityObject) -> tuple[float, float, float, float]:
     return (round(min(xs), 2), round(min(ys), 2), round(max(xs), 2), round(max(ys), 2))
 
 
-def _footprints(model: CityModel) -> list[tuple[float, float, float, float]]:
-    """Every object's footprint extent, sorted — order-independent comparison across a round-trip."""
-    return sorted(_footprint(obj) for obj in model.objects.values())
-
-
 def _glb_document(glb: bytes) -> dict:
     """Parse the JSON chunk out of a ``.glb`` for structural assertions."""
     magic, _version, length = struct.unpack_from("<III", glb, 0)
@@ -99,6 +94,27 @@ def _write(model: CityModel, **kwargs) -> Path:
     out = Path(tempfile.mkdtemp())
     model.to_3dtiles(out, **kwargs)
     return out
+
+
+def _assert_same_features(draco: CityModel, plain: CityModel, tol: float = 0.2) -> None:
+    """Assert two reads recovered the same object ids with per-id footprints within ``tol``.
+
+    Draco quantizes positions, so a Draco footprint drifts from the uncompressed one by up to
+    ~extent/2**14; a tolerance keeps the comparison honest (and robust to non-integer fixtures) while
+    still proving every feature kept its own geometry.
+    """
+    assert set(draco.objects) == set(plain.objects), "same object ids as uncompressed"
+    for object_id in draco.objects:
+        drift = max(
+            abs(a - b)
+            for a, b in zip(
+                _footprint(draco.objects[object_id]),
+                _footprint(plain.objects[object_id]),
+            )
+        )
+        assert drift < tol, (
+            f"{object_id} footprint drifted {drift} (>= tolerance {tol})"
+        )
 
 
 class TestDracoWriteRoundTrip:
@@ -116,12 +132,7 @@ class TestDracoWriteRoundTrip:
             _write(model, content="gltf", compression="draco") / "tileset.json"
         )
         plain = parse_3dtiles(_write(model, content="gltf") / "tileset.json")
-        assert set(draco.objects) == set(plain.objects), (
-            "same object ids as uncompressed"
-        )
-        assert _footprints(draco) == _footprints(plain), (
-            "same footprints as uncompressed"
-        )
+        _assert_same_features(draco, plain)
         assert {o.type for o in draco.objects.values()} == {"Building", "Bridge"}, (
             "types kept"
         )
@@ -176,12 +187,7 @@ class TestDracoWriteRoundTrip:
             _write(model, content="gltf", compression="draco", **mode) / "tileset.json"
         )
         plain = parse_3dtiles(_write(model, content="gltf", **mode) / "tileset.json")
-        assert set(draco.objects) == set(plain.objects), (
-            "same object ids as uncompressed"
-        )
-        assert _footprints(draco) == _footprints(plain), (
-            "same footprints as uncompressed"
-        )
+        _assert_same_features(draco, plain)
 
     def test_attributes_round_trip_exactly(self) -> None:
         """Every object's integer ``floors`` attribute round-trips exactly through a Draco tile.
