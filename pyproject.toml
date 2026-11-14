@@ -43,10 +43,11 @@ dependencies = [
 # One extra per heavy backend. All three drivers keep `extra = None` so they are always discovered;
 # a bare install reads every format with the stdlib + numpy/shapely/geopandas.
 #
-# `draco` is a runtime-decode extra, NOT a driver gate: reading a `KHR_draco_mesh_compression` tile
-# needs DracoPy, so the decode path imports it lazily and raises a clear "install the draco extra"
-# error only on a Draco tile — uncompressed tiles always read. DracoPy ships cp311-cp314 wheels for
-# win-64/osx-arm64/linux-64, so the extra builds nothing.
+# `draco` is a runtime codec extra, NOT a driver gate: reading a `KHR_draco_mesh_compression` tile, or
+# writing one (`to_3dtiles(content="gltf", compression="draco")`), needs DracoPy, so both paths import
+# it lazily and raise a clear "install the draco extra" error only when a Draco tile is encountered —
+# uncompressed tiles always read and write. DracoPy ships cp311-cp314 wheels for win-64/osx-arm64/
+# linux-64, so the extra builds nothing.
 draco = ["DracoPy>=2.2.0"]
 
 [dependency-groups]
