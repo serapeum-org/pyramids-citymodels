@@ -357,6 +357,24 @@ class TestDracoBackendAbsent:
         ):
             parse_3dtiles(_tileset(tmp_path, "draco.b3dm"))
 
+    def test_missing_dracopy_raises_install_hint_on_glb_content(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """The glTF-content (`.glb`) path also fails fast with the install hint when DracoPy is absent.
+
+        Test scenario:
+            Same as the b3dm case but for a bare Draco `.glb` tile (``_FEATURE_ID_0``) — the shared reject
+            gate must raise the actionable error on this entry point too, not only on b3dm.
+        """
+        (tmp_path / "content.glb").write_bytes(_draco_glb(_SQUARES, "_FEATURE_ID_0"))
+        monkeypatch.setitem(
+            sys.modules, "DracoPy", None
+        )  # force ImportError on `import DracoPy`
+        with pytest.raises(
+            UnsupportedGeometryError, match=r"draco.*extra|extra.*draco"
+        ):
+            parse_3dtiles(_tileset(tmp_path, "content.glb"))
+
     def test_corrupt_draco_payload_is_wrapped(self) -> None:
         """A corrupt Draco bitstream raises ``UnsupportedGeometryError``, not a raw decoder error.
 
