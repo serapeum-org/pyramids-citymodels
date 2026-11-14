@@ -582,6 +582,31 @@ def _draco_primitive(
     return positions, (feature.reshape(-1) if feature is not None else None)
 
 
+def _primitive_vertices(
+    gltf: dict[str, Any], binary: bytes, primitive: dict[str, Any], attribute: str
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """One primitive's ``(positions, feature_ids)``, from its Draco stream or uncompressed accessors.
+
+    A primitive carrying a ``KHR_draco_mesh_compression`` extension is decoded via Draco; otherwise its
+    ``POSITION`` (and the feature ``attribute``, if present) are read from glTF accessors. ``positions``
+    is ``None`` — so the caller skips the primitive — when it declares no ``POSITION``; ``feature_ids``
+    is ``None`` when the primitive carries no ``attribute``.
+    """
+    draco_ext = primitive.get("extensions", {}).get("KHR_draco_mesh_compression")
+    if draco_ext is not None:
+        return _draco_primitive(gltf, binary, draco_ext, attribute)
+    attributes = primitive.get("attributes", {})
+    if "POSITION" not in attributes:
+        return None, None
+    points = _accessor_array(gltf, binary, attributes["POSITION"])
+    feature = (
+        _accessor_array(gltf, binary, attributes[attribute]).reshape(-1)
+        if attribute in attributes
+        else None
+    )
+    return points, feature
+
+
 def _mesh_vertices(
     gltf: dict[str, Any], binary: bytes, attribute: str = "_BATCHID"
 ) -> tuple[np.ndarray, np.ndarray | None]:
@@ -605,21 +630,7 @@ def _mesh_vertices(
     for mesh_index, mesh in enumerate(gltf.get("meshes", [])):
         transform = mesh_transforms.get(mesh_index, np.eye(4))
         for primitive in mesh.get("primitives", []):
-            draco_ext = primitive.get("extensions", {}).get(
-                "KHR_draco_mesh_compression"
-            )
-            if draco_ext is not None:
-                points, feature = _draco_primitive(gltf, binary, draco_ext, attribute)
-            else:
-                attributes = primitive.get("attributes", {})
-                if "POSITION" not in attributes:
-                    continue
-                points = _accessor_array(gltf, binary, attributes["POSITION"])
-                feature = (
-                    _accessor_array(gltf, binary, attributes[attribute]).reshape(-1)
-                    if attribute in attributes
-                    else None
-                )
+            points, feature = _primitive_vertices(gltf, binary, primitive, attribute)
             if points is None:
                 continue
             homogeneous = np.column_stack([points, np.ones(len(points))])
