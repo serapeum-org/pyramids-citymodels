@@ -371,7 +371,7 @@ def _import_dracopy() -> Any:
     """
     try:
         import DracoPy
-    except ImportError as exc:  # pragma: no cover - exercised via monkeypatch in tests
+    except ImportError as exc:
         raise UnsupportedGeometryError(
             "reading a Draco-compressed 3D Tiles tile needs the optional 'draco' extra; install it "
             "with `pip install pyramids-citymodels[draco]`"

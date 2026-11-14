@@ -228,6 +228,115 @@ class TestDracoGltfContent:
         assert extents == pytest.approx([0, 5], abs=0.05)
 
 
+def _draco_only(squares: dict) -> tuple[dict, bytes, dict]:
+    """A minimal ``(gltf, binary, draco_ext)`` for calling ``_draco_primitive`` directly.
+
+    Encodes the squares' corners + a per-vertex feature id and returns the one-bufferView glTF, its
+    binary blob, and the ``KHR_draco_mesh_compression`` extension dict (with the real Draco ids).
+    """
+    import DracoPy
+
+    points, feature_ids, faces = [], [], []
+    for feature, corners in squares.items():
+        base = len(points)
+        for point in corners:
+            points.append(point)
+            feature_ids.append(feature)
+        faces.append([base, base + 1, base + 2])
+        faces.append([base, base + 2, base + 3])
+    blob = DracoPy.encode(
+        np.array(points, dtype=np.float64),
+        np.array(faces, dtype=np.uint32),
+        generic_attributes={0: np.array(feature_ids, dtype=np.uint32).reshape(-1, 1)},
+    )
+    decoded = DracoPy.decode(blob)
+    pos = next(a["unique_id"] for a in decoded.attributes if a["attribute_type"] == 0)
+    gen = next(a["unique_id"] for a in decoded.attributes if a["attribute_type"] == 4)
+    binary = _pad(blob, 4, b"\x00")
+    gltf = {"bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": len(blob)}]}
+    draco_ext = {"bufferView": 0, "attributes": {"POSITION": pos, "_BATCHID": gen}}
+    return gltf, binary, draco_ext
+
+
+class TestDracoPrimitiveUnit:
+    """Unit tests for the Draco attribute/primitive helpers, including defensive id paths."""
+
+    def test_decodes_positions_and_feature_ids(self) -> None:
+        """A well-formed primitive returns ``(n, 3)`` positions and a paired ``(n,)`` feature id array.
+
+        Test scenario:
+            Two squares (feature 0 and 1) decode to 8 vertices; the feature-id set is exactly {0, 1}.
+        """
+        gltf, binary, draco_ext = _draco_only(_SQUARES)
+        points, feature = reader._draco_primitive(gltf, binary, draco_ext, "_BATCHID")
+        assert points.shape == (8, 3), f"expected 8 xyz vertices, got {points.shape}"
+        assert set(np.asarray(feature).astype(int)) == {0, 1}, (
+            "both feature ids must be recovered"
+        )
+
+    def test_unknown_position_id_returns_none(self) -> None:
+        """A POSITION id absent from the decoded stream yields ``(None, None)`` (primitive skipped).
+
+        Test scenario:
+            The extension maps POSITION to a unique id no attribute carries, so no positions resolve.
+        """
+        gltf, binary, draco_ext = _draco_only(_SQUARES)
+        draco_ext["attributes"]["POSITION"] = 9999
+        points, feature = reader._draco_primitive(gltf, binary, draco_ext, "_BATCHID")
+        assert points is None and feature is None, (
+            "an unresolvable POSITION must skip the primitive"
+        )
+
+    def test_absent_feature_attribute_yields_no_feature(self) -> None:
+        """When the requested feature attribute is not mapped, positions decode but feature is ``None``.
+
+        Test scenario:
+            Asking for ``_FEATURE_ID_0`` on a b3dm-style ext that only maps ``_BATCHID`` returns points
+            with no feature ids (the whole primitive is one feature).
+        """
+        gltf, binary, draco_ext = _draco_only(_SQUARES)
+        points, feature = reader._draco_primitive(
+            gltf, binary, draco_ext, "_FEATURE_ID_0"
+        )
+        assert points is not None and feature is None, (
+            "unmapped feature attribute must be None"
+        )
+
+    def test_draco_attribute_none_id_is_none(self) -> None:
+        """``_draco_attribute`` returns ``None`` for a ``None`` unique id without touching the mesh.
+
+        Test scenario:
+            A missing attribute mapping (``ids.get(name)`` is ``None``) short-circuits to ``None``.
+        """
+        assert reader._draco_attribute(object(), None, 3) is None, (
+            "None id must return None"
+        )
+
+    def test_mesh_vertices_skips_unresolvable_draco_primitive(self) -> None:
+        """``_mesh_vertices`` drops a Draco primitive whose POSITION id cannot be resolved.
+
+        Test scenario:
+            A mesh with one Draco primitive mapping POSITION to an absent id yields no vertices (the
+            ``points is None`` guard skips it) rather than raising.
+        """
+        gltf, binary, draco_ext = _draco_only(_SQUARES)
+        draco_ext["attributes"]["POSITION"] = 9999
+        gltf["meshes"] = [
+            {
+                "primitives": [
+                    {
+                        "attributes": {},
+                        "extensions": {"KHR_draco_mesh_compression": draco_ext},
+                    }
+                ]
+            }
+        ]
+        points, feature = reader._mesh_vertices(gltf, binary, "_BATCHID")
+        assert len(points) == 0 and feature is None, (
+            "an unresolvable Draco primitive must be skipped"
+        )
+
+
 class TestDracoBackendAbsent:
     """Without the extra, a Draco tile fails fast with an actionable error; meshopt stays rejected."""
 
