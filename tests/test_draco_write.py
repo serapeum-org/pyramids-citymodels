@@ -21,6 +21,10 @@ import pytest
 from pyramids_citymodels.errors import UnsupportedGeometryError
 from pyramids_citymodels.ir import CityModel, CityObject, Geometry
 from pyramids_citymodels.readers.threedtiles import parse_3dtiles
+from pyramids_citymodels.writers.threedtiles import (
+    _draco_encode_mesh,
+    _draco_unique_ids,
+)
 
 pytestmark = pytest.mark.draco
 
@@ -327,3 +331,64 @@ class TestDracoBackendAbsent:
             UnsupportedGeometryError, match=r"pyramids-citymodels\[draco\]"
         ):
             _model(1).to_3dtiles(out, content="gltf", compression="draco")
+
+
+class _FakeMesh:
+    """A stand-in decoded mesh exposing only the ``attributes`` list ``_draco_unique_ids`` reads."""
+
+    def __init__(self, attributes: list[dict]) -> None:
+        self.attributes = attributes
+
+
+class TestDracoWriteInternals:
+    """The Draco-encode helpers wrap their failure modes in the package's own error type."""
+
+    def test_unique_ids_pick_position_and_feature_past_a_decoy(self) -> None:
+        """POSITION (by type) and _FEATURE_ID_0 (by name) are found even past an unrelated attribute.
+
+        Test scenario:
+            ``_draco_unique_ids`` on a mesh whose attribute list also holds a decoy generic attribute
+            skips it and returns the right ``(POSITION, feature)`` unique ids.
+        """
+        mesh = _FakeMesh(
+            [
+                {"attribute_type": 4, "name": "_OTHER", "unique_id": 7},
+                {"attribute_type": 0, "name": None, "unique_id": 3},
+                {"attribute_type": 4, "name": "_FEATURE_ID_0", "unique_id": 5},
+            ]
+        )
+        assert _draco_unique_ids(mesh) == (3, 5), (
+            "position uid 3, feature uid 5 found past the decoy"
+        )
+
+    def test_unique_ids_raise_when_position_is_missing(self) -> None:
+        """A decoded mesh without a POSITION attribute raises instead of returning a bad map.
+
+        Test scenario:
+            ``_draco_unique_ids`` on a mesh carrying only the feature attribute (a corrupt round-trip)
+            raises ``UnsupportedGeometryError`` rather than silently writing an incomplete extension map.
+        """
+        mesh = _FakeMesh(
+            [{"attribute_type": 4, "name": "_FEATURE_ID_0", "unique_id": 0}]
+        )
+        with pytest.raises(UnsupportedGeometryError, match="POSITION or _FEATURE_ID_0"):
+            _draco_unique_ids(mesh)
+
+    def test_encode_wraps_a_backend_failure(self, monkeypatch) -> None:
+        """A ``DracoPy`` encode error surfaces as ``UnsupportedGeometryError``, not a raw backend error.
+
+        Test scenario:
+            With ``DracoPy.encode`` forced to raise, ``_draco_encode_mesh`` re-raises a clear
+            ``UnsupportedGeometryError`` naming the operation, so callers catch one documented type.
+        """
+        import DracoPy
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("backend exploded")
+
+        monkeypatch.setattr(DracoPy, "encode", boom)
+        position_blob = struct.pack("<9f", *([0.0] * 9))
+        featureid_blob = struct.pack("<3f", 0.0, 0.0, 0.0)
+        index_blob = struct.pack("<3I", 0, 1, 2)
+        with pytest.raises(UnsupportedGeometryError, match="could not Draco-compress"):
+            _draco_encode_mesh(position_blob, featureid_blob, index_blob)
