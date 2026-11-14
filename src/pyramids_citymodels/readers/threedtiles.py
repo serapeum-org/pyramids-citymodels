@@ -367,7 +367,14 @@ def _import_dracopy() -> Any:
 
     Draco decoding is an opt-in runtime extra — a bare install reads every *uncompressed* tile, and
     only a Draco-compressed tile needs this backend — so the import is lazy and its absence raises an
-    actionable :class:`~pyramids_citymodels.errors.UnsupportedGeometryError` rather than an ImportError.
+    actionable error rather than an ImportError.
+
+    Returns:
+        The imported ``DracoPy`` module.
+
+    Raises:
+        UnsupportedGeometryError: When ``DracoPy`` is not importable (the ``draco`` extra is not
+            installed), naming the extra to install.
     """
     try:
         import DracoPy
@@ -385,6 +392,13 @@ def _reject_unsupported_compression(gltf_json: dict[str, Any]) -> None:
     ``KHR_draco_mesh_compression`` is decodable **when the optional ``draco`` extra is installed** —
     its absence raises an actionable install hint here (fail fast, before any partial decode).
     ``EXT_meshopt_compression`` is not yet supported at all (a possible later follow-up).
+
+    Args:
+        gltf_json: The parsed glTF document whose ``extensionsRequired`` is inspected.
+
+    Raises:
+        UnsupportedGeometryError: When the glTF requires ``EXT_meshopt_compression``, or requires
+            ``KHR_draco_mesh_compression`` while the ``draco`` extra is not installed.
     """
     required = set(gltf_json.get("extensionsRequired", []))
     if "EXT_meshopt_compression" in required:
@@ -499,8 +513,16 @@ def _draco_attribute(
 ) -> np.ndarray | None:
     """One Draco attribute as an ``(n, components)`` float array, by its glTF-declared unique id.
 
-    ``None`` when the extension declares no id for the attribute or the decoded mesh has no attribute
-    with that id, so the caller treats it as absent (e.g. an untextured / feature-id-less primitive).
+    Args:
+        mesh: A decoded ``DracoPy`` mesh / point cloud exposing ``get_attribute_by_unique_id``.
+        unique_id: The Draco unique id the ``KHR_draco_mesh_compression`` extension mapped this glTF
+            attribute to, or ``None`` when the extension declares none for it.
+        components: The attribute's component count (3 for ``POSITION``, 1 for a feature id).
+
+    Returns:
+        The attribute data as an ``(n, components)`` float64 array, or ``None`` when ``unique_id`` is
+        ``None`` or the decoded mesh carries no attribute with that id — so the caller treats it as
+        absent (e.g. an untextured / feature-id-less primitive) rather than failing.
     """
     if unique_id is None:
         return None
@@ -518,8 +540,24 @@ def _draco_primitive(
     The extension carries the compressed geometry in its own ``bufferView`` and maps each glTF
     attribute name to a **Draco unique id** (not a glTF accessor). Positions and the per-vertex feature
     attribute (``_BATCHID`` / ``_FEATURE_ID_0``) are read back by those ids; Draco may reorder vertices,
-    but position and feature id stay paired, which is all the footprint builder needs. ``positions`` is
-    ``None`` when the primitive declares no ``POSITION`` (skipped, like the uncompressed path).
+    but position and feature id stay paired, which is all the footprint builder needs.
+
+    Args:
+        gltf: The parsed glTF document (for its ``bufferViews``).
+        binary: The glb binary buffer the Draco ``bufferView`` indexes into.
+        draco_ext: The primitive's ``KHR_draco_mesh_compression`` extension dict (``bufferView`` +
+            the glTF-attribute-name to Draco-unique-id ``attributes`` map).
+        attribute: The per-vertex feature-id attribute to recover (``_BATCHID`` or ``_FEATURE_ID_0``).
+
+    Returns:
+        ``(positions, feature_ids)`` — an ``(n, 3)`` positions array and an ``(n,)`` feature-id array,
+        either of which is ``None``: ``positions`` is ``None`` when the primitive declares no
+        ``POSITION`` (skipped, like the uncompressed path), and ``feature_ids`` is ``None`` when the
+        extension maps no ``attribute`` (the whole primitive is then one feature).
+
+    Raises:
+        UnsupportedGeometryError: When the Draco payload cannot be decoded (corrupt / truncated), or
+            when the ``draco`` extra is not installed.
     """
     dracopy = _import_dracopy()
     view = gltf["bufferViews"][draco_ext["bufferView"]]
