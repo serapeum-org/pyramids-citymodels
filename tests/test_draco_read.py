@@ -357,20 +357,19 @@ class TestDracoBackendAbsent:
         ):
             parse_3dtiles(_tileset(tmp_path, "draco.b3dm"))
 
-    def test_corrupt_draco_payload_is_wrapped(self, tmp_path) -> None:
-        """A truncated Draco bitstream raises ``UnsupportedGeometryError``, not a raw decoder error.
+    def test_corrupt_draco_payload_is_wrapped(self) -> None:
+        """A corrupt Draco bitstream raises ``UnsupportedGeometryError``, not a raw decoder error.
 
         Test scenario:
-            A primitive points at a bufferView of garbage bytes; the decode failure is wrapped so a
-            caller walking a tileset can catch one error type to skip a bad tile.
+            Zero the Draco header (the first bytes of the ``bufferView``, the ``DRACO`` magic/version —
+            always live payload, never the 0–3 trailing pad bytes), so the decode fails deterministically
+            and ``_draco_primitive`` wraps it into the one error type a tileset walker can catch.
         """
-        glb = _draco_glb(_SQUARES, "_BATCHID")
-        corrupt = bytearray(glb)
-        # Flip bytes in the BIN chunk (the Draco payload) near the end to corrupt it.
-        corrupt[-8:] = b"\x00" * 8
-        (tmp_path / "draco.b3dm").write_bytes(_wrap_b3dm(bytes(corrupt), 2))
-        with pytest.raises(UnsupportedGeometryError):
-            parse_3dtiles(_tileset(tmp_path, "draco.b3dm"))
+        gltf, binary, draco_ext = _draco_only(_SQUARES)
+        corrupt = bytearray(binary)
+        corrupt[:8] = b"\x00" * 8
+        with pytest.raises(UnsupportedGeometryError, match="Draco"):
+            reader._draco_primitive(gltf, bytes(corrupt), draco_ext, "_BATCHID")
 
 
 def test_reject_function_passes_draco_when_backend_present() -> None:
