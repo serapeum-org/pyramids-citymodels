@@ -815,7 +815,7 @@ def _draco_unique_ids(mesh: Any) -> tuple[int, int]:
     for attribute in mesh.attributes:
         if attribute["attribute_type"] == _DRACO_POSITION_TYPE:
             position_uid = attribute["unique_id"]
-        elif attribute["name"] == _FEATURE_ID_ATTRIBUTE:
+        elif attribute.get("name") == _FEATURE_ID_ATTRIBUTE:  # POSITION carries no name
             feature_uid = attribute["unique_id"]
     if position_uid is None or feature_uid is None:
         raise UnsupportedGeometryError(

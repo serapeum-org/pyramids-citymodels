@@ -361,6 +361,21 @@ class TestDracoWriteInternals:
             "position uid 3, feature uid 5 found past the decoy"
         )
 
+    def test_unique_ids_tolerate_an_attribute_without_a_name_key(self) -> None:
+        """A decoded attribute dict lacking a ``name`` key does not crash the lookup (D5).
+
+        Test scenario:
+            A POSITION attribute whose dict omits ``name`` entirely is matched by type, and the
+            feature attribute is still found — ``attribute.get("name")`` must not ``KeyError``.
+        """
+        mesh = _FakeMesh(
+            [
+                {"attribute_type": 0, "unique_id": 9},  # POSITION, no "name" key at all
+                {"attribute_type": 4, "name": "_FEATURE_ID_0", "unique_id": 4},
+            ]
+        )
+        assert _draco_unique_ids(mesh) == (9, 4), "no KeyError when an attribute omits 'name'"
+
     def test_unique_ids_raise_when_position_is_missing(self) -> None:
         """A decoded mesh without a POSITION attribute raises instead of returning a bad map.
 
