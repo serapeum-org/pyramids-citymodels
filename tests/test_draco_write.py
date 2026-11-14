@@ -1,11 +1,12 @@
 """Tests for writing Draco-compressed 3D Tiles glTF content (issue #82).
 
 `to_3dtiles(content="gltf", compression="draco")` compresses each tile's mesh with
-`KHR_draco_mesh_compression` (via the optional `[draco]` extra). Positions are quantized while the
-`_FEATURE_ID_0` feature id rides as a lossless generic attribute, so the tileset round-trips through
-this package's own reader to the same features and footprints as the uncompressed write — in every
-tiling mode and with `simplify` — while the geometry is meaningfully smaller. The whole module needs
-`DracoPy`, so it is marked `draco` and deselected on a bare install.
+`KHR_draco_mesh_compression` (via the optional `[draco]` extra). Positions are quantized (lossy) while
+the `_FEATURE_ID_0` feature id rides as a lossless generic attribute, so the tileset round-trips through
+this package's own reader to the same objects (ids, types, attributes) as the uncompressed write — with
+footprints within the position-quantization tolerance, in every tiling mode and with `simplify` — while
+the geometry is meaningfully smaller. The whole module needs `DracoPy`, so it is marked `draco` and
+deselected on a bare install.
 """
 
 import json

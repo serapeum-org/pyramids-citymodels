@@ -427,9 +427,12 @@ _FEATURE_ID_ATTRIBUTE = "_FEATURE_ID_0"
 #: Draco's own attribute-type code for POSITION (``draco::GeometryAttribute::POSITION``), as reported in
 #: a decoded ``DracoPy`` attribute's ``attribute_type`` — used to find the position unique id by identity.
 _DRACO_POSITION_TYPE = 0
-#: Draco position quantization (bits). Positions are lossy — 14 bits over a tile's extent is sub-mm for
-#: city footprints — while the ``_FEATURE_ID_0`` generic attribute is stored losslessly (verified: integer
-#: ids up to 2**24-1 round-trip exactly), so a vertex is never reassigned to the wrong feature.
+#: Draco position quantization (bits). Positions are lossy on a uniform grid sized to the tile's largest
+#: axis extent, so the error is about ``extent / 2**14`` — sub-mm for a small tile (~1 mm at 16 m), but
+#: ~6 cm for a 1 km tile and larger for a city-scale single tile (and vertical precision is tied to that
+#: same horizontal extent). The ``_FEATURE_ID_0`` generic attribute is stored **losslessly**, though
+#: (verified: integer ids up to 2**24-1 round-trip exactly), so a vertex is never reassigned to the wrong
+#: feature however coarse the position grid.
 _DRACO_QUANTIZATION_BITS = 14
 
 
@@ -1680,12 +1683,16 @@ def write_3dtiles(
     **Draco mesh compression** (``compression=``, glTF content only): ``None`` (default) writes
     uncompressed geometry; ``"draco"`` compresses each tile's mesh with ``KHR_draco_mesh_compression``
     (via the optional ``[draco]`` extra — ``DracoPy``), typically shrinking the geometry several-fold for
-    web streaming. Positions are quantized (lossy at ~sub-mm over a tile, which city footprints tolerate)
-    while feature ids ride as a lossless generic attribute, so the tileset round-trips through this
-    package's own reader to the same features and footprints in every tiling mode (and with ``simplify``).
-    ``compression="draco"`` requires ``content="gltf"`` (Draco inside a ``b3dm`` wrapper is a later
-    follow-up) and the ``[draco]`` extra — without it, a clear ``UnsupportedGeometryError`` names the extra
-    to install; an unknown value raises ``ValueError``.
+    web streaming. Positions are **lossy**: quantized on a uniform grid sized to the tile's largest axis
+    extent, so the error is about ``extent / 2**14`` (sub-mm for a small tile, ~6 cm for a 1 km tile, more
+    for a city-scale single tile — size tiles accordingly). Feature ids, by contrast, ride as a **lossless**
+    generic attribute, so every object reads back with its correct id, type and attributes, and its
+    footprint within that position tolerance, in every tiling mode (and with ``simplify``). Feature
+    **counts** are preserved except that a feature degenerate relative to the tile extent can collapse
+    under quantization and be dropped on read — the same way an over-decimated feature can in the
+    uncompressed case. ``compression="draco"`` requires ``content="gltf"`` (Draco inside a ``b3dm`` wrapper
+    is a later follow-up) and the ``[draco]`` extra — without it, a clear ``UnsupportedGeometryError`` names
+    the extra to install; an unknown value raises ``ValueError``.
 
     **glTF metadata shape** (``metadata=``, glTF content only): ``"json"`` (default) keeps the whole
     attribute dict in one JSON-encoded ``attributes`` property — lossless for any JSON value. ``"typed"``
