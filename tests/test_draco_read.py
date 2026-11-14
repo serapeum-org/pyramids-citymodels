@@ -283,9 +283,8 @@ class TestDracoPrimitiveUnit:
         gltf, binary, draco_ext = _draco_only(_SQUARES)
         draco_ext["attributes"]["POSITION"] = 9999
         points, feature = reader._draco_primitive(gltf, binary, draco_ext, "_BATCHID")
-        assert points is None and feature is None, (
-            "an unresolvable POSITION must skip the primitive"
-        )
+        assert points is None, "an unresolvable POSITION must yield no positions"
+        assert feature is None, "an unresolvable POSITION must yield no feature ids"
 
     def test_absent_feature_attribute_yields_no_feature(self) -> None:
         """When the requested feature attribute is not mapped, positions decode but feature is ``None``.
@@ -298,9 +297,8 @@ class TestDracoPrimitiveUnit:
         points, feature = reader._draco_primitive(
             gltf, binary, draco_ext, "_FEATURE_ID_0"
         )
-        assert points is not None and feature is None, (
-            "unmapped feature attribute must be None"
-        )
+        assert points is not None, "positions must still decode"
+        assert feature is None, "an unmapped feature attribute must be None"
 
     def test_draco_attribute_none_id_is_none(self) -> None:
         """``_draco_attribute`` returns ``None`` for a ``None`` unique id without touching the mesh.
@@ -332,8 +330,11 @@ class TestDracoPrimitiveUnit:
             }
         ]
         points, feature = reader._mesh_vertices(gltf, binary, "_BATCHID")
-        assert len(points) == 0 and feature is None, (
-            "an unresolvable Draco primitive must be skipped"
+        assert len(points) == 0, (
+            "an unresolvable Draco primitive must yield no vertices"
+        )
+        assert feature is None, (
+            "an unresolvable Draco primitive must yield no feature ids"
         )
 
 
@@ -349,13 +350,14 @@ class TestDracoBackendAbsent:
         """
         glb = _draco_glb(_SQUARES, "_BATCHID")
         (tmp_path / "draco.b3dm").write_bytes(_wrap_b3dm(glb, 2))
+        tileset = _tileset(tmp_path, "draco.b3dm")
         monkeypatch.setitem(
             sys.modules, "DracoPy", None
         )  # force ImportError on `import DracoPy`
         with pytest.raises(
             UnsupportedGeometryError, match=r"draco.*extra|extra.*draco"
         ):
-            parse_3dtiles(_tileset(tmp_path, "draco.b3dm"))
+            parse_3dtiles(tileset)
 
     def test_missing_dracopy_raises_install_hint_on_glb_content(
         self, tmp_path, monkeypatch
@@ -367,13 +369,14 @@ class TestDracoBackendAbsent:
             gate must raise the actionable error on this entry point too, not only on b3dm.
         """
         (tmp_path / "content.glb").write_bytes(_draco_glb(_SQUARES, "_FEATURE_ID_0"))
+        tileset = _tileset(tmp_path, "content.glb")
         monkeypatch.setitem(
             sys.modules, "DracoPy", None
         )  # force ImportError on `import DracoPy`
         with pytest.raises(
             UnsupportedGeometryError, match=r"draco.*extra|extra.*draco"
         ):
-            parse_3dtiles(_tileset(tmp_path, "content.glb"))
+            parse_3dtiles(tileset)
 
     def test_corrupt_draco_payload_is_wrapped(self) -> None:
         """A corrupt Draco bitstream raises ``UnsupportedGeometryError``, not a raw decoder error.
@@ -386,8 +389,9 @@ class TestDracoBackendAbsent:
         gltf, binary, draco_ext = _draco_only(_SQUARES)
         corrupt = bytearray(binary)
         corrupt[:8] = b"\x00" * 8
+        payload = bytes(corrupt)
         with pytest.raises(UnsupportedGeometryError, match="Draco"):
-            reader._draco_primitive(gltf, bytes(corrupt), draco_ext, "_BATCHID")
+            reader._draco_primitive(gltf, payload, draco_ext, "_BATCHID")
 
 
 def test_reject_function_passes_draco_when_backend_present() -> None:
