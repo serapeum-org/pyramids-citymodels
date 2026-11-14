@@ -68,8 +68,8 @@ dependencies = [
 # and uncompressed tiles must still read. Instead the decode path imports `DracoPy` lazily and
 # raises a clear "install the draco extra" error only when a Draco tile is actually encountered,
 # so a bare install reads every uncompressed tileset and `pip install pyramids-citymodels[draco]`
-# unlocks the compressed ones. DracoPy ships wheels across the full cp311-cp314 x {Linux, macOS,
-# Windows} matrix, so the extra builds nothing at install.
+# unlocks the compressed ones. DracoPy ships cp311-cp314 wheels for this project's platforms
+# (win-64, osx-arm64, linux-64), so the extra builds nothing at install.
 draco = ["DracoPy>=2.2.0"]
 
 [dependency-groups]
