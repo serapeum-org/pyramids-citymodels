@@ -132,11 +132,13 @@ class TestDriver:
 class TestUnsupported:
     """Compressed meshes and point-cloud tiles are rejected or routed out, never mis-read."""
 
-    def test_draco_compressed_gltf_is_rejected(self, tmp_path: Path) -> None:
-        tile = _b3dm_with_compressed_gltf()
-        path = tmp_path / "draco.b3dm"
+    def test_meshopt_compressed_gltf_is_rejected(self, tmp_path: Path) -> None:
+        # Draco is now decodable via the optional extra (see test_draco_read.py); meshopt is still
+        # unsupported and must be rejected with a clear message.
+        tile = _b3dm_with_compressed_gltf("EXT_meshopt_compression")
+        path = tmp_path / "meshopt.b3dm"
         path.write_bytes(tile)
-        with pytest.raises(UnsupportedGeometryError, match="mesh-compression"):
+        with pytest.raises(UnsupportedGeometryError, match="meshopt"):
             parse_3dtiles(path)
 
     def test_pnts_tile_is_skipped_with_a_warning(self, tmp_path: Path) -> None:
@@ -152,13 +154,15 @@ class TestUnsupported:
         assert model.objects == {}
 
 
-def _b3dm_with_compressed_gltf() -> bytes:
-    """A b3dm whose glTF declares a required Draco extension (no real mesh needed)."""
+def _b3dm_with_compressed_gltf(
+    extension: str = "EXT_meshopt_compression",
+) -> bytes:
+    """A b3dm whose glTF declares a required mesh-compression extension (no real mesh needed)."""
     import json
 
     gltf = {
         "asset": {"version": "2.0"},
-        "extensionsRequired": ["KHR_draco_mesh_compression"],
+        "extensionsRequired": [extension],
     }
     json_chunk = json.dumps(gltf).encode("utf-8")
     json_chunk += b" " * ((4 - len(json_chunk) % 4) % 4)

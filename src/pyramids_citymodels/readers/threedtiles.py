@@ -25,9 +25,16 @@ Deliberate scope and limitations of this first reader (all documented, none sile
   too, so a footprint is the true plan view, not a side elevation. What it does **not** do is project
   the resulting (typically Earth-centred Earth-fixed, ECEF, metre) coordinates to a geographic or
   projected CRS; the model's ``crs`` is therefore left ``None``.
-- **Uncompressed glTF only.** Draco (``KHR_draco_mesh_compression``) and meshopt payloads are
-  rejected with a clear :class:`~pyramids_citymodels.errors.UnsupportedGeometryError`; decoding them
-  needs an optional backend, a documented follow-up (issue #12's extra convention).
+- **Draco compression is read via the optional ``draco`` extra; meshopt is not.** Uncompressed glTF is
+  decoded with numpy; a ``KHR_draco_mesh_compression`` tile is decoded with ``DracoPy`` when the ``draco``
+  extra is installed (``pip install pyramids-citymodels[draco]``) and otherwise raises a clear
+  :class:`~pyramids_citymodels.errors.UnsupportedGeometryError` naming the extra — so a bare install still
+  reads every uncompressed tileset. A primitive is taken down the Draco path whenever it carries the
+  extension object, whether Draco is listed in ``extensionsRequired`` or only ``extensionsUsed``; this
+  reader does **not** fall back to a primitive's uncompressed accessors when the backend is absent (a
+  deliberate choice — 3D Tiles content marks Draco *required* and omits fallback accessors, so their
+  ``bufferView`` is absent and a fallback read would fail anyway). ``EXT_meshopt_compression`` is still
+  rejected (a possible follow-up).
 - **``pnts`` is routed out, not read here.** Point-cloud tiles belong to the ``pointclouds`` package
   (serapeum-org/pointclouds#10); a ``pnts`` tile is skipped with a warning rather than mis-read as a
   mesh.
@@ -360,15 +367,53 @@ def _parse_glb(data: bytes) -> tuple[dict[str, Any], bytes]:
     return gltf_json, binary
 
 
-def _reject_compressed(gltf_json: dict[str, Any]) -> None:
-    """Raise if the glTF uses a mesh-compression extension this reader cannot decode."""
-    required = set(gltf_json.get("extensionsRequired", []))
-    unsupported = required & {"KHR_draco_mesh_compression", "EXT_meshopt_compression"}
-    if unsupported:
+def _import_dracopy() -> Any:
+    """Import the optional ``DracoPy`` backend, or raise a clear "install the draco extra" error.
+
+    Draco decoding is an opt-in runtime extra — a bare install reads every *uncompressed* tile, and
+    only a Draco-compressed tile needs this backend — so the import is lazy and its absence raises an
+    actionable error rather than an ImportError.
+
+    Returns:
+        The imported ``DracoPy`` module.
+
+    Raises:
+        UnsupportedGeometryError: When ``DracoPy`` is not importable (the ``draco`` extra is not
+            installed), naming the extra to install.
+    """
+    try:
+        import DracoPy
+    except ImportError as exc:
         raise UnsupportedGeometryError(
-            f"3D Tiles glTF requires mesh-compression extension(s) {sorted(unsupported)}, which "
-            f"this reader cannot decode; a compressed-mesh backend is a documented follow-up (#12)"
+            "reading a Draco-compressed 3D Tiles tile needs the optional 'draco' extra; install it "
+            "with `pip install pyramids-citymodels[draco]`"
+        ) from exc
+    return DracoPy
+
+
+def _reject_unsupported_compression(gltf_json: dict[str, Any]) -> None:
+    """Raise if the glTF requires a mesh-compression extension this reader cannot decode.
+
+    ``KHR_draco_mesh_compression`` is decodable **when the optional ``draco`` extra is installed** —
+    its absence raises an actionable install hint here (fail fast, before any partial decode).
+    ``EXT_meshopt_compression`` is not yet supported at all (a possible later follow-up).
+
+    Args:
+        gltf_json: The parsed glTF document whose ``extensionsRequired`` is inspected.
+
+    Raises:
+        UnsupportedGeometryError: When the glTF requires ``EXT_meshopt_compression``, or requires
+            ``KHR_draco_mesh_compression`` while the ``draco`` extra is not installed.
+    """
+    required = set(gltf_json.get("extensionsRequired", []))
+    if "EXT_meshopt_compression" in required:
+        raise UnsupportedGeometryError(
+            "3D Tiles glTF requires EXT_meshopt_compression, which this reader cannot decode "
+            "(a meshopt backend is a possible follow-up); Draco compression is supported via the "
+            "optional 'draco' extra"
         )
+    if "KHR_draco_mesh_compression" in required:
+        _import_dracopy()  # raises the install hint when the backend is absent; decoded in _mesh_vertices
 
 
 def _accessor_array(
@@ -468,6 +513,100 @@ def _up_axis_to_zup(axis: Any) -> np.ndarray:
     return matrix
 
 
+def _draco_attribute(
+    mesh: Any, unique_id: int | None, components: int
+) -> np.ndarray | None:
+    """One Draco attribute as an ``(n, components)`` float array, by its glTF-declared unique id.
+
+    Args:
+        mesh: A decoded ``DracoPy`` mesh / point cloud exposing ``get_attribute_by_unique_id``.
+        unique_id: The Draco unique id the ``KHR_draco_mesh_compression`` extension mapped this glTF
+            attribute to, or ``None`` when the extension declares none for it.
+        components: The attribute's component count (3 for ``POSITION``, 1 for a feature id).
+
+    Returns:
+        The attribute data as an ``(n, components)`` float64 array, or ``None`` when ``unique_id`` is
+        ``None`` or the decoded mesh carries no attribute with that id — so the caller treats it as
+        absent (e.g. an untextured / feature-id-less primitive) rather than failing.
+    """
+    if unique_id is None:
+        return None
+    attribute = mesh.get_attribute_by_unique_id(unique_id)
+    if attribute is None:
+        return None
+    return np.asarray(attribute["data"], dtype=np.float64).reshape(-1, components)
+
+
+def _draco_primitive(
+    gltf: dict[str, Any], binary: bytes, draco_ext: dict[str, Any], attribute: str
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Decode one ``KHR_draco_mesh_compression`` primitive to ``(positions, feature_ids)``.
+
+    The extension carries the compressed geometry in its own ``bufferView`` and maps each glTF
+    attribute name to a **Draco unique id** (not a glTF accessor). Positions and the per-vertex feature
+    attribute (``_BATCHID`` / ``_FEATURE_ID_0``) are read back by those ids; Draco may reorder vertices,
+    but position and feature id stay paired, which is all the footprint builder needs.
+
+    Args:
+        gltf: The parsed glTF document (for its ``bufferViews``).
+        binary: The glb binary buffer the Draco ``bufferView`` indexes into.
+        draco_ext: The primitive's ``KHR_draco_mesh_compression`` extension dict (``bufferView`` +
+            the glTF-attribute-name to Draco-unique-id ``attributes`` map).
+        attribute: The per-vertex feature-id attribute to recover (``_BATCHID`` or ``_FEATURE_ID_0``).
+
+    Returns:
+        ``(positions, feature_ids)`` — an ``(n, 3)`` positions array and an ``(n,)`` feature-id array,
+        either of which is ``None``: ``positions`` is ``None`` when the primitive declares no
+        ``POSITION`` (skipped, like the uncompressed path), and ``feature_ids`` is ``None`` when the
+        extension maps no ``attribute`` (the whole primitive is then one feature).
+
+    Raises:
+        UnsupportedGeometryError: When the Draco payload cannot be decoded (corrupt / truncated), or
+            when the ``draco`` extra is not installed.
+    """
+    dracopy = _import_dracopy()
+    view = gltf["bufferViews"][draco_ext["bufferView"]]
+    start = view.get("byteOffset", 0)
+    blob = bytes(binary[start : start + view["byteLength"]])
+    try:
+        mesh = dracopy.decode(blob)
+    except Exception as exc:  # DracoPy raises assorted errors on a corrupt payload
+        raise UnsupportedGeometryError(
+            f"could not decode a Draco-compressed tile payload: {exc}"
+        ) from exc
+    ids = draco_ext.get("attributes", {})
+    positions = _draco_attribute(mesh, ids.get("POSITION"), 3)
+    if positions is None:
+        return None, None
+    feature = _draco_attribute(mesh, ids.get(attribute), 1)
+    return positions, (feature.reshape(-1) if feature is not None else None)
+
+
+def _primitive_vertices(
+    gltf: dict[str, Any], binary: bytes, primitive: dict[str, Any], attribute: str
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """One primitive's ``(positions, feature_ids)``, from its Draco stream or uncompressed accessors.
+
+    A primitive carrying a ``KHR_draco_mesh_compression`` extension is decoded via Draco; otherwise its
+    ``POSITION`` (and the feature ``attribute``, if present) are read from glTF accessors. ``positions``
+    is ``None`` — so the caller skips the primitive — when it declares no ``POSITION``; ``feature_ids``
+    is ``None`` when the primitive carries no ``attribute``.
+    """
+    draco_ext = primitive.get("extensions", {}).get("KHR_draco_mesh_compression")
+    if draco_ext is not None:
+        return _draco_primitive(gltf, binary, draco_ext, attribute)
+    attributes = primitive.get("attributes", {})
+    if "POSITION" not in attributes:
+        return None, None
+    points = _accessor_array(gltf, binary, attributes["POSITION"])
+    feature = (
+        _accessor_array(gltf, binary, attributes[attribute]).reshape(-1)
+        if attribute in attributes
+        else None
+    )
+    return points, feature
+
+
 def _mesh_vertices(
     gltf: dict[str, Any], binary: bytes, attribute: str = "_BATCHID"
 ) -> tuple[np.ndarray, np.ndarray | None]:
@@ -491,23 +630,23 @@ def _mesh_vertices(
     for mesh_index, mesh in enumerate(gltf.get("meshes", [])):
         transform = mesh_transforms.get(mesh_index, np.eye(4))
         for primitive in mesh.get("primitives", []):
-            attributes = primitive.get("attributes", {})
-            if "POSITION" not in attributes:
+            points, feature = _primitive_vertices(gltf, binary, primitive, attribute)
+            if points is None:
                 continue
-            points = _accessor_array(gltf, binary, attributes["POSITION"])
             homogeneous = np.column_stack([points, np.ones(len(points))])
             world = (transform @ homogeneous.T).T[:, :3]
             all_points.append(world)
-            if attribute in attributes:
+            if feature is not None:
                 saw_batch = True
-                batch = _accessor_array(gltf, binary, attributes[attribute]).reshape(-1)
+                all_batch.append(feature)
             else:
-                batch = np.zeros(len(points))
-            all_batch.append(batch)
+                all_batch.append(np.zeros(len(points)))
     if not all_points:
         return np.empty((0, 3)), None
     points = np.vstack(all_points)
-    batch_ids = np.concatenate(all_batch).astype(int) if saw_batch else None
+    # Round, don't truncate: feature ids arrive as float (glTF float accessors, and Draco returns
+    # float64), so a lossily-quantized id that comes back as n - eps must map to n, not floor to n - 1.
+    batch_ids = np.rint(np.concatenate(all_batch)).astype(int) if saw_batch else None
     return points, batch_ids
 
 
@@ -659,7 +798,7 @@ def _decode_b3dm(
     batch_table = _feature_table(data, bt_json, offset)
     offset += bt_json + bt_bin
     gltf, binary = _parse_glb(data[offset:])
-    _reject_compressed(gltf)
+    _reject_unsupported_compression(gltf)
 
     points, batch_ids = _mesh_vertices(gltf, binary)
     if len(points) == 0:
@@ -936,7 +1075,7 @@ def _decode_gltf(
 ) -> list[CityObject]:
     """The raw glTF-content decode, whose expected-on-corruption errors :func:`_parse_gltf_tile` wraps."""
     gltf, binary = _parse_glb(data)
-    _reject_compressed(gltf)
+    _reject_unsupported_compression(gltf)
     points, feature_ids = _mesh_vertices(gltf, binary, attribute="_FEATURE_ID_0")
     if len(points) == 0:
         return []

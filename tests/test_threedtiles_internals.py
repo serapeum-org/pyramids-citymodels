@@ -32,6 +32,44 @@ def _pack_glb(gltf: dict, binary: bytes) -> bytes:
     return out
 
 
+class TestFeatureIdRounding:
+    """The feature-id assembly rounds (not truncates) near-integer ids from a float accessor."""
+
+    def test_near_integer_ids_round_not_floor(self) -> None:
+        """A ``_BATCHID`` float accessor of ``[0.9999, 2.0001]`` yields ids ``[1, 2]``, not ``[0, 2]``.
+
+        Test scenario:
+            Feature ids arrive as float (glTF float accessors, and Draco returns float64). A lossily
+            represented id just under an integer must map to that integer, so ``_mesh_vertices`` rounds
+            before casting to int rather than truncating toward zero.
+        """
+        positions = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]
+        position_bytes = b"".join(struct.pack("<3f", *p) for p in positions)
+        batch_bytes = b"".join(struct.pack("<f", v) for v in (0.9999, 2.0001))
+        binary = position_bytes + batch_bytes
+        gltf = {
+            "meshes": [
+                {"primitives": [{"attributes": {"POSITION": 0, "_BATCHID": 1}}]}
+            ],
+            "bufferViews": [
+                {"buffer": 0, "byteOffset": 0, "byteLength": len(position_bytes)},
+                {
+                    "buffer": 0,
+                    "byteOffset": len(position_bytes),
+                    "byteLength": len(batch_bytes),
+                },
+            ],
+            "accessors": [
+                {"bufferView": 0, "componentType": 5126, "count": 2, "type": "VEC3"},
+                {"bufferView": 1, "componentType": 5126, "count": 2, "type": "SCALAR"},
+            ],
+        }
+        _points, ids = tt._mesh_vertices(gltf, binary, "_BATCHID")
+        assert list(ids) == [1, 2], (
+            f"near-integer feature ids must round, got {list(ids)}"
+        )
+
+
 def _mesh_glb(
     positions: list[tuple[float, float, float]],
     batch_ids: list[int] | None = None,

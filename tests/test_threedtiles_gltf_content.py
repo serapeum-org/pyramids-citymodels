@@ -495,13 +495,14 @@ def test_gltf_content_without_our_metadata_still_yields_features() -> None:
 
 
 def test_compressed_gltf_content_is_rejected() -> None:
-    # A Draco/meshopt-compressed glTF tile this reader cannot decode raises UnsupportedGeometryError
-    # (the message points at the compressed-mesh follow-up), not a bare decode error.
-    def require_draco(document: dict) -> None:
-        document["extensionsRequired"] = ["KHR_draco_mesh_compression"]
+    # Draco is now decodable via the optional extra (see test_draco_read.py); meshopt is still
+    # unsupported, so a meshopt-required glTF tile raises UnsupportedGeometryError (one catchable type),
+    # not a bare decode error.
+    def require_meshopt(document: dict) -> None:
+        document["extensionsRequired"] = ["EXT_meshopt_compression"]
 
-    glb = _rebuild_glb(_glb_bytes(_model(1)), require_draco)
-    with pytest.raises(UnsupportedGeometryError, match="mesh-compression"):
+    glb = _rebuild_glb(_glb_bytes(_model(1)), require_meshopt)
+    with pytest.raises(UnsupportedGeometryError, match="meshopt"):
         _parse_gltf_tile(glb, np.eye(4), up_axis="Z")
 
 
