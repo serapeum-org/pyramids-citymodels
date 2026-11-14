@@ -428,11 +428,11 @@ _FEATURE_ID_ATTRIBUTE = "_FEATURE_ID_0"
 #: a decoded ``DracoPy`` attribute's ``attribute_type`` — used to find the position unique id by identity.
 _DRACO_POSITION_TYPE = 0
 #: Draco position quantization (bits). Positions are lossy on a uniform grid sized to the tile's largest
-#: axis extent, so the error is about ``extent / 2**14`` — sub-mm for a small tile (~1 mm at 16 m), but
-#: ~6 cm for a 1 km tile and larger for a city-scale single tile (and vertical precision is tied to that
-#: same horizontal extent). The ``_FEATURE_ID_0`` generic attribute is stored **losslessly**, though
-#: (verified: integer ids up to 2**24-1 round-trip exactly), so a vertex is never reassigned to the wrong
-#: feature however coarse the position grid.
+#: axis extent, so the round-trip error is bounded by about ``extent / 2**14`` (the measured worst case is
+#: ~half a grid cell) — under ~1 mm for a 16 m tile, but up to ~6 cm for a 1 km tile and more for a
+#: city-scale single tile, with vertical precision tied to that same horizontal extent. The
+#: ``_FEATURE_ID_0`` generic attribute is stored **losslessly**, though (verified: integer ids up to
+#: 2**24-1 round-trip exactly), so a vertex is never reassigned to the wrong feature however coarse the grid.
 _DRACO_QUANTIZATION_BITS = 14
 
 
@@ -472,8 +472,10 @@ def _validate_gltf_encodable(
 
     The explicit and implicit writers emit content files incrementally, so a per-tile encode error
     partway through would leave orphaned ``.glb`` files and no ``tileset.json``. Validating every
-    object's attributes (and the per-tile feature-count ceiling) up front makes the whole write
-    fail-fast and atomic: on a bad input nothing is written. When ``compression="draco"``, the
+    object's attributes up front makes the whole write fail-fast and atomic: on a bad input nothing is
+    written. (The per-tile feature-count ceiling is enforced later, in :func:`_gltf_from_rings`; an
+    over-ceiling tile raises while writing its own single file, so it orphans nothing.) When
+    ``compression="draco"``, the
     ``[draco]`` backend is imported here too, so a missing extra fails before any file is written (not
     on the first tile) for every mode — including an empty model, which otherwise never encodes a tile.
     """
@@ -1684,8 +1686,9 @@ def write_3dtiles(
     uncompressed geometry; ``"draco"`` compresses each tile's mesh with ``KHR_draco_mesh_compression``
     (via the optional ``[draco]`` extra — ``DracoPy``), typically shrinking the geometry several-fold for
     web streaming. Positions are **lossy**: quantized on a uniform grid sized to the tile's largest axis
-    extent, so the error is about ``extent / 2**14`` (sub-mm for a small tile, ~6 cm for a 1 km tile, more
-    for a city-scale single tile — size tiles accordingly). Feature ids, by contrast, ride as a **lossless**
+    extent, so the error is at most about ``extent / 2**14`` (under sub-mm for a small tile, up to ~6 cm
+    for a 1 km tile, more for a city-scale single tile — size tiles accordingly). Feature ids, by contrast,
+    ride as a **lossless**
     generic attribute, so every object reads back with its correct id, type and attributes, and its
     footprint within that position tolerance, in every tiling mode (and with ``simplify``). Feature
     **counts** are preserved except that a feature degenerate relative to the tile extent can collapse
