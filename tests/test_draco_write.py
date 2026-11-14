@@ -332,6 +332,28 @@ class TestDracoBackendAbsent:
         ):
             _model(1).to_3dtiles(out, content="gltf", compression="draco")
 
+    def test_missing_extra_fails_before_writing_any_file(self, monkeypatch) -> None:
+        """A missing ``[draco]`` extra is caught by the pre-flight — no file is written (D3 atomicity).
+
+        Test scenario:
+            A multi-tile Draco write with ``DracoPy`` masked raises and leaves the output directory
+            empty (no ``.glb``, no ``tileset.json``), and — unlike before the pre-flight — an *empty*
+            model requesting Draco also raises rather than silently writing an uncompressed tileset.
+        """
+        monkeypatch.setitem(sys.modules, "DracoPy", None)
+        out = Path(tempfile.mkdtemp())
+        with pytest.raises(UnsupportedGeometryError, match="draco"):
+            _model(4).to_3dtiles(
+                out, content="gltf", compression="draco", max_objects_per_tile=1
+            )
+        assert list(out.iterdir()) == [], "no orphaned files when the backend is absent"
+        empty_out = Path(tempfile.mkdtemp())
+        with pytest.raises(UnsupportedGeometryError, match="draco"):
+            CityModel().to_3dtiles(empty_out, content="gltf", compression="draco")
+        assert not (empty_out / "tileset.json").exists(), (
+            "empty model + draco must not write a tileset"
+        )
+
 
 class _FakeMesh:
     """A stand-in decoded mesh exposing only the ``attributes`` list ``_draco_unique_ids`` reads."""
@@ -374,7 +396,9 @@ class TestDracoWriteInternals:
                 {"attribute_type": 4, "name": "_FEATURE_ID_0", "unique_id": 4},
             ]
         )
-        assert _draco_unique_ids(mesh) == (9, 4), "no KeyError when an attribute omits 'name'"
+        assert _draco_unique_ids(mesh) == (9, 4), (
+            "no KeyError when an attribute omits 'name'"
+        )
 
     def test_unique_ids_raise_when_position_is_missing(self) -> None:
         """A decoded mesh without a POSITION attribute raises instead of returning a bad map.

@@ -462,14 +462,20 @@ def _attributes_json(city_object: CityObject) -> str:
 _MAX_FEATURES_PER_TILE = 1 << 24
 
 
-def _validate_gltf_encodable(contributing: _Contributing) -> None:
+def _validate_gltf_encodable(
+    contributing: _Contributing, compression: str | None = None
+) -> None:
     """Pre-flight the glTF-content write: raise before any file is written if a tile cannot be encoded.
 
     The explicit and implicit writers emit content files incrementally, so a per-tile encode error
     partway through would leave orphaned ``.glb`` files and no ``tileset.json``. Validating every
     object's attributes (and the per-tile feature-count ceiling) up front makes the whole write
-    fail-fast and atomic: on a bad input nothing is written.
+    fail-fast and atomic: on a bad input nothing is written. When ``compression="draco"``, the
+    ``[draco]`` backend is imported here too, so a missing extra fails before any file is written (not
+    on the first tile) for every mode — including an empty model, which otherwise never encodes a tile.
     """
+    if compression == "draco":
+        _import_dracopy()
     for city_object, _rings in contributing:
         _attributes_json(city_object)
 
@@ -1801,7 +1807,8 @@ def write_3dtiles(
     if content == "gltf":
         # Fail before writing any file: the explicit/implicit writers emit content per leaf, so a
         # per-tile encode error partway through would otherwise orphan .glb files with no tileset.json.
-        _validate_gltf_encodable(contributing)
+        # With Draco, this also asserts the [draco] backend up front, for the same atomicity reason.
+        _validate_gltf_encodable(contributing, compression)
     tileset = _build_tileset_document(
         contributing,
         target,
