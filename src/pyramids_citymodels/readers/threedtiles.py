@@ -628,7 +628,9 @@ def _mesh_vertices(
     if not all_points:
         return np.empty((0, 3)), None
     points = np.vstack(all_points)
-    batch_ids = np.concatenate(all_batch).astype(int) if saw_batch else None
+    # Round, don't truncate: feature ids arrive as float (glTF float accessors, and Draco returns
+    # float64), so a lossily-quantized id that comes back as n - eps must map to n, not floor to n - 1.
+    batch_ids = np.rint(np.concatenate(all_batch)).astype(int) if saw_batch else None
     return points, batch_ids
 
 
