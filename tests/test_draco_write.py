@@ -306,8 +306,9 @@ class TestDracoWriteValidation:
             rejected before anything is written.
         """
         out = Path(tempfile.mkdtemp())
+        model = _model(1)
         with pytest.raises(ValueError, match="content='gltf'"):
-            _model(1).to_3dtiles(out, content="b3dm", compression="draco")
+            model.to_3dtiles(out, content="b3dm", compression="draco")
 
     def test_unknown_compression_raises(self) -> None:
         """An unknown ``compression`` value raises naming the accepted values.
@@ -316,8 +317,9 @@ class TestDracoWriteValidation:
             Any value other than None / "draco" is rejected with a message listing what is allowed.
         """
         out = Path(tempfile.mkdtemp())
+        model = _model(1)
         with pytest.raises(ValueError, match="compression must be None or 'draco'"):
-            _model(1).to_3dtiles(out, content="gltf", compression="gzip")
+            model.to_3dtiles(out, content="gltf", compression="gzip")
 
 
 class TestDracoBackendAbsent:
@@ -334,10 +336,11 @@ class TestDracoBackendAbsent:
             sys.modules, "DracoPy", None
         )  # force ImportError on `import DracoPy`
         out = Path(tempfile.mkdtemp())
+        model = _model(1)
         with pytest.raises(
             UnsupportedGeometryError, match=r"pyramids-citymodels\[draco\]"
         ):
-            _model(1).to_3dtiles(out, content="gltf", compression="draco")
+            model.to_3dtiles(out, content="gltf", compression="draco")
 
     def test_missing_extra_fails_before_writing_any_file(self, monkeypatch) -> None:
         """A missing ``[draco]`` extra is caught by the pre-flight — no file is written (D3 atomicity).
@@ -349,14 +352,16 @@ class TestDracoBackendAbsent:
         """
         monkeypatch.setitem(sys.modules, "DracoPy", None)
         out = Path(tempfile.mkdtemp())
+        model = _model(4)
         with pytest.raises(UnsupportedGeometryError, match="draco"):
-            _model(4).to_3dtiles(
+            model.to_3dtiles(
                 out, content="gltf", compression="draco", max_objects_per_tile=1
             )
         assert list(out.iterdir()) == [], "no orphaned files when the backend is absent"
         empty_out = Path(tempfile.mkdtemp())
+        empty_model = CityModel()
         with pytest.raises(UnsupportedGeometryError, match="draco"):
-            CityModel().to_3dtiles(empty_out, content="gltf", compression="draco")
+            empty_model.to_3dtiles(empty_out, content="gltf", compression="draco")
         assert not (empty_out / "tileset.json").exists(), (
             "empty model + draco must not write a tileset"
         )
