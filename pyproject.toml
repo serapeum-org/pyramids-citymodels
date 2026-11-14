@@ -56,18 +56,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# One extra per dependency-backed driver family, added when a driver that needs a heavy
-# backend lands. The driver names that extra via its `extra` class attribute, and pyramids'
-# registry skips the driver silently at discovery when the package is not importable — so a
-# bare install stays small and every other driver keeps working.
+# One extra per heavy backend, added when the code path that needs it lands. A bare install
+# stays small and reads every format with the standard library (`json`, `xml.etree`, `struct`)
+# plus the numpy/shapely/geopandas `pyramids-core` already brings — all three drivers (CityJSON,
+# CityGML, 3D Tiles) keep `extra = None` so they are always discovered and dispatched.
 #
-# None is declared: all three drivers (CityJSON, CityGML, 3D Tiles) parse with only the
-# standard library (`json`, `xml.etree`, `struct`) plus the numpy/shapely/geopandas that
-# `pyramids-core` already brings, so each sets `extra = None` and a bare install reads every
-# format. The 3D Tiles reader decodes uncompressed glTF with numpy; a compressed-mesh backend
-# (Draco/meshopt) is the first case that would add an extra here and set
-# `extra = "<import-name>"`, and the registry then skips the driver silently when that package
-# is absent (exercised in tests/test_registry_dispatch.py against the shipped core registry).
+# `draco` is a *runtime decode* extra, not a driver-discovery gate. The 3D Tiles reader decodes
+# uncompressed glTF with numpy; reading a Draco-compressed tile (`KHR_draco_mesh_compression`)
+# additionally needs the `DracoPy` codec. We deliberately do NOT set the 3D Tiles driver's
+# `extra` to DracoPy — doing so would make pyramids skip the whole driver when DracoPy is absent,
+# and uncompressed tiles must still read. Instead the decode path imports `DracoPy` lazily and
+# raises a clear "install the draco extra" error only when a Draco tile is actually encountered,
+# so a bare install reads every uncompressed tileset and `pip install pyramids-citymodels[draco]`
+# unlocks the compressed ones. DracoPy ships wheels across the full cp311-cp314 x {Linux, macOS,
+# Windows} matrix, so the extra builds nothing at install.
+draco = ["DracoPy>=2.2.0"]
 
 [dependency-groups]
 dev = [
@@ -258,7 +261,11 @@ markers = [
     # A test needing a vendor sample file rather than a hand-built fixture. Those
     # files are binary and large, so they are fetched in CI and never committed;
     # the default run deselects them with '-m \"not vendor_data\"'.
-    "vendor_data: test needing a fetched vendor sample file"
+    "vendor_data: test needing a fetched vendor sample file",
+    # A test that decodes Draco-compressed geometry and so needs the optional `draco` extra
+    # (DracoPy) importable. Wired into the pixi envs, so it runs by default there; deselect
+    # with '-m "not draco"' on a bare install without the extra.
+    "draco: test needing the optional draco extra (DracoPy) importable"
 ]
 
 
@@ -276,7 +283,10 @@ channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", { platform = "osx-arm64", macos = "14.0" }]
 
 [tool.pixi.pypi-dependencies]
-pyramids-citymodels = { path = ".", editable = true }
+# The `draco` extra is wired into every pixi environment so the Draco-decode path is exercised
+# in local runs and CI (which installs from pixi.lock). This does not change the pip contract: a
+# bare `pip install pyramids-citymodels` still omits DracoPy; only `[draco]` pulls it.
+pyramids-citymodels = { path = ".", editable = true, extras = ["draco"] }
 # The editable self-install is the only entry, and there is no
 # [tool.pixi.dependencies] table at all: every environment is built from the
 # standard declarations — runtime deps from [project.dependencies], tooling from
