@@ -29,7 +29,12 @@ Deliberate scope and limitations of this first reader (all documented, none sile
   decoded with numpy; a ``KHR_draco_mesh_compression`` tile is decoded with ``DracoPy`` when the ``draco``
   extra is installed (``pip install pyramids-citymodels[draco]``) and otherwise raises a clear
   :class:`~pyramids_citymodels.errors.UnsupportedGeometryError` naming the extra — so a bare install still
-  reads every uncompressed tileset. ``EXT_meshopt_compression`` is still rejected (a possible follow-up).
+  reads every uncompressed tileset. A primitive is taken down the Draco path whenever it carries the
+  extension object, whether Draco is listed in ``extensionsRequired`` or only ``extensionsUsed``; this
+  reader does **not** fall back to a primitive's uncompressed accessors when the backend is absent (a
+  deliberate choice — 3D Tiles content marks Draco *required* and omits fallback accessors, so their
+  ``bufferView`` is absent and a fallback read would fail anyway). ``EXT_meshopt_compression`` is still
+  rejected (a possible follow-up).
 - **``pnts`` is routed out, not read here.** Point-cloud tiles belong to the ``pointclouds`` package
   (serapeum-org/pointclouds#10); a ``pnts`` tile is skipped with a warning rather than mis-read as a
   mesh.
