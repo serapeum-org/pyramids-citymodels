@@ -681,6 +681,7 @@ class CityModel:
         content: str = "b3dm",
         metadata: str = "json",
         simplify: float | None = None,
+        compression: str | None = None,
     ) -> "dict[str, Any]":
         """Write this model as a 3D Tiles tileset into ``directory``.
 
@@ -708,6 +709,9 @@ class CityModel:
             simplify: A positive ratio enabling per-level LOD in the explicit multi-tile mode (interior
                 tiles carry geometry vertex-clustered to ``diagonal * simplify``); ``None`` (default)
                 keeps full-detail tiles. Raises with ``implicit_tiling``.
+            compression: ``None`` (default) writes uncompressed geometry; ``"draco"`` compresses each glTF
+                tile's mesh with ``KHR_draco_mesh_compression`` (needs ``content="gltf"`` and the
+                ``[draco]`` extra). See :func:`.writers.threedtiles.write_3dtiles`.
 
         Returns:
             The written ``tileset.json`` document.
@@ -750,6 +754,7 @@ class CityModel:
             content,
             metadata,
             simplify,
+            compression,
         )
 
     def to_file(self, path: Any) -> "dict[str, Any] | str | None":
