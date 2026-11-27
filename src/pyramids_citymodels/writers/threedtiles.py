@@ -1424,7 +1424,7 @@ def _build_tile(
     return node
 
 
-def build_b3dm(model: CityModel) -> bytes | None:
+def build_b3dm(model: CityModel, compression: str | None = None) -> bytes | None:
     """Build the batched ``b3dm`` tile bytes for ``model``, or ``None`` when it has no areal geometry.
 
     A standalone entry point that walks the model itself; :func:`write_3dtiles` is the efficient path
@@ -1432,12 +1432,15 @@ def build_b3dm(model: CityModel) -> bytes | None:
 
     Args:
         model: The city model to encode.
+        compression: ``None`` (default) writes the embedded glb uncompressed; ``"draco"`` compresses it
+            with ``KHR_draco_mesh_compression`` (needs the ``[draco]`` extra), the same single-tile result
+            as ``write_3dtiles(..., content="b3dm", compression="draco")``.
 
     Returns:
         The ``b3dm`` bytes, or ``None`` when no object contributes an areal surface (then the tileset
         has no content).
     """
-    return _b3dm_from_rings(_object_rings(model))
+    return _b3dm_from_rings(_object_rings(model), compression)
 
 
 def build_tileset(model: CityModel, content_uri: str | None) -> dict[str, Any]:

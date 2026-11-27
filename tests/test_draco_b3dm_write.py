@@ -21,6 +21,7 @@ import pytest
 from pyramids_citymodels.errors import UnsupportedGeometryError
 from pyramids_citymodels.ir import CityModel, CityObject, Geometry
 from pyramids_citymodels.readers.threedtiles import parse_3dtiles
+from pyramids_citymodels.writers.threedtiles import build_b3dm
 
 pytestmark = pytest.mark.draco
 
@@ -166,6 +167,24 @@ class TestDracoB3dmRoundTrip:
         )
         plain = parse_3dtiles(_write(model, content="b3dm", **mode) / "tileset.json")
         _assert_same_features(draco, plain)
+
+    def test_build_b3dm_standalone_honours_compression(self) -> None:
+        """The standalone ``build_b3dm`` entry point compresses when asked, else leaves the glb plain.
+
+        Test scenario:
+            ``build_b3dm(model, compression="draco")`` embeds a glb that requires
+            ``KHR_draco_mesh_compression``; the default call embeds a plain glb with no such requirement.
+        """
+        model = _model(2)
+        draco = build_b3dm(model, compression="draco")
+        plain = build_b3dm(model)
+        assert draco is not None and plain is not None, "both produce a tile"
+        assert _glb_in_b3dm(draco)["extensionsRequired"] == [
+            "KHR_draco_mesh_compression"
+        ], "draco"
+        assert "extensionsRequired" not in _glb_in_b3dm(plain), (
+            "plain glb requires no extension"
+        )
 
 
 class TestDracoB3dmStructure:
