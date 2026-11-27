@@ -21,9 +21,20 @@ import pytest
 from pyramids_citymodels.errors import UnsupportedGeometryError
 from pyramids_citymodels.ir import CityModel, CityObject, Geometry
 from pyramids_citymodels.readers.threedtiles import parse_3dtiles
-from pyramids_citymodels.writers.threedtiles import build_b3dm
+from pyramids_citymodels.writers.threedtiles import (
+    _draco_encode_mesh,
+    _draco_unique_ids,
+    build_b3dm,
+)
 
 pytestmark = pytest.mark.draco
+
+
+class _FakeMesh:
+    """A stand-in decoded mesh exposing only the ``attributes`` list ``_draco_unique_ids`` reads."""
+
+    def __init__(self, attributes: list[dict]) -> None:
+        self.attributes = attributes
 
 
 def _square(
@@ -276,3 +287,48 @@ class TestDracoB3dmCompressionAndGuards:
                 out, content="b3dm", compression="draco", max_objects_per_tile=1
             )
         assert list(out.iterdir()) == [], "no orphaned files when the backend is absent"
+
+
+class TestDracoB3dmHelperInternals:
+    """Focused unit coverage of the _BATCHID / uint32 branch of the shared Draco helpers (N1)."""
+
+    def test_unique_ids_find_position_and_batchid(self) -> None:
+        """``_draco_unique_ids`` resolves POSITION (by type) and _BATCHID (by name) on a decoded mesh.
+
+        Test scenario:
+            Given a decoded mesh whose generic attribute is named ``_BATCHID``, the helper returns the
+            ``(POSITION, _BATCHID)`` unique-id pair the b3dm extension map needs.
+        """
+        mesh = _FakeMesh(
+            [
+                {"attribute_type": 4, "name": "_BATCHID", "unique_id": 6},
+                {"attribute_type": 0, "name": None, "unique_id": 2},
+            ]
+        )
+        assert _draco_unique_ids(mesh, "_BATCHID") == (2, 6), (
+            "position uid 2, batch-id uid 6"
+        )
+
+    def test_encode_mesh_uint32_batchid_round_trips_past_2_24(self) -> None:
+        """The ``<u4`` branch stores a uint32 _BATCHID exactly — even a value beyond float32's 2**24.
+
+        Test scenario:
+            ``_draco_encode_mesh`` with ``id_dtype="<u4"`` encodes two vertices whose batch ids are 0 and
+            2**24 + 1; decoding the returned Draco blob recovers both ids exactly, which a FLOAT attribute
+            could not represent — the reason b3dm keeps _BATCHID an integer.
+        """
+        import DracoPy
+        import numpy as np
+
+        big = 2**24 + 1
+        position_blob = struct.pack("<9f", 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+        batchid_blob = struct.pack("<3I", 0, big, 0)
+        index_blob = struct.pack("<3I", 0, 1, 2)  # one non-degenerate triangle
+        draco_blob, pos_uid, bid_uid, vcount, icount, _mn, _mx = _draco_encode_mesh(
+            position_blob, batchid_blob, index_blob, "_BATCHID", id_dtype="<u4"
+        )
+        assert pos_uid != bid_uid, "distinct unique ids for POSITION and _BATCHID"
+        mesh = DracoPy.decode(draco_blob)
+        attr = next(a for a in mesh.attributes if a.get("name") == "_BATCHID")
+        decoded = {int(round(v)) for v in np.asarray(attr["data"]).reshape(-1)}
+        assert decoded == {0, big}, f"uint32 batch ids survive exactly, got {decoded}"
