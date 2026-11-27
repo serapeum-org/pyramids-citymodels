@@ -189,7 +189,8 @@ class TestDracoB3dmRoundTrip:
         model = _model(2)
         draco = build_b3dm(model, compression="draco")
         plain = build_b3dm(model)
-        assert draco is not None and plain is not None, "both produce a tile"
+        assert draco is not None, "draco build produces a tile"
+        assert plain is not None, "plain build produces a tile"
         assert _glb_in_b3dm(draco)["extensionsRequired"] == [
             "KHR_draco_mesh_compression"
         ], "draco"
