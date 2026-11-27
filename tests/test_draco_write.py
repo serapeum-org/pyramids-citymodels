@@ -298,18 +298,6 @@ class TestDracoGlbStructure:
 class TestDracoWriteValidation:
     """Invalid ``compression`` combinations fail fast with a clear ValueError."""
 
-    def test_draco_requires_gltf_content(self) -> None:
-        """``compression="draco"`` with ``content="b3dm"`` raises (b3dm-embedded Draco is a follow-up).
-
-        Test scenario:
-            Draco inside a b3dm wrapper is out of scope for this feature, so the combination is
-            rejected before anything is written.
-        """
-        out = Path(tempfile.mkdtemp())
-        model = _model(1)
-        with pytest.raises(ValueError, match="content='gltf'"):
-            model.to_3dtiles(out, content="b3dm", compression="draco")
-
     def test_unknown_compression_raises(self) -> None:
         """An unknown ``compression`` value raises naming the accepted values.
 
@@ -391,7 +379,7 @@ class TestDracoWriteInternals:
                 {"attribute_type": 4, "name": "_FEATURE_ID_0", "unique_id": 5},
             ]
         )
-        assert _draco_unique_ids(mesh) == (3, 5), (
+        assert _draco_unique_ids(mesh, "_FEATURE_ID_0") == (3, 5), (
             "position uid 3, feature uid 5 found past the decoy"
         )
 
@@ -408,7 +396,7 @@ class TestDracoWriteInternals:
                 {"attribute_type": 4, "name": "_FEATURE_ID_0", "unique_id": 4},
             ]
         )
-        assert _draco_unique_ids(mesh) == (9, 4), (
+        assert _draco_unique_ids(mesh, "_FEATURE_ID_0") == (9, 4), (
             "no KeyError when an attribute omits 'name'"
         )
 
@@ -423,7 +411,7 @@ class TestDracoWriteInternals:
             [{"attribute_type": 4, "name": "_FEATURE_ID_0", "unique_id": 0}]
         )
         with pytest.raises(UnsupportedGeometryError, match="POSITION or _FEATURE_ID_0"):
-            _draco_unique_ids(mesh)
+            _draco_unique_ids(mesh, "_FEATURE_ID_0")
 
     def test_encode_wraps_a_backend_failure(self, monkeypatch) -> None:
         """A ``DracoPy`` encode error surfaces as ``UnsupportedGeometryError``, not a raw backend error.
@@ -442,4 +430,6 @@ class TestDracoWriteInternals:
         featureid_blob = struct.pack("<3f", 0.0, 0.0, 0.0)
         index_blob = struct.pack("<3I", 0, 1, 2)
         with pytest.raises(UnsupportedGeometryError, match="could not Draco-compress"):
-            _draco_encode_mesh(position_blob, featureid_blob, index_blob)
+            _draco_encode_mesh(
+                position_blob, featureid_blob, index_blob, "_FEATURE_ID_0"
+            )

@@ -35,8 +35,9 @@ Deliberate, documented limits (plain geometry, like the OBJ/glTF writers):
   the model's axis-aligned extent in that frame.
 
 The uncompressed path uses only the standard library (``json`` + ``struct``). ``compression="draco"``
-(glTF content only) additionally Draco-compresses each tile's mesh via the optional ``[draco]`` extra
-(``DracoPy`` + ``numpy``), both imported lazily so a bare install still writes every uncompressed tile.
+(both the glTF ``.glb`` and the b3dm's embedded glb) additionally Draco-compresses each tile's mesh via
+the optional ``[draco]`` extra (``DracoPy`` + ``numpy``), both imported lazily so a bare install still
+writes every uncompressed tile.
 """
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — activates vendored osgeo; see __init__)
@@ -375,8 +376,14 @@ def _encode_b3dm(glb: bytes, batch_length: int, batch_table: dict[str, Any]) -> 
 
 def _b3dm_from_rings(
     contributing: list[tuple[CityObject, list[list[tuple[float, float, float]]]]],
+    compression: str | None = None,
 ) -> bytes | None:
-    """Encode an already-gathered ``contributing`` list into ``b3dm`` bytes (``None`` if empty)."""
+    """Encode an already-gathered ``contributing`` list into ``b3dm`` bytes (``None`` if empty).
+
+    ``compression="draco"`` compresses the embedded glb's mesh with ``KHR_draco_mesh_compression`` (see
+    :func:`_b3dm_draco_glb`); ``None`` (the default) writes it uncompressed. Either way the b3dm feature
+    and batch tables — which carry per-object identity — are added by :func:`_encode_b3dm` unchanged.
+    """
     if not contributing:
         return None
     all_rings = [ring for _city_object, rings in contributing for ring in rings]
@@ -384,10 +391,13 @@ def _b3dm_from_rings(
     position_blob, batchid_blob, index_blob, vertices, tris = _mesh_buffers(
         contributing, minima
     )
-    document = _glb_document(
-        position_blob, batchid_blob, index_blob, vertices, tris, minima
-    )
-    glb = _encode_glb(document, position_blob + batchid_blob + index_blob)
+    if compression == "draco":
+        glb = _b3dm_draco_glb(position_blob, batchid_blob, index_blob, minima)
+    else:
+        document = _glb_document(
+            position_blob, batchid_blob, index_blob, vertices, tris, minima
+        )
+        glb = _encode_glb(document, position_blob + batchid_blob + index_blob)
     return _encode_b3dm(glb, len(contributing), _batch_table(contributing))
 
 
@@ -424,6 +434,8 @@ _SCHEMA_ID = "pyramids_citymodels"
 _KHR_DRACO = "KHR_draco_mesh_compression"
 #: The glTF attribute name carrying per-vertex feature ids in glTF-content tiles (replaces ``_BATCHID``).
 _FEATURE_ID_ATTRIBUTE = "_FEATURE_ID_0"
+#: The per-vertex batch-id attribute of a ``b3dm`` tile's embedded glb (identity keys the batch table).
+_BATCHID_ATTRIBUTE = "_BATCHID"
 #: Draco's own attribute-type code for POSITION (``draco::GeometryAttribute::POSITION``), as reported in
 #: a decoded ``DracoPy`` attribute's ``attribute_type`` — used to find the position unique id by identity.
 _DRACO_POSITION_TYPE = 0
@@ -810,33 +822,38 @@ def _import_dracopy() -> Any:
     return DracoPy
 
 
-def _draco_unique_ids(mesh: Any) -> tuple[int, int]:
-    """The ``(POSITION, _FEATURE_ID_0)`` Draco unique ids of a decoded mesh, found by type and name.
+def _draco_unique_ids(mesh: Any, id_attribute: str) -> tuple[int, int]:
+    """The ``(POSITION, <id_attribute>)`` Draco unique ids of a decoded mesh, found by type and name.
 
-    ``POSITION`` is Draco's own attribute type (:data:`_DRACO_POSITION_TYPE`); the feature id is the
-    generic attribute this writer named ``_FEATURE_ID_0``. Reading them by identity — not by position in
-    the attribute list — is what makes the written ``KHR_draco_mesh_compression`` map match the stream,
-    whatever order ``DracoPy`` assigns.
+    ``POSITION`` is Draco's own attribute type (:data:`_DRACO_POSITION_TYPE`); the per-vertex id is the
+    generic attribute this writer named ``id_attribute`` — ``_FEATURE_ID_0`` for glTF-content tiles,
+    ``_BATCHID`` for b3dm. Reading them by identity — not by position in the attribute list — is what
+    makes the written ``KHR_draco_mesh_compression`` map match the stream, whatever order ``DracoPy``
+    assigns.
 
     Raises:
         UnsupportedGeometryError: When the decoded mesh is missing either attribute (it never should be,
             for a mesh this module just encoded — treated as a corrupt round-trip).
     """
-    position_uid = feature_uid = None
+    position_uid = id_uid = None
     for attribute in mesh.attributes:
         if attribute["attribute_type"] == _DRACO_POSITION_TYPE:
             position_uid = attribute["unique_id"]
-        elif attribute.get("name") == _FEATURE_ID_ATTRIBUTE:  # POSITION carries no name
-            feature_uid = attribute["unique_id"]
-    if position_uid is None or feature_uid is None:
+        elif attribute.get("name") == id_attribute:  # POSITION carries no name
+            id_uid = attribute["unique_id"]
+    if position_uid is None or id_uid is None:
         raise UnsupportedGeometryError(
-            "Draco round-trip lost the POSITION or _FEATURE_ID_0 attribute while encoding a tile"
+            f"Draco round-trip lost the POSITION or {id_attribute} attribute while encoding a tile"
         )
-    return position_uid, feature_uid
+    return position_uid, id_uid
 
 
 def _draco_encode_mesh(
-    position_blob: bytes, featureid_blob: bytes, index_blob: bytes
+    position_blob: bytes,
+    id_blob: bytes,
+    index_blob: bytes,
+    id_attribute: str,
+    id_dtype: str = "<f4",
 ) -> tuple[bytes, int, int, int, int, list[float], list[float]]:
     """Draco-compress a tile's mesh and report the glTF accessor facts the extension needs.
 
@@ -844,21 +861,26 @@ def _draco_encode_mesh(
     it may dedupe/reorder vertices. The ``KHR_draco_mesh_compression`` extension, though, maps each glTF
     attribute to its Draco unique id, and the (bufferView-less) accessors must still describe the
     *decompressed* mesh. So this decodes its own output once to read back, from the actual stream, the
-    ``POSITION`` and ``_FEATURE_ID_0`` unique ids, the decoded vertex / index counts, and the decoded
+    ``POSITION`` and ``id_attribute`` unique ids, the decoded vertex / index counts, and the decoded
     position bounds — deriving the written map from a round-trip rather than assuming an id order.
 
-    Positions are quantized (:data:`_DRACO_QUANTIZATION_BITS`); the feature id rides as a lossless generic
-    attribute so integer ids survive exactly (a vertex is never reassigned to the wrong feature).
+    Positions are quantized (:data:`_DRACO_QUANTIZATION_BITS`); the per-vertex id rides as a **lossless**
+    generic attribute so integer ids survive exactly (a vertex is never reassigned to the wrong feature).
+    The id is stored in its own dtype — ``<f4`` FLOAT for a glTF-content ``_FEATURE_ID_0`` (glTF forbids
+    an integer vertex attribute), ``<u4`` UNSIGNED_INT for a b3dm ``_BATCHID`` (DracoPy stores a uint32
+    generic attribute exactly, which is both smaller and the natural type for a batch id).
 
     Args:
         position_blob: ``vertex_count`` packed little-endian ``<3f`` positions (already origin-shifted).
-        featureid_blob: ``vertex_count`` packed little-endian ``<f`` feature ids (one per vertex).
+        id_blob: ``vertex_count`` packed little-endian per-vertex ids, in ``id_dtype`` (one per vertex).
         index_blob: ``triangle_count * 3`` packed little-endian ``<I`` triangle indices.
+        id_attribute: The glTF attribute name for the ids (``_FEATURE_ID_0`` or ``_BATCHID``).
+        id_dtype: The little-endian numpy dtype of ``id_blob`` (``<f4`` or ``<u4``).
 
     Returns:
-        ``(draco_blob, position_unique_id, feature_unique_id, vertex_count, index_count, minima,
-        maxima)`` — the compressed bytes, the two Draco unique ids, the decoded vertex / index counts,
-        and the decoded ``POSITION`` min / max (glTF requires them on the position accessor).
+        ``(draco_blob, position_unique_id, id_unique_id, vertex_count, index_count, minima, maxima)`` —
+        the compressed bytes, the two Draco unique ids, the decoded vertex / index counts, and the decoded
+        ``POSITION`` min / max (glTF requires them on the position accessor).
 
     Raises:
         UnsupportedGeometryError: When the ``draco`` extra is absent, or ``DracoPy`` fails to
@@ -869,14 +891,13 @@ def _draco_encode_mesh(
 
     points = np.frombuffer(position_blob, dtype="<f4").reshape(-1, 3).astype(np.float64)
     faces = np.frombuffer(index_blob, dtype="<u4").reshape(-1, 3).astype(np.uint32)
-    feature = (
-        np.frombuffer(featureid_blob, dtype="<f4").reshape(-1, 1).astype(np.float32)
-    )
+    # A writable copy in the id's own dtype (float32 or uint32); DracoPy stores both losslessly.
+    ids = np.frombuffer(id_blob, dtype=id_dtype).reshape(-1, 1).copy()
     try:
         draco_blob = dracopy.encode(
             points,
             faces=faces,
-            generic_attributes={_FEATURE_ID_ATTRIBUTE: feature},
+            generic_attributes={id_attribute: ids},
             quantization_bits=_DRACO_QUANTIZATION_BITS,
         )
         mesh = dracopy.decode(draco_blob)
@@ -884,14 +905,14 @@ def _draco_encode_mesh(
         raise UnsupportedGeometryError(
             f"could not Draco-compress a 3D Tiles tile: {exc}"
         ) from exc
-    position_uid, feature_uid = _draco_unique_ids(mesh)
+    position_uid, id_uid = _draco_unique_ids(mesh, id_attribute)
     decoded = np.asarray(mesh.points)
     minima = [float(decoded[:, axis].min()) for axis in range(3)]
     maxima = [float(decoded[:, axis].max()) for axis in range(3)]
     return (
         bytes(draco_blob),
         position_uid,
-        feature_uid,
+        id_uid,
         len(decoded),
         len(np.asarray(mesh.faces)) * 3,
         minima,
@@ -1068,7 +1089,9 @@ def _draco_glb(
         index_count,
         minima,
         maxima,
-    ) = _draco_encode_mesh(position_blob, featureid_blob, index_blob)
+    ) = _draco_encode_mesh(
+        position_blob, featureid_blob, index_blob, _FEATURE_ID_ATTRIBUTE, id_dtype="<f4"
+    )
     metadata_blob, metadata_views, schema, property_table = _structural_metadata(
         contributing,
         base_offset=len(draco_blob),
@@ -1094,6 +1117,107 @@ def _draco_glb(
     return _encode_glb(document, buffer)
 
 
+def _glb_document_draco(
+    draco_blob: bytes,
+    position_uid: int,
+    batchid_uid: int,
+    vertex_count: int,
+    index_count: int,
+    translate: list[float],
+    minima: list[float],
+    maxima: list[float],
+) -> dict[str, Any]:
+    """The glTF JSON for a Draco-compressed **b3dm** mesh (``POSITION`` + ``_BATCHID``, no in-glTF metadata).
+
+    The b3dm counterpart of :func:`_glb_feature_document_draco`: the geometry is one Draco ``bufferView``
+    (index 0) and the primitive carries a ``KHR_draco_mesh_compression`` extension mapping ``POSITION`` /
+    ``_BATCHID`` to their Draco unique ids. Unlike the glTF-content path there are **no** metadata
+    extensions — a b3dm carries per-object identity in its batch table, not inside the glTF — so this glb
+    holds geometry only. The three accessors keep their ``count`` / ``componentType`` / ``type`` (and
+    POSITION's bounds) but drop ``bufferView``; ``_BATCHID`` stays ``UNSIGNED_INT`` (DracoPy stores the
+    uint32 generic attribute exactly, so the batch id is lossless).
+    """
+    return {
+        "asset": {"version": "2.0", "generator": "pyramids-citymodels"},
+        "extensionsUsed": [_KHR_DRACO],
+        "extensionsRequired": [_KHR_DRACO],
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"mesh": 0, "translation": translate}],
+        "meshes": [
+            {
+                "primitives": [
+                    {
+                        "attributes": {"POSITION": 0, _BATCHID_ATTRIBUTE: 1},
+                        "indices": 2,
+                        "mode": _TRIANGLES,
+                        "extensions": {
+                            _KHR_DRACO: {
+                                "bufferView": 0,
+                                "attributes": {
+                                    "POSITION": position_uid,
+                                    _BATCHID_ATTRIBUTE: batchid_uid,
+                                },
+                            }
+                        },
+                    }
+                ]
+            }
+        ],
+        "buffers": [{"byteLength": len(draco_blob)}],
+        "bufferViews": [
+            # The Draco stream — no ``target`` until the extension decompresses it.
+            {"buffer": 0, "byteOffset": 0, "byteLength": len(draco_blob)}
+        ],
+        "accessors": [
+            # No ``bufferView``: KHR_draco_mesh_compression supplies the data; the accessor only declares
+            # the decompressed shape (and POSITION's bounds, which glTF still requires).
+            {
+                "componentType": _FLOAT,
+                "count": vertex_count,
+                "type": "VEC3",
+                "min": minima,
+                "max": maxima,
+            },
+            {"componentType": _UINT, "count": vertex_count, "type": "SCALAR"},
+            {"componentType": _UINT, "count": index_count, "type": "SCALAR"},
+        ],
+    }
+
+
+def _b3dm_draco_glb(
+    position_blob: bytes, batchid_blob: bytes, index_blob: bytes, translate: list[float]
+) -> bytes:
+    """Draco-compress a b3dm tile's geometry into a ``glb`` (the bytes `_encode_b3dm` then wraps).
+
+    Mirrors the uncompressed b3dm glb but with one Draco bufferView; ``_BATCHID`` is carried as a lossless
+    uint32 generic attribute. The b3dm feature/batch tables are added by :func:`_encode_b3dm` afterwards
+    exactly as for the uncompressed path, so only the embedded glb changes.
+    """
+    (
+        draco_blob,
+        position_uid,
+        batchid_uid,
+        vertices,
+        index_count,
+        minima,
+        maxima,
+    ) = _draco_encode_mesh(
+        position_blob, batchid_blob, index_blob, _BATCHID_ATTRIBUTE, id_dtype="<u4"
+    )
+    document = _glb_document_draco(
+        draco_blob,
+        position_uid,
+        batchid_uid,
+        vertices,
+        index_count,
+        translate,
+        minima,
+        maxima,
+    )
+    return _encode_glb(document, draco_blob)
+
+
 #: A tile-content format: how to encode a ``contributing`` group and the file suffix / tileset version
 #: it implies. ``b3dm`` is 3D Tiles 1.0 content; ``gltf`` is the 1.1-native ``.glb`` content.
 _CONTENT_FORMATS: dict[str, tuple[Any, str, str]] = {
@@ -1107,11 +1231,11 @@ def _content_format(
 ) -> tuple[Any, str, str]:
     """Resolve ``content`` / ``metadata`` / ``compression`` to ``(encode, suffix, tileset_version)``.
 
-    ``metadata`` and ``compression`` only shape glTF content (b3dm has its own columnar batch table and is
-    written uncompressed); both are bound onto the glTF encoder here so the per-tile call sites stay
+    ``compression`` applies to **both** content formats (``"draco"`` compresses the glTF-content ``.glb``
+    or the glb embedded in a ``b3dm``); ``metadata`` shapes glTF content only (b3dm has its own columnar
+    batch table). Both are bound onto the chosen encoder here so the per-tile call sites stay
     ``encode(contributing)``. Raises ``ValueError`` on an unknown ``content`` / ``metadata`` /
-    ``compression``, or when ``compression="draco"`` is asked for with ``content="b3dm"`` — Draco inside a
-    b3dm wrapper is a separate follow-up; this ships the glTF-content path only.
+    ``compression``.
     """
     try:
         encode, suffix, version = _CONTENT_FORMATS[content]
@@ -1121,15 +1245,12 @@ def _content_format(
         raise ValueError(f"metadata must be 'json' or 'typed', got {metadata!r}")
     if compression not in (None, "draco"):
         raise ValueError(f"compression must be None or 'draco', got {compression!r}")
-    if compression == "draco" and content != "gltf":
-        raise ValueError(
-            "compression='draco' requires content='gltf'; Draco inside a b3dm wrapper is not yet "
-            "supported"
-        )
     if content == "gltf":
         encode = functools.partial(
             _gltf_from_rings, metadata=metadata, compression=compression
         )
+    else:  # b3dm — metadata lives in its batch table, so only compression is bound
+        encode = functools.partial(_b3dm_from_rings, compression=compression)
     return encode, suffix, version
 
 
@@ -1682,20 +1803,21 @@ def write_3dtiles(
     ``content`` raises ``ValueError``. Both formats round-trip through this package's own reader in
     every mode.
 
-    **Draco mesh compression** (``compression=``, glTF content only): ``None`` (default) writes
+    **Draco mesh compression** (``compression=``, **both** content formats): ``None`` (default) writes
     uncompressed geometry; ``"draco"`` compresses each tile's mesh with ``KHR_draco_mesh_compression``
     (via the optional ``[draco]`` extra — ``DracoPy``), typically shrinking the geometry several-fold for
-    web streaming. Positions are **lossy**: quantized on a uniform grid sized to the tile's largest axis
-    extent, so the error is at most about ``extent / 2**14`` (under sub-mm for a small tile, up to ~6 cm
-    for a 1 km tile, more for a city-scale single tile — size tiles accordingly). Feature ids, by contrast,
-    ride as a **lossless**
-    generic attribute, so every object reads back with its correct id, type and attributes, and its
-    footprint within that position tolerance, in every tiling mode (and with ``simplify``). Feature
-    **counts** are preserved except that a feature degenerate relative to the tile extent can collapse
-    under quantization and be dropped on read — the same way an over-decimated feature can in the
-    uncompressed case. ``compression="draco"`` requires ``content="gltf"`` (Draco inside a ``b3dm`` wrapper
-    is a later follow-up) and the ``[draco]`` extra — without it, a clear ``UnsupportedGeometryError`` names
-    the extra to install; an unknown value raises ``ValueError``.
+    web streaming. For ``content="gltf"`` it compresses the ``.glb``; for ``content="b3dm"`` it compresses
+    the glb embedded in the b3dm (its batch table is unchanged). Positions are **lossy**: quantized on a
+    uniform grid sized to the tile's largest axis extent, so the error is at most about ``extent / 2**14``
+    (under sub-mm for a small tile, up to ~6 cm for a 1 km tile, more for a city-scale single tile — size
+    tiles accordingly). The per-vertex id, by contrast, rides as a **lossless** generic attribute
+    (``_FEATURE_ID_0`` FLOAT for glTF, ``_BATCHID`` UNSIGNED_INT for b3dm), so every object reads back with
+    its correct id, type and attributes, and its footprint within that position tolerance, in every tiling
+    mode (and with ``simplify``). Feature **counts** are preserved except that a feature degenerate
+    relative to the tile extent can collapse under quantization and be dropped on read — the same way an
+    over-decimated feature can in the uncompressed case. ``compression="draco"`` needs the ``[draco]``
+    extra — without it, a clear ``UnsupportedGeometryError`` names the extra to install; an unknown value
+    raises ``ValueError``.
 
     **glTF metadata shape** (``metadata=``, glTF content only): ``"json"`` (default) keeps the whole
     attribute dict in one JSON-encoded ``attributes`` property — lossless for any JSON value. ``"typed"``
@@ -1738,9 +1860,10 @@ def write_3dtiles(
         simplify: A positive ratio enabling per-level LOD in the explicit multi-tile mode — each interior
             tile's geometry is vertex-clustered to a cell of ``diagonal * simplify`` (e.g. ``0.02``);
             ``None`` (default) keeps full-detail, ``ADD``-refined tiles. Raises with ``implicit_tiling``.
-        compression: ``None`` (default) writes uncompressed geometry; ``"draco"`` compresses each glTF
-            tile's mesh with ``KHR_draco_mesh_compression`` (needs ``content="gltf"`` and the ``[draco]``
-            extra). An unknown value, or ``"draco"`` with ``content="b3dm"``, raises ``ValueError``.
+        compression: ``None`` (default) writes uncompressed geometry; ``"draco"`` compresses each tile's
+            mesh with ``KHR_draco_mesh_compression`` — for either ``content`` (the glTF ``.glb`` or the glb
+            embedded in a ``b3dm``) — and needs the ``[draco]`` extra. An unknown value raises
+            ``ValueError``.
 
     Returns:
         The written ``tileset.json`` document.
@@ -1819,6 +1942,10 @@ def write_3dtiles(
         # per-tile encode error partway through would otherwise orphan .glb files with no tileset.json.
         # With Draco, this also asserts the [draco] backend up front, for the same atomicity reason.
         _validate_gltf_encodable(contributing, compression)
+    elif compression == "draco":
+        # b3dm+Draco has no attribute pre-flight, but still needs the backend asserted up front so a
+        # missing [draco] extra fails before any tile is written (atomicity, incl. an empty model).
+        _import_dracopy()
     tileset = _build_tileset_document(
         contributing,
         target,

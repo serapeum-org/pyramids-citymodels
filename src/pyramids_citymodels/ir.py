@@ -709,9 +709,10 @@ class CityModel:
             simplify: A positive ratio enabling per-level LOD in the explicit multi-tile mode (interior
                 tiles carry geometry vertex-clustered to ``diagonal * simplify``); ``None`` (default)
                 keeps full-detail tiles. Raises with ``implicit_tiling``.
-            compression: ``None`` (default) writes uncompressed geometry; ``"draco"`` compresses each glTF
-                tile's mesh with ``KHR_draco_mesh_compression`` (needs ``content="gltf"`` and the
-                ``[draco]`` extra). See :func:`.writers.threedtiles.write_3dtiles`.
+            compression: ``None`` (default) writes uncompressed geometry; ``"draco"`` compresses each
+                tile's mesh with ``KHR_draco_mesh_compression`` for either ``content`` (the glTF ``.glb``
+                or a ``b3dm``'s embedded glb); needs the ``[draco]`` extra. See
+                :func:`.writers.threedtiles.write_3dtiles`.
 
         Returns:
             The written ``tileset.json`` document.
