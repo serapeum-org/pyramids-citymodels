@@ -1191,8 +1191,11 @@ def _b3dm_draco_glb(
     """Draco-compress a b3dm tile's geometry into a ``glb`` (the bytes `_encode_b3dm` then wraps).
 
     Mirrors the uncompressed b3dm glb but with one Draco bufferView; ``_BATCHID`` is carried as a lossless
-    uint32 generic attribute. The b3dm feature/batch tables are added by :func:`_encode_b3dm` afterwards
-    exactly as for the uncompressed path, so only the embedded glb changes.
+    uint32 generic attribute. A batch id is a **tile-local** index (``enumerate(contributing)``, ``0..n-1``
+    per tile), so — unlike the glTF path's FLOAT ``_FEATURE_ID_0``, whose exact-integer range caps at
+    ``2**24`` — there is no per-tile feature-count ceiling here (uint32 is exact to ``2**32``). The b3dm
+    feature/batch tables are added by :func:`_encode_b3dm` afterwards exactly as for the uncompressed path,
+    so only the embedded glb changes.
     """
     (
         draco_blob,
