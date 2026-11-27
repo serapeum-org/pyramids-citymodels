@@ -197,6 +197,27 @@ class TestDracoB3dmRoundTrip:
             "plain glb requires no extension"
         )
 
+    def test_build_b3dm_geometryless_returns_none_without_needing_the_extra(
+        self, monkeypatch
+    ) -> None:
+        """A geometryless model returns ``None`` from ``build_b3dm`` even for ``draco`` with no backend.
+
+        Test scenario:
+            With ``DracoPy`` masked, ``build_b3dm`` of a model with no areal geometry returns ``None``
+            (no mesh to compress, so the extra is never needed), while a model with geometry raises the
+            install-hint error — the divergence from ``write_3dtiles`` the docstring documents.
+        """
+        monkeypatch.setitem(sys.modules, "DracoPy", None)
+        geometryless = CityModel(objects={"x": CityObject(id="x", type="Building")})
+        assert build_b3dm(geometryless, compression="draco") is None, (
+            "no tile, no backend needed"
+        )
+        with_geometry = _model(1)
+        with pytest.raises(
+            UnsupportedGeometryError, match=r"pyramids-citymodels\[draco\]"
+        ):
+            build_b3dm(with_geometry, compression="draco")
+
 
 class TestDracoB3dmStructure:
     """The embedded glb declares the Draco extension and keeps _BATCHID as an integer attribute."""

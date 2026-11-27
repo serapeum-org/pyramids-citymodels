@@ -1436,8 +1436,11 @@ def build_b3dm(model: CityModel, compression: str | None = None) -> bytes | None
     Args:
         model: The city model to encode.
         compression: ``None`` (default) writes the embedded glb uncompressed; ``"draco"`` compresses it
-            with ``KHR_draco_mesh_compression`` (needs the ``[draco]`` extra), the same single-tile result
-            as ``write_3dtiles(..., content="b3dm", compression="draco")``.
+            with ``KHR_draco_mesh_compression``, yielding — for a model **with** areal geometry — the same
+            single-tile content as ``write_3dtiles(..., content="b3dm", compression="draco")`` and needing
+            the ``[draco]`` extra (a clear error names it when absent). A geometryless model returns
+            ``None`` without needing the extra (there is no mesh to compress); ``write_3dtiles`` differs
+            there, pre-flighting the extra even for an empty model.
 
     Returns:
         The ``b3dm`` bytes, or ``None`` when no object contributes an areal surface (then the tileset
