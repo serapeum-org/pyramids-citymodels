@@ -20,46 +20,15 @@ import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 import pytest
 
 from pyramids_citymodels.errors import UnsupportedGeometryError
-from pyramids_citymodels.ir import CityModel, CityObject, Geometry
+from pyramids_citymodels.ir import CityModel, CityObject
 from pyramids_citymodels.readers.threedtiles import parse_3dtiles
 from pyramids_citymodels.writers.threedtiles import (
     _draco_encode_mesh,
     _draco_unique_ids,
 )
+from tests._draco_fixtures import model as _model
 
 pytestmark = pytest.mark.draco
-
-
-def _square(
-    x: float, y: float, z: float = 0.0
-) -> list[list[tuple[float, float, float]]]:
-    """A closed 4-unit square surface at ``(x, y)`` on the ``z`` plane."""
-    ring = [(x, y, z), (x + 4, y, z), (x + 4, y + 4, z), (x, y + 4, z)]
-    return [ring]
-
-
-def _model(count: int = 2, surfaces: int = 1) -> CityModel:
-    """``count`` buildings on a diagonal, each a stack of ``surfaces`` squares with distinctive attrs."""
-    return CityModel(
-        objects={
-            f"o{i}": CityObject(
-                id=f"o{i}",
-                type="Building" if i % 2 == 0 else "Bridge",
-                attributes={"height": 3.5 + i, "floors": i},
-                geometries=[
-                    Geometry(
-                        type="MultiSurface",
-                        lod="2",
-                        boundaries=[
-                            _square(i * 50.0, i * 50.0, 3.0 * s)
-                            for s in range(surfaces)
-                        ],
-                    )
-                ],
-            )
-            for i in range(count)
-        }
-    )
 
 
 def _footprint(obj: CityObject) -> tuple[float, float, float, float]:
