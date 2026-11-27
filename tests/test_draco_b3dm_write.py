@@ -331,19 +331,22 @@ class TestDracoB3dmHelperInternals:
         )
 
     def test_encode_mesh_uint32_batchid_round_trips_past_2_24(self) -> None:
-        """The ``<u4`` branch stores a uint32 _BATCHID exactly — even a value beyond float32's 2**24.
+        """The ``<u4`` branch stores a uint32 _BATCHID exactly — endpoints and an interior value.
 
         Test scenario:
-            ``_draco_encode_mesh`` with ``id_dtype="<u4"`` encodes two vertices whose batch ids are 0 and
-            2**24 + 1; decoding the returned Draco blob recovers both ids exactly, which a FLOAT attribute
-            could not represent — the reason b3dm keeps _BATCHID an integer.
+            ``_draco_encode_mesh`` with ``id_dtype="<u4"`` encodes three vertices whose batch ids are
+            ``0``, ``1_000_000`` and ``2**24 + 1``; decoding the returned Draco blob recovers all three
+            exactly. ``2**24 + 1`` fails a FLOAT attribute (float32 rounds it to ``2**24``), and the
+            interior ``1_000_000`` — far off any 14-bit grid over ``[0, 2**24]`` — fails a *quantizing*
+            attribute, so the pair proves the generic uint32 attribute is genuinely lossless, not merely
+            endpoint-preserving. This is the reason b3dm keeps ``_BATCHID`` an integer.
         """
         import DracoPy
         import numpy as np
 
         big = 2**24 + 1
         position_blob = struct.pack("<9f", 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
-        batchid_blob = struct.pack("<3I", 0, big, 0)
+        batchid_blob = struct.pack("<3I", 0, 1_000_000, big)
         index_blob = struct.pack("<3I", 0, 1, 2)  # one non-degenerate triangle
         draco_blob, pos_uid, bid_uid, vcount, icount, _mn, _mx = _draco_encode_mesh(
             position_blob, batchid_blob, index_blob, "_BATCHID", id_dtype="<u4"
@@ -352,4 +355,6 @@ class TestDracoB3dmHelperInternals:
         mesh = DracoPy.decode(draco_blob)
         attr = next(a for a in mesh.attributes if a.get("name") == "_BATCHID")
         decoded = {int(round(v)) for v in np.asarray(attr["data"]).reshape(-1)}
-        assert decoded == {0, big}, f"uint32 batch ids survive exactly, got {decoded}"
+        assert decoded == {0, 1_000_000, big}, (
+            f"uint32 batch ids survive exactly, got {decoded}"
+        )
