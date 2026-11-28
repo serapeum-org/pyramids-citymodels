@@ -63,8 +63,9 @@ class TestDracoWriteAtomicity:
         """
         _fail_encode_after(monkeypatch, 2)
         out = Path(tempfile.mkdtemp())
+        model = _model(5)
         with pytest.raises(UnsupportedGeometryError, match="Draco"):
-            _model(5).to_3dtiles(out, compression="draco", **mode)
+            model.to_3dtiles(out, compression="draco", **mode)
         leftover = sorted(str(p.relative_to(out)) for p in out.rglob("*"))
         assert leftover == [], (
             f"partial tileset left behind (files or dirs): {leftover}"
@@ -104,8 +105,9 @@ class TestDracoWriteAtomicity:
         original_tileset = (out / "tileset.json").read_bytes()
         preexisting_leaves = {p for p in out.rglob("*") if p.is_file()}
         _fail_encode_after(monkeypatch, 2)
+        rerun = _model(4)
         with pytest.raises(UnsupportedGeometryError, match="Draco"):
-            _model(4).to_3dtiles(
+            rerun.to_3dtiles(
                 out, content="b3dm", compression="draco", max_objects_per_tile=1
             )
         assert (out / "tileset.json").read_bytes() == original_tileset, (
