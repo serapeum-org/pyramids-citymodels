@@ -83,6 +83,35 @@ class TestDracoWriteAtomicity:
         assert (out / "tileset.json").exists(), "tileset.json written on success"
         assert any(out.rglob("*.b3dm")), "at least one b3dm leaf written on success"
 
+    def test_failed_rewrite_into_populated_dir_is_not_transactional(
+        self, monkeypatch
+    ) -> None:
+        """Documented limitation: atomicity covers a fresh dir, not a re-write into a populated one.
+
+        Test scenario:
+            After a successful Draco write populates the directory, a failed re-write (encode fails after
+            two tiles) leaves the **prior** ``tileset.json`` in place — it is written last, so the failed
+            run never reaches it — and does not roll back the pre-existing content leaves (they are in the
+            snapshot, so cleanup refuses to delete them). This pins the non-transactional re-write
+            behaviour the docstring documents.
+        """
+        out = Path(tempfile.mkdtemp())
+        _model(4).to_3dtiles(
+            out, content="b3dm", compression="draco", max_objects_per_tile=1
+        )
+        original_tileset = (out / "tileset.json").read_bytes()
+        _fail_encode_after(monkeypatch, 2)
+        with pytest.raises(UnsupportedGeometryError, match="Draco"):
+            _model(4).to_3dtiles(
+                out, content="b3dm", compression="draco", max_objects_per_tile=1
+            )
+        assert (out / "tileset.json").read_bytes() == original_tileset, (
+            "prior tileset.json left in place"
+        )
+        assert (out / "content_0.b3dm").exists(), (
+            "pre-existing leaves are not rolled back on a re-write"
+        )
+
     def test_discard_removes_added_tree_but_keeps_preexisting(self, tmp_path) -> None:
         """Rollback removes added files and their now-empty added dirs, but keeps pre-existing entries.
 

@@ -1859,9 +1859,13 @@ def write_3dtiles(
     relative to the tile extent can collapse under quantization and be dropped on read — the same way an
     over-decimated feature can in the uncompressed case. ``compression="draco"`` needs the ``[draco]``
     extra — without it, a clear ``UnsupportedGeometryError`` names the extra to install; an unknown value
-    raises ``ValueError``. A Draco write is **atomic**: if a tile fails to encode partway through a
-    multi-tile write, the already-written content files are removed and no ``tileset.json`` is left, so the
-    output directory never holds a partial tileset.
+    raises ``ValueError``. A Draco write into a **fresh** output directory is **atomic**: if a tile fails to
+    encode partway through a multi-tile write, the content files written so far are removed and no
+    ``tileset.json`` is left, so the directory is not left holding a partial tileset. Re-writing into a
+    directory that **already** holds a tileset is *not* transactional — content files that share a name are
+    overwritten in place and are not restored on failure, and the previous ``tileset.json`` (written last,
+    so a failed run never reaches it) survives — so a failed re-run can leave a stale, inconsistent tileset.
+    Write into a fresh directory (or clear the target first) if you need the atomicity guarantee.
 
     **glTF metadata shape** (``metadata=``, glTF content only): ``"json"`` (default) keeps the whole
     attribute dict in one JSON-encoded ``attributes`` property — lossless for any JSON value. ``"typed"``
