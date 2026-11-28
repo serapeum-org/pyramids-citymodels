@@ -1783,10 +1783,19 @@ def _discard_partial_tileset(target: Path, before: set[Path]) -> None:
     left (its ``rmdir`` raises ``OSError``, which is swallowed). This lets a Draco write that fails on a
     later tile roll back to leaving no partial tileset (no orphaned content leaves, no ``tileset.json``)
     while never touching anything that was already there.
+
+    This runs inside ``write_3dtiles``'s exception handler, so it must never raise: a fault *during*
+    rollback (even enumerating the tree) would mask the original write error. Both the tree walk and each
+    removal are therefore guarded.
     """
-    added = sorted(
-        set(target.rglob("*")) - before, key=lambda path: len(path.parts), reverse=True
-    )
+    try:
+        added = sorted(
+            set(target.rglob("*")) - before,
+            key=lambda path: len(path.parts),
+            reverse=True,
+        )
+    except OSError:
+        return  # couldn't even enumerate the tree — abandon cleanup rather than mask the real error
     for path in added:
         try:
             if path.is_dir():

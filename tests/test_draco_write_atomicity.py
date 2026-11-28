@@ -126,3 +126,20 @@ class TestDracoWriteAtomicity:
         assert (tmp_path / "content_0.b3dm").exists(), (
             "unlink was blocked, but cleanup did not propagate"
         )
+
+    def test_discard_snapshot_failure_does_not_propagate(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A fault while walking the tree during rollback is swallowed, so it can't mask the real error.
+
+        Test scenario:
+            With ``Path.rglob`` forced to raise ``OSError`` (a traversal fault during rollback),
+            ``_discard_partial_tileset`` returns normally rather than propagating — otherwise the cleanup
+            error would replace the original encode failure that triggered the rollback.
+        """
+
+        def boom(self, *args, **kwargs):
+            raise OSError("cannot walk the tree")
+
+        monkeypatch.setattr(Path, "rglob", boom)
+        _discard_partial_tileset(tmp_path, set())  # must not raise
