@@ -480,16 +480,17 @@ _MAX_FEATURES_PER_TILE = 1 << 24
 def _validate_gltf_encodable(
     contributing: _Contributing, compression: str | None = None
 ) -> None:
-    """Pre-flight the glTF-content write: raise before any file is written if a tile cannot be encoded.
+    """Pre-flight the glTF-content write: raise before any file is written for problems knowable up front.
 
-    The explicit and implicit writers emit content files incrementally, so a per-tile encode error
-    partway through would leave orphaned ``.glb`` files and no ``tileset.json``. Validating every
-    object's attributes up front makes the whole write fail-fast and atomic: on a bad input nothing is
-    written. (The per-tile feature-count ceiling is enforced later, in :func:`_gltf_from_rings`; an
-    over-ceiling tile raises while writing its own single file, so it orphans nothing.) When
-    ``compression="draco"``, the
-    ``[draco]`` backend is imported here too, so a missing extra fails before any file is written (not
-    on the first tile) for every mode — including an empty model, which otherwise never encodes a tile.
+    The explicit and implicit writers emit content files incrementally, so a failure *partway through*
+    would otherwise leave orphaned content files and no ``tileset.json``. This pre-flight catches the
+    problems that are knowable before any tile is encoded — a non-encodable **attribute** on any object,
+    and (for ``compression="draco"``) a missing ``[draco]`` backend — so they fail before the first write,
+    for every mode including an empty model that never encodes a tile. (The per-tile feature-count ceiling
+    is enforced later, in :func:`_gltf_from_rings`; an over-ceiling tile raises while writing its own
+    single file, so it orphans nothing.) A per-tile **encode** failure that only surfaces mid-write cannot
+    be pre-flighted here; :func:`write_3dtiles` rolls that back via :func:`_discard_partial_tileset`, so a
+    Draco write that fails on a later tile still leaves no partial tileset.
     """
     if compression == "draco":
         _import_dracopy()
@@ -1773,6 +1774,41 @@ def _build_tileset_document(
     return _write_single_tile(contributing, target, encode, suffix, version, simplify)
 
 
+def _discard_partial_tileset(target: Path, before: set[Path]) -> None:
+    """Remove everything written under ``target`` since ``before`` was snapshotted (failed-write rollback).
+
+    ``before`` is the set of paths present before the write began. Anything under ``target`` that is not in
+    it was written by the (now-failed) write and is deleted **deepest first**, so a directory is only
+    removed once its own newly-written files are gone; a directory still holding a pre-existing entry is
+    left (its ``rmdir`` raises ``OSError``, which is swallowed). This lets a Draco write that fails on a
+    later tile roll back to leaving no partial tileset (no orphaned content leaves, no ``tileset.json``)
+    while never touching anything that was already there.
+
+    This runs inside ``write_3dtiles``'s exception handler, so it must never raise: a fault *during*
+    rollback (even enumerating the tree) would mask the original write error. Both the tree walk and each
+    removal are therefore guarded.
+    """
+    try:
+        added = sorted(
+            set(target.rglob("*")) - before,
+            key=lambda path: len(path.parts),
+            reverse=True,
+        )
+    except OSError:
+        return  # couldn't even enumerate the tree — abandon cleanup rather than mask the real error
+    for path in added:
+        try:
+            if path.is_dir():
+                # rmdir succeeds on a wholly-added dir (its files sorted earlier, deepest-first, and were
+                # removed); a dir still holding a pre-existing entry is not empty, so rmdir raises OSError
+                # (caught below) and the dir — with its pre-existing content — is kept.
+                path.rmdir()
+            else:
+                path.unlink()
+        except OSError:
+            pass
+
+
 def write_3dtiles(
     model: CityModel,
     directory: Any,
@@ -1826,7 +1862,15 @@ def write_3dtiles(
     relative to the tile extent can collapse under quantization and be dropped on read — the same way an
     over-decimated feature can in the uncompressed case. ``compression="draco"`` needs the ``[draco]``
     extra — without it, a clear ``UnsupportedGeometryError`` names the extra to install; an unknown value
-    raises ``ValueError``.
+    raises ``ValueError``. A Draco write into a **fresh** output directory **rolls back on failure**
+    (best effort): if a tile fails to encode partway through a multi-tile write, the content files written
+    so far are removed and no ``tileset.json`` is left, so normally the directory is not left holding a
+    partial tileset. The rollback swallows its *own* filesystem errors so it never masks the write failure,
+    so a filesystem fault *during* cleanup is the one case that can still leave partial output. Re-writing
+    into a directory that **already** holds a tileset is *not* transactional — content files that share a
+    name are overwritten in place and are not restored on failure, and the previous ``tileset.json``
+    (written last, so a failed run never reaches it) survives — so a failed re-run can leave a stale,
+    inconsistent tileset. Write into a fresh directory (or clear the target first) for the rollback to apply.
 
     **glTF metadata shape** (``metadata=``, glTF content only): ``"json"`` (default) keeps the whole
     attribute dict in one JSON-encoded ``attributes`` property — lossless for any JSON value. ``"typed"``
@@ -1955,18 +1999,27 @@ def write_3dtiles(
         # b3dm+Draco has no attribute pre-flight, but still needs the backend asserted up front so a
         # missing [draco] extra fails before any tile is written (atomicity, incl. an empty model).
         _import_dracopy()
-    tileset = _build_tileset_document(
-        contributing,
-        target,
-        max_objects_per_tile,
-        implicit_tiling,
-        scheme,
-        encode,
-        suffix,
-        version,
-        simplify,
-    )
-    (target / "tileset.json").write_text(
-        json.dumps(tileset, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    # A Draco write can fail on a *later* tile (DracoPy.encode), after earlier leaves are on disk; snapshot
+    # the directory so a failure can be rolled back to leave no partial tileset (issue #86). The
+    # uncompressed path cannot fail mid-encode, so it is left exactly as before (before is None).
+    before = set(target.rglob("*")) if compression == "draco" else None
+    try:
+        tileset = _build_tileset_document(
+            contributing,
+            target,
+            max_objects_per_tile,
+            implicit_tiling,
+            scheme,
+            encode,
+            suffix,
+            version,
+            simplify,
+        )
+        (target / "tileset.json").write_text(
+            json.dumps(tileset, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception:
+        if before is not None:
+            _discard_partial_tileset(target, before)
+        raise
     return tileset
