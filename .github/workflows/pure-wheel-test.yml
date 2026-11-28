@@ -101,14 +101,17 @@ jobs:
       - name: Install test runner
         run: "pip install pytest pytest-env pytest-mock pytest-timeout --only-binary=:all:"
 
-      - name: Run core tests (not vendor_data)
+      - name: Run core tests (not vendor_data, not draco)
         # shell: bash on every OS — windows-latest defaults to PowerShell, which
         # parses the `|| [ $? -eq 5 ]` bash idiom below as a type literal and fails
         # with "Missing type name after '['" before pytest ever runs.
         shell: bash
         # -o pythonpath= clears the `pythonpath = ["src"]` setting so the tests
-        # import the INSTALLED wheel, not the source tree. vendor_data tests need
-        # fetched sample files that are not present here, so they are deselected.
+        # import the INSTALLED wheel, not the source tree. This job installs the
+        # BARE wheel with no optional extras, so two marker classes are deselected:
+        # `vendor_data` (needs fetched sample files not present here) and `draco`
+        # (needs the optional `[draco]` extra / DracoPy, which a bare wheel omits —
+        # the pixi matrix installs the extra and exercises those tests instead).
         # `|| [ $? -eq 5 ]` tolerates pytest's "no tests collected" exit while the
         # suite is still only the scaffold's import checks.
-        run: pytest -vvv -sv -o pythonpath= -m "not vendor_data" tests/ || [ $? -eq 5 ]
+        run: pytest -vvv -sv -o pythonpath= -m "not vendor_data and not draco" tests/ || [ $? -eq 5 ]
