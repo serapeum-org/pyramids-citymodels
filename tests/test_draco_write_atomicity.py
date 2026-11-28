@@ -17,6 +17,7 @@ import DracoPy
 import pytest
 
 from pyramids_citymodels.errors import UnsupportedGeometryError
+from pyramids_citymodels.writers.threedtiles import _discard_partial_tileset
 from tests._draco_fixtures import model as _model
 
 pytestmark = pytest.mark.draco
@@ -81,3 +82,47 @@ class TestDracoWriteAtomicity:
         )
         assert (out / "tileset.json").exists(), "tileset.json written on success"
         assert any(out.rglob("*.b3dm")), "at least one b3dm leaf written on success"
+
+    def test_discard_removes_added_tree_but_keeps_preexisting(self, tmp_path) -> None:
+        """Rollback removes added files and their now-empty added dirs, but keeps pre-existing entries.
+
+        Test scenario:
+            A directory with a pre-existing file is snapshotted; a simulated write then adds a file in a
+            **new** directory and a top-level leaf. ``_discard_partial_tileset`` removes both added files
+            and ``rmdir``s the new (now-empty) directory, while the pre-existing file — and its
+            directory, which is not in the added set — survive untouched.
+        """
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / "keep.txt").write_text("keep", encoding="utf-8")
+        before = set(tmp_path.rglob("*"))
+        (tmp_path / "added_dir").mkdir()
+        (tmp_path / "added_dir" / "leaf.b3dm").write_bytes(b"x")
+        (tmp_path / "content_0.b3dm").write_bytes(b"y")
+        _discard_partial_tileset(tmp_path, before)
+        assert not (tmp_path / "content_0.b3dm").exists(), (
+            "added top-level leaf removed"
+        )
+        assert not (tmp_path / "added_dir").exists(), "added dir removed once emptied"
+        assert (tmp_path / "sub" / "keep.txt").read_text(encoding="utf-8") == "keep", (
+            "pre-existing kept"
+        )
+
+    def test_discard_swallows_removal_errors(self, tmp_path, monkeypatch) -> None:
+        """A removal that fails (e.g. a read-only file) is swallowed so cleanup never masks the real error.
+
+        Test scenario:
+            With ``Path.unlink`` forced to raise ``OSError``, ``_discard_partial_tileset`` of an added
+            leaf returns normally (the error is swallowed) rather than propagating and hiding the
+            original write failure it is cleaning up after.
+        """
+        before = set(tmp_path.rglob("*"))
+        (tmp_path / "content_0.b3dm").write_bytes(b"x")
+
+        def boom(self):
+            raise OSError("cannot remove")
+
+        monkeypatch.setattr(Path, "unlink", boom)
+        _discard_partial_tileset(tmp_path, before)  # must not raise
+        assert (tmp_path / "content_0.b3dm").exists(), (
+            "unlink was blocked, but cleanup did not propagate"
+        )
