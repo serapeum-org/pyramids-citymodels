@@ -102,6 +102,7 @@ class TestDracoWriteAtomicity:
             out, content="b3dm", compression="draco", max_objects_per_tile=1
         )
         original_tileset = (out / "tileset.json").read_bytes()
+        preexisting_leaves = {p for p in out.rglob("*") if p.is_file()}
         _fail_encode_after(monkeypatch, 2)
         with pytest.raises(UnsupportedGeometryError, match="Draco"):
             _model(4).to_3dtiles(
@@ -110,8 +111,8 @@ class TestDracoWriteAtomicity:
         assert (out / "tileset.json").read_bytes() == original_tileset, (
             "prior tileset.json left in place"
         )
-        assert (out / "content_0.b3dm").exists(), (
-            "pre-existing leaves are not rolled back on a re-write"
+        assert all(p.exists() for p in preexisting_leaves), (
+            "every pre-existing leaf survives — a re-write rolls back nothing from the snapshot"
         )
 
     def test_discard_removes_added_tree_but_keeps_preexisting(self, tmp_path) -> None:
