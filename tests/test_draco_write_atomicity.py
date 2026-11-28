@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pyramids  # noqa: F401  # isort:skip  (keep first — see conftest)
 
-import DracoPy
 import pytest
 
 from pyramids_citymodels.errors import UnsupportedGeometryError
@@ -25,6 +24,8 @@ pytestmark = pytest.mark.draco
 
 def _fail_encode_after(monkeypatch, n: int) -> None:
     """Patch ``DracoPy.encode`` to succeed for the first ``n`` calls, then raise (a later-tile failure)."""
+    import DracoPy  # imported here, not at module top, so the module collects without the draco extra
+
     real = DracoPy.encode
     calls = {"c": 0}
 
