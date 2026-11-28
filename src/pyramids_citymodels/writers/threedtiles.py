@@ -1799,7 +1799,10 @@ def _discard_partial_tileset(target: Path, before: set[Path]) -> None:
     for path in added:
         try:
             if path.is_dir():
-                path.rmdir()  # empty by now: its files sorted earlier (deepest-first) and were removed
+                # rmdir succeeds on a wholly-added dir (its files sorted earlier, deepest-first, and were
+                # removed); a dir still holding a pre-existing entry is not empty, so rmdir raises OSError
+                # (caught below) and the dir — with its pre-existing content — is kept.
+                path.rmdir()
             else:
                 path.unlink()
         except OSError:
@@ -1859,13 +1862,15 @@ def write_3dtiles(
     relative to the tile extent can collapse under quantization and be dropped on read — the same way an
     over-decimated feature can in the uncompressed case. ``compression="draco"`` needs the ``[draco]``
     extra — without it, a clear ``UnsupportedGeometryError`` names the extra to install; an unknown value
-    raises ``ValueError``. A Draco write into a **fresh** output directory is **atomic**: if a tile fails to
-    encode partway through a multi-tile write, the content files written so far are removed and no
-    ``tileset.json`` is left, so the directory is not left holding a partial tileset. Re-writing into a
-    directory that **already** holds a tileset is *not* transactional — content files that share a name are
-    overwritten in place and are not restored on failure, and the previous ``tileset.json`` (written last,
-    so a failed run never reaches it) survives — so a failed re-run can leave a stale, inconsistent tileset.
-    Write into a fresh directory (or clear the target first) if you need the atomicity guarantee.
+    raises ``ValueError``. A Draco write into a **fresh** output directory **rolls back on failure**
+    (best effort): if a tile fails to encode partway through a multi-tile write, the content files written
+    so far are removed and no ``tileset.json`` is left, so normally the directory is not left holding a
+    partial tileset. The rollback swallows its *own* filesystem errors so it never masks the write failure,
+    so a filesystem fault *during* cleanup is the one case that can still leave partial output. Re-writing
+    into a directory that **already** holds a tileset is *not* transactional — content files that share a
+    name are overwritten in place and are not restored on failure, and the previous ``tileset.json``
+    (written last, so a failed run never reaches it) survives — so a failed re-run can leave a stale,
+    inconsistent tileset. Write into a fresh directory (or clear the target first) for the rollback to apply.
 
     **glTF metadata shape** (``metadata=``, glTF content only): ``"json"`` (default) keeps the whole
     attribute dict in one JSON-encoded ``attributes`` property — lossless for any JSON value. ``"typed"``
