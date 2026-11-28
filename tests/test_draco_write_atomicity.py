@@ -65,8 +65,10 @@ class TestDracoWriteAtomicity:
         out = Path(tempfile.mkdtemp())
         with pytest.raises(UnsupportedGeometryError, match="Draco"):
             _model(5).to_3dtiles(out, compression="draco", **mode)
-        leftover = sorted(p.name for p in out.rglob("*") if p.is_file())
-        assert leftover == [], f"partial tileset left behind: {leftover}"
+        leftover = sorted(str(p.relative_to(out)) for p in out.rglob("*"))
+        assert leftover == [], (
+            f"partial tileset left behind (files or dirs): {leftover}"
+        )
 
     def test_successful_draco_write_is_unaffected(self) -> None:
         """A successful Draco multi-tile write still produces tileset.json + content (no regression).
